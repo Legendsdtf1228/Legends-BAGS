@@ -2,6 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
+import {
+  applyLongestSidePreset,
+  BAGS_BASE_CSS,
+  PresetSizeChips,
+  StepperField,
+} from "../components/editor/bags-ui";
 
 type Asset = {
   assetId: string;
@@ -30,9 +36,28 @@ type AutoDraft = {
   widthIn: number;
   heightIn: number;
   quantity: number;
+  lockAspect: boolean;
 };
 
+type AutoPhase = "setup" | "review";
+
+type PoolItem = {
+  id: string;
+  asset: Asset;
+  previewUrl: string;
+  name: string;
+  uploadedAt: number;
+};
+
+type SidebarTab = "uploads" | "gallery" | "text";
+
 type Screen = "welcome" | "auto_build" | "canvas";
+
+const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string; soon?: boolean }[] = [
+  { id: "uploads", label: "Uploads", icon: "📁" },
+  { id: "gallery", label: "Gallery", icon: "🖼", soon: true },
+  { id: "text", label: "Text", icon: "T", soon: true },
+];
 
 type NestPlacement = {
   assetId: string;
@@ -158,6 +183,12 @@ export default function GangSheetEditor() {
   const [autoPreviewLoading, setAutoPreviewLoading] = useState(false);
   const [autoPreviewError, setAutoPreviewError] = useState("");
   const [selectedAutoId, setSelectedAutoId] = useState<string | null>(null);
+  const [autoPhase, setAutoPhase] = useState<AutoPhase>("setup");
+  const [uploadPool, setUploadPool] = useState<PoolItem[]>([]);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("uploads");
+  const [poolTick, setPoolTick] = useState(0);
+
+  const sidebarUploadRef = useRef<HTMLInputElement>(null);
 
   const canvas = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; x: number; y: number; sx: number; sy: number } | null>(null);
@@ -215,33 +246,88 @@ export default function GangSheetEditor() {
     };
   }, [items, pushHistory, sheetHeight, sheetWidth]);
 
-  async function uploadFiles(files: File[], target: "canvas" | "auto") {
+  function createPlacedItem(
+    asset: Asset,
+    previewUrl: string,
+    name: string,
+    index: number,
+  ): CanvasItem {
+    const w = Math.min(6, sheetWidth - 0.4);
+    const h = w / (asset.widthPx / asset.heightPx);
+    return {
+      ...asset,
+      id: crypto.randomUUID(),
+      name,
+      previewUrl,
+      xIn: 0.2 + (index % 4) * 0.4,
+      yIn: 0.2 + Math.floor(index / 4) * 0.4,
+      widthIn: w,
+      heightIn: h,
+      rotationDeg: 0,
+    };
+  }
+
+  function openCanvas(options?: { tab?: SidebarTab; pickUpload?: boolean }) {
+    setScreen("canvas");
+    setSidebarTab(options?.tab ?? "uploads");
+    setMessage("");
+    if (options?.pickUpload) {
+      window.setTimeout(() => sidebarUploadRef.current?.click(), 50);
+    }
+  }
+
+  function placeFromPool(poolId: string) {
+    const entry = uploadPool.find((p) => p.id === poolId);
+    if (!entry) return;
+    const placed = createPlacedItem(entry.asset, entry.previewUrl, entry.name, items.length);
+    pushHistory([...items, placed]);
+    setSelectedId(placed.id);
+    setMessage(`Placed "${entry.name}" on the sheet — drag to position.`);
+  }
+
+  function sheetCountForAsset(assetId: string) {
+    return items.filter((i) => i.assetId === assetId).length;
+  }
+
+  async function uploadFiles(
+    files: File[],
+    target: "canvas" | "auto",
+    options?: { placeOnSheet?: boolean },
+  ) {
     if (!files.length) return;
     setUploading(true);
     setError("");
     setSaved(false);
     try {
       if (target === "canvas") {
-        const added: CanvasItem[] = [];
+        const poolAdded: PoolItem[] = [];
+        const placed: CanvasItem[] = [];
+        const placeOnSheet = options?.placeOnSheet ?? false;
         for (const file of files) {
           const asset = await postUpload(file);
-          const w = Math.min(6, sheetWidth - 0.4);
-          const h = w / (asset.widthPx / asset.heightPx);
-          added.push({
-            ...asset,
+          const previewUrl = URL.createObjectURL(file);
+          poolAdded.push({
             id: crypto.randomUUID(),
+            asset,
+            previewUrl,
             name: file.name,
-            previewUrl: URL.createObjectURL(file),
-            xIn: 0.2 + added.length * 0.3,
-            yIn: 0.2 + added.length * 0.3,
-            widthIn: w,
-            heightIn: h,
-            rotationDeg: 0,
+            uploadedAt: Date.now(),
           });
+          if (placeOnSheet) {
+            placed.push(createPlacedItem(asset, previewUrl, file.name, placed.length));
+          }
         }
-        pushHistory([...items, ...added]);
-        setSelectedId(added.at(-1)?.id ?? null);
-        setMessage(`${added.length} artwork file${added.length === 1 ? "" : "s"} added.`);
+        setUploadPool((pool) => [...pool, ...poolAdded]);
+        if (placed.length) {
+          pushHistory([...items, ...placed]);
+          setSelectedId(placed.at(-1)?.id ?? null);
+        }
+        setSidebarTab("uploads");
+        setMessage(
+          placeOnSheet
+            ? `${poolAdded.length} file${poolAdded.length === 1 ? "" : "s"} uploaded and placed.`
+            : `${poolAdded.length} file${poolAdded.length === 1 ? "" : "s"} in Uploads — click to place on sheet.`,
+        );
       } else {
         const added: AutoDraft[] = [];
         for (const file of files) {
@@ -256,6 +342,7 @@ export default function GangSheetEditor() {
             widthIn: w,
             heightIn: w / aspect,
             quantity: 1,
+            lockAspect: true,
           });
         }
         setAutoDrafts((d) => [...d, ...added]);
@@ -440,10 +527,10 @@ export default function GangSheetEditor() {
   }, [autoDrafts, gap, page.shop, sheetHeight, sheetWidth]);
 
   useEffect(() => {
-    if (screen !== "auto_build") return;
+    if (screen !== "auto_build" || autoPhase !== "setup") return;
     const t = setTimeout(() => void refreshAutoPreview(), 350);
     return () => clearTimeout(t);
-  }, [screen, refreshAutoPreview]);
+  }, [screen, autoPhase, refreshAutoPreview]);
 
   async function applyAutoBuild() {
     if (!autoDrafts.length) {
@@ -562,51 +649,105 @@ export default function GangSheetEditor() {
 
   if (screen === "welcome") {
     return (
-      <div className="bags welcome">
-        <style>{CSS}</style>
-        <div className="welcome-card">
-          <div className="brand center">
-            <b>L</b>
-            <span>
-              <strong>LEGENDS BAGS</strong>
-              <small>Gang Sheet Builder</small>
-            </span>
-          </div>
-          <h1>How would you like to start?</h1>
-          {!page.hasDevAuth ? (
-            <p className="error">Dev auth not configured — check DEV_SHOP / TEST_API_TOKEN.</p>
-          ) : null}
-          <div className="welcome-grid">
-            <button
-              type="button"
-              className="welcome-opt"
-              onClick={() => {
-                setScreen("canvas");
-                setMessage("Upload artwork and arrange it on the sheet.");
-              }}
-            >
-              <strong>Start a brand new gang sheet</strong>
-              <span>Manual canvas — upload, drag, resize, and save.</span>
+      <div className="bags welcome lgs-editor">
+        <style>{BAGS_BASE_CSS}{CSS}</style>
+        <div className="home-shell">
+          <nav className="icon-rail" aria-label="Builder navigation">
+            <button type="button" className="rail-btn active" title="Home">
+              <span className="rail-icon">🏠</span>
+              <span className="rail-label">Home</span>
             </button>
-            <button
-              type="button"
-              className="welcome-opt primary"
-              onClick={() => {
-                setScreen("auto_build");
-                setAutoDrafts([]);
-                setAutoPreview(null);
-                setAutoPreviewError("");
-                setSelectedAutoId(null);
-                setMessage("Upload all designs, set size & quantity — preview updates live.");
-              }}
-            >
-              <strong>Auto Build</strong>
-              <span>Bulk upload — we nest everything onto the sheet for you.</span>
-            </button>
-            <button type="button" className="welcome-opt disabled" disabled>
-              <strong>Reorder a previous sheet</strong>
-              <span>Coming soon — requires customer accounts.</span>
-            </button>
+            {SIDEBAR_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`rail-btn ${tab.soon ? "soon" : ""}`}
+                title={tab.label}
+                disabled={tab.soon}
+                onClick={() => openCanvas({ tab: tab.id })}
+              >
+                <span className="rail-icon">{tab.icon}</span>
+                <span className="rail-label">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="home-main">
+            <div className="welcome-card">
+              <div className="brand center">
+                <b>L</b>
+                <span>
+                  <strong>LEGENDS BAGS</strong>
+                  <small>Welcome Center</small>
+                </span>
+              </div>
+              <h1>How would you like to start?</h1>
+              <p className="welcome-lead">
+                Choose a workflow below. Upload images from Home first — then manage them in the
+                Uploads sidebar and click to place on your sheet.
+              </p>
+              {!page.hasDevAuth ? (
+                <p className="error block">Dev auth not configured — check DEV_SHOP / TEST_API_TOKEN.</p>
+              ) : null}
+
+              <div className="welcome-grid two-col">
+                <button
+                  type="button"
+                  className="welcome-opt featured"
+                  onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
+                >
+                  <div className="welcome-icon">⬆</div>
+                  <strong>Upload image(s)</strong>
+                  <span>Add files to Uploads, then click each one to place on the gang sheet.</span>
+                </button>
+                <button
+                  type="button"
+                  className="welcome-opt"
+                  onClick={() => openCanvas()}
+                >
+                  <div className="welcome-icon">🎨</div>
+                  <strong>Start a brand new gang sheet</strong>
+                  <span>Blank canvas — drag, resize, rotate, and arrange manually.</span>
+                </button>
+                <button
+                  type="button"
+                  className="welcome-opt primary"
+                  onClick={() => {
+                    setScreen("auto_build");
+                    setAutoPhase("setup");
+                    setAutoDrafts([]);
+                    setAutoPreview(null);
+                    setAutoPreviewError("");
+                    setSelectedAutoId(null);
+                    setMessage("Upload all designs, set size & quantity — preview updates live.");
+                  }}
+                >
+                  <div className="welcome-icon">⚡</div>
+                  <strong>Auto Build</strong>
+                  <span>Bulk upload with live nest preview — fastest for many designs.</span>
+                </button>
+                <button type="button" className="welcome-opt disabled" disabled>
+                  <div className="welcome-icon">↺</div>
+                  <strong>Open a previously ordered gang sheet</strong>
+                  <span>Coming soon — saved designs & reorder.</span>
+                </button>
+                <button type="button" className="welcome-opt disabled" disabled>
+                  <div className="welcome-icon">👕</div>
+                  <strong>Names and Numbers</strong>
+                  <span>Coming soon — roster and jersey layouts.</span>
+                </button>
+                <button type="button" className="welcome-opt disabled" disabled>
+                  <div className="welcome-icon">🖼</div>
+                  <strong>Gallery</strong>
+                  <span>Coming soon — stock art from your shop library.</span>
+                </button>
+              </div>
+
+              <div className="welcome-foot">
+                <span>Default sheet</span>
+                <strong>{sheetWidth}″ wide · up to {sheetHeight}″ long · $0.049/in²</strong>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -622,47 +763,81 @@ export default function GangSheetEditor() {
         : "";
 
     return (
-      <div className="bags auto-mode">
-        <style>{CSS}</style>
+      <div className="bags auto-mode lgs-editor">
+        <style>{BAGS_BASE_CSS}{CSS}</style>
         <header>
           <div className="brand">
             <b>L</b>
             <span>
               <strong>Auto Build</strong>
-              <small>Upload → size & qty → nest preview → build</small>
+              <small>{autoPhase === "setup" ? "Upload → size & qty → Apply" : "Review nest → Continue"}</small>
             </span>
           </div>
           <nav>
             <button type="button" onClick={() => setScreen("welcome")}>
               ← Back
             </button>
-            <label className="btn-upload">
-              {uploading ? "Uploading…" : "＋ Upload images"}
-              <input
-                type="file"
-                multiple
-                accept="image/png,image/jpeg"
-                hidden
-                onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-              />
-            </label>
-            <button
-              type="button"
-              className="save"
-              disabled={autoBusy || !autoDrafts.length || !!autoPreviewError || autoPreviewLoading}
-              onClick={() => void applyAutoBuild()}
-            >
-              {autoBusy ? "Building…" : "Build gang sheet"}
-            </button>
+            {autoPhase === "setup" ? (
+              <>
+                <label className="btn-upload">
+                  {uploading ? "Uploading…" : "＋ Upload images"}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg"
+                    hidden
+                    onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="save"
+                  disabled={!autoDrafts.length || !!autoPreviewError || autoPreviewLoading}
+                  onClick={() => {
+                    void refreshAutoPreview().then((p) => {
+                      if (p?.pieces.length) setAutoPhase("review");
+                    });
+                  }}
+                >
+                  Apply
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => setAutoPhase("setup")}>
+                  Back and adjust
+                </button>
+                <button
+                  type="button"
+                  className="save"
+                  disabled={autoBusy || !autoPreview?.pieces.length}
+                  onClick={() => void applyAutoBuild()}
+                >
+                  {autoBusy ? "Building…" : "Continue"}
+                </button>
+              </>
+            )}
           </nav>
         </header>
 
         <div className="auto-split">
-          <section className="auto-upload-panel">
+          <section className={`auto-upload-panel ${autoPhase === "review" ? "readonly" : ""}`}>
             <div className="auto-panel-head">
-              <h2>1. Upload & size</h2>
+              <h2>{autoPhase === "setup" ? "1. Upload & size" : "Your designs"}</h2>
               <p>{autoDrafts.length} design{autoDrafts.length === 1 ? "" : "s"}</p>
             </div>
+
+            {autoPhase === "setup" ? (
+              <div className="upload-tabs">
+                <button type="button" className="tab active">Upload image(s)</button>
+                <button type="button" className="tab disabled" disabled>
+                  My images
+                </button>
+                <button type="button" className="tab disabled" disabled>
+                  Gallery
+                </button>
+              </div>
+            ) : null}
 
             {!autoDrafts.length ? (
               <label className="drop large">
@@ -730,114 +905,136 @@ export default function GangSheetEditor() {
                       <div className="auto-fields">
                         <strong>{d.name}</strong>
                         <div className="preset-row">
-                          {AUTO_PRESETS.map((inches) => (
-                            <button
-                              key={inches}
-                              type="button"
-                              className="preset-chip"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const aspect = d.asset.widthPx / d.asset.heightPx;
-                                const w = aspect >= 1 ? inches : inches * aspect;
-                                const h = aspect >= 1 ? inches / aspect : inches;
-                                setAutoDrafts((rows) =>
-                                  rows.map((r) =>
-                                    r.id === d.id
-                                      ? { ...r, widthIn: w, heightIn: h }
-                                      : r,
-                                  ),
-                                );
-                              }}
-                            >
-                              {inches}"
-                            </button>
-                          ))}
+                          <PresetSizeChips
+                            presets={AUTO_PRESETS}
+                            onPick={(inches) => {
+                              const dims = applyLongestSidePreset(
+                                d.asset.widthPx,
+                                d.asset.heightPx,
+                                inches,
+                              );
+                              setAutoDrafts((rows) =>
+                                rows.map((r) =>
+                                  r.id === d.id ? { ...r, ...dims, lockAspect: true } : r,
+                                ),
+                              );
+                            }}
+                          />
                         </div>
                         <div className="auto-dims">
-                          <label>
-                            W
-                            <input
-                              type="number"
-                              min={0.1}
-                              step={0.1}
-                              value={round(d.widthIn)}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const w = +e.target.value;
-                                const aspect = d.asset.widthPx / d.asset.heightPx;
-                                setAutoDrafts((rows) =>
-                                  rows.map((r) =>
-                                    r.id === d.id
-                                      ? { ...r, widthIn: w, heightIn: w / aspect }
-                                      : r,
-                                  ),
-                                );
-                              }}
-                            />
-                          </label>
-                          <label>
-                            H
-                            <input
-                              type="number"
-                              min={0.1}
-                              step={0.1}
-                              value={round(d.heightIn)}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const h = +e.target.value;
-                                const aspect = d.asset.widthPx / d.asset.heightPx;
-                                setAutoDrafts((rows) =>
-                                  rows.map((r) =>
-                                    r.id === d.id
-                                      ? { ...r, heightIn: h, widthIn: h * aspect }
-                                      : r,
-                                  ),
-                                );
-                              }}
-                            />
-                          </label>
-                          <label>
-                            Qty
-                            <input
-                              type="number"
-                              min={1}
-                              step={1}
-                              value={d.quantity}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) =>
-                                setAutoDrafts((rows) =>
-                                  rows.map((r) =>
-                                    r.id === d.id
-                                      ? {
-                                          ...r,
-                                          quantity: Math.max(
-                                            1,
-                                            parseInt(e.target.value, 10) || 1,
-                                          ),
-                                        }
-                                      : r,
-                                  ),
-                                )
-                              }
-                            />
-                          </label>
+                          <StepperField
+                            label="Width"
+                            value={d.widthIn}
+                            step={0.1}
+                            onChange={(w) => {
+                              const aspect = d.asset.widthPx / d.asset.heightPx;
+                              setAutoDrafts((rows) =>
+                                rows.map((r) =>
+                                  r.id === d.id
+                                    ? {
+                                        ...r,
+                                        widthIn: w,
+                                        heightIn: r.lockAspect ? w / aspect : r.heightIn,
+                                      }
+                                    : r,
+                                ),
+                              );
+                            }}
+                          />
+                          <StepperField
+                            label="Height"
+                            value={d.heightIn}
+                            step={0.1}
+                            onChange={(h) => {
+                              const aspect = d.asset.widthPx / d.asset.heightPx;
+                              setAutoDrafts((rows) =>
+                                rows.map((r) =>
+                                  r.id === d.id
+                                    ? {
+                                        ...r,
+                                        heightIn: h,
+                                        widthIn: r.lockAspect ? h * aspect : r.widthIn,
+                                      }
+                                    : r,
+                                ),
+                              );
+                            }}
+                          />
+                          <StepperField
+                            label="Qty"
+                            value={d.quantity}
+                            step={1}
+                            min={1}
+                            onChange={(q) =>
+                              setAutoDrafts((rows) =>
+                                rows.map((r) =>
+                                  r.id === d.id
+                                    ? { ...r, quantity: Math.max(1, Math.round(q)) }
+                                    : r,
+                                ),
+                              )
+                            }
+                          />
                         </div>
+                        <label className="lock-aspect">
+                          <input
+                            type="checkbox"
+                            checked={d.lockAspect}
+                            disabled={autoPhase === "review"}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) =>
+                              setAutoDrafts((rows) =>
+                                rows.map((r) =>
+                                  r.id === d.id ? { ...r, lockAspect: e.target.checked } : r,
+                                ),
+                              )
+                            }
+                          />
+                          Lock aspect ratio
+                        </label>
                         <small>
                           {(d.widthIn * d.heightIn * d.quantity).toFixed(2)} in² ·{" "}
                           {d.asset.widthPx}×{d.asset.heightPx}px
                         </small>
                       </div>
-                      <button
-                        type="button"
-                        className="remove"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAutoDrafts((rows) => rows.filter((r) => r.id !== d.id));
-                          if (selectedAutoId === d.id) setSelectedAutoId(null);
-                        }}
-                      >
-                        ×
-                      </button>
+                      <div className="auto-actions">
+                        {autoPhase === "setup" ? (
+                          <button
+                            type="button"
+                            className="dup"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAutoDrafts((rows) => {
+                                const src = rows.find((r) => r.id === d.id);
+                                if (!src) return rows;
+                                return [
+                                  ...rows,
+                                  {
+                                    ...src,
+                                    id: crypto.randomUUID(),
+                                    name: `${src.name.replace(/\.[^.]+$/, "")} (copy)`,
+                                  },
+                                ];
+                              });
+                            }}
+                          >
+                            Duplicate
+                          </button>
+                        ) : null}
+                        {autoPhase === "setup" ? (
+                          <button
+                            type="button"
+                            className="remove"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAutoDrafts((rows) => rows.filter((r) => r.id !== d.id));
+                              if (selectedAutoId === d.id) setSelectedAutoId(null);
+                            }}
+                          >
+                            ×
+                          </button>
+                        ) : null}
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -849,6 +1046,7 @@ export default function GangSheetEditor() {
                     multiple
                     accept="image/png,image/jpeg"
                     hidden
+                    disabled={autoPhase === "review"}
                     onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
                   />
                 </label>
@@ -858,11 +1056,13 @@ export default function GangSheetEditor() {
 
           <section className="auto-preview-panel">
             <div className="auto-panel-head">
-              <h2>2. Auto nest preview</h2>
+              <h2>{autoPhase === "setup" ? "2. Auto nest preview" : "Nest preview"}</h2>
               {autoPreviewLoading ? (
                 <span className="preview-status">Updating…</span>
               ) : autoPreview ? (
-                <span className="preview-status ok">Live preview</span>
+                <span className="preview-status ok">
+                  {autoPhase === "review" ? "Ready to continue" : "Live preview"}
+                </span>
               ) : (
                 <span className="preview-status">Waiting for uploads</span>
               )}
@@ -941,8 +1141,17 @@ export default function GangSheetEditor() {
             {!error && message ? <p className="message block">{message}</p> : null}
 
             <p className="fine">
-              When the preview looks good, click <strong>Build gang sheet</strong> to open the
-              full editor (adjust placements, then save to cart).
+              {autoPhase === "setup" ? (
+                <>
+                  When sizing looks good, click <strong>Apply</strong> to review the nest before
+                  opening the full editor.
+                </>
+              ) : (
+                <>
+                  Click <strong>Continue</strong> to open the gang sheet canvas with these
+                  placements, or <strong>Back and adjust</strong> to change sizes.
+                </>
+              )}
             </p>
           </section>
         </div>
@@ -951,8 +1160,8 @@ export default function GangSheetEditor() {
   }
 
   return (
-    <div className="bags">
-      <style>{CSS}</style>
+    <div className="bags lgs-editor">
+      <style>{BAGS_BASE_CSS}{CSS}</style>
       <header>
         <div className="brand">
           <b>L</b>
@@ -981,7 +1190,11 @@ export default function GangSheetEditor() {
               multiple
               accept="image/png,image/jpeg"
               hidden
-              onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "canvas")}
+              onChange={(e) =>
+                void uploadFiles(Array.from(e.target.files ?? []), "canvas", {
+                  placeOnSheet: true,
+                })
+              }
             />
           </label>
           <button type="button" className="save" onClick={() => void save()} disabled={saving || !items.length}>
@@ -989,57 +1202,146 @@ export default function GangSheetEditor() {
           </button>
         </nav>
       </header>
+      {message ? <p className="message toast">{message}</p> : null}
+      {error ? <p className="error toast">{error}</p> : null}
       <div className="workspace">
-        <aside className="library">
-          <div className="heading">
-            <span>
-              <strong>Artwork</strong>
-              <small>{items.length} placed</small>
-            </span>
-            <label className="mini-upload">
-              ＋
-              <input
-                type="file"
-                multiple
-                accept="image/png,image/jpeg"
-                hidden
-                onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "canvas")}
-              />
-            </label>
-          </div>
-          {!items.length && (
-            <label className="drop">
-              <b>⬆</b>
-              <strong>Upload your designs</strong>
-              <small>Transparent PNG recommended</small>
-              <input
-                type="file"
-                multiple
-                accept="image/png,image/jpeg"
-                hidden
-                onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "canvas")}
-              />
-            </label>
-          )}
-          <div className="assets">
-            {items.map((i, n) => (
-              <button
-                key={i.id}
-                type="button"
-                className={i.id === selectedId ? "active" : ""}
-                onClick={() => setSelectedId(i.id)}
-              >
-                <img src={i.previewUrl} alt="" />
+        <nav className="icon-rail" aria-label="Builder navigation">
+          <button
+            type="button"
+            className="rail-btn"
+            title="Home"
+            onClick={() => setScreen("welcome")}
+          >
+            <span className="rail-icon">🏠</span>
+            <span className="rail-label">Home</span>
+          </button>
+          {SIDEBAR_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`rail-btn ${sidebarTab === tab.id ? "active" : ""} ${tab.soon ? "soon" : ""}`}
+              title={tab.label}
+              disabled={tab.soon}
+              onClick={() => !tab.soon && setSidebarTab(tab.id)}
+            >
+              <span className="rail-icon">{tab.icon}</span>
+              <span className="rail-label">{tab.label}</span>
+              {tab.id === "uploads" && uploadPool.length ? (
+                <span className="rail-badge">{uploadPool.length}</span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+
+        <aside className="sidebar-panel">
+          {sidebarTab === "uploads" ? (
+            <>
+              <div className="heading">
                 <span>
-                  <strong>{i.name}</strong>
-                  <small>
-                    {i.widthIn.toFixed(2)} × {i.heightIn.toFixed(2)} in
-                  </small>
+                  <strong>Uploads</strong>
+                  <small>{uploadPool.length} file{uploadPool.length === 1 ? "" : "s"}</small>
                 </span>
-                <b>{n + 1}</b>
-              </button>
-            ))}
-          </div>
+                <button
+                  type="button"
+                  className="refresh-btn"
+                  title="Refresh uploads"
+                  onClick={() => setPoolTick((t) => t + 1)}
+                >
+                  ↻
+                </button>
+              </div>
+              <p className="sidebar-hint">
+                Upload here first, then click a thumbnail to place it on the sheet.
+              </p>
+              <label className="sidebar-upload-btn">
+                {uploading ? "Uploading…" : "＋ Upload image(s)"}
+                <input
+                  ref={sidebarUploadRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg"
+                  hidden
+                  onChange={(e) => {
+                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {!uploadPool.length ? (
+                <label className="drop compact">
+                  <b>⬆</b>
+                  <strong>No uploads yet</strong>
+                  <small>Use Upload image(s) from Home or the button above</small>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg"
+                    hidden
+                    onChange={(e) => {
+                      void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              ) : (
+                <div className="pool-grid" key={poolTick}>
+                  {uploadPool.map((p) => {
+                    const onSheet = sheetCountForAsset(p.asset.assetId);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="pool-item"
+                        onClick={() => placeFromPool(p.id)}
+                        title="Click to place on gang sheet"
+                      >
+                        <img src={p.previewUrl} alt="" />
+                        <span>{p.name}</span>
+                        {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="on-sheet-list">
+                <h3>On sheet · {items.length}</h3>
+                {items.length ? (
+                  <div className="assets compact">
+                    {items.map((i, n) => (
+                      <button
+                        key={i.id}
+                        type="button"
+                        className={i.id === selectedId ? "active" : ""}
+                        onClick={() => setSelectedId(i.id)}
+                      >
+                        <img src={i.previewUrl} alt="" />
+                        <span>
+                          <strong>{i.name}</strong>
+                          <small>
+                            {i.widthIn.toFixed(2)} × {i.heightIn.toFixed(2)} in
+                          </small>
+                        </span>
+                        <b>{n + 1}</b>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="sidebar-empty">Nothing placed yet — pick an upload above.</p>
+                )}
+              </div>
+            </>
+          ) : sidebarTab === "gallery" ? (
+            <div className="sidebar-soon">
+              <strong>Gallery</strong>
+              <p>Stock art categories — coming in Phase 2.</p>
+            </div>
+          ) : (
+            <div className="sidebar-soon">
+              <strong>Text</strong>
+              <p>Fonts and text tools — coming in Phase 2.</p>
+            </div>
+          )}
         </aside>
         <main>
           <div className="toolbar">
@@ -1231,7 +1533,6 @@ export default function GangSheetEditor() {
               <strong>${estimate.toFixed(2)}</strong>
             </p>
           </section>
-          <p className={error ? "error" : "message"}>{error || message}</p>
         </aside>
       </div>
     </div>
@@ -1260,8 +1561,7 @@ function round(v: number) {
 
 const CSS = `
 *{box-sizing:border-box}
-.bags{--blue:#2463eb;--line:#dfe3e8;min-height:100vh;background:#eef1f5;color:#111827;font:14px/1.35 Inter,system-ui,sans-serif}
-.bags button,.bags input,.bags select{font:inherit}
+.bags{--blue:var(--accent);--line:#dfe3e8;min-height:100vh;background:#eef1f5;color:#111827;font:14px/1.35 Inter,system-ui,sans-serif}
 .bags>header{height:68px;background:#0d1117;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:5}
 .brand{display:flex;align-items:center;gap:10px}
 .brand.center{justify-content:center;margin-bottom:12px}
@@ -1269,19 +1569,62 @@ const CSS = `
 .brand strong,.brand small{display:block}.brand strong{letter-spacing:.12em}.brand small{font-size:11px;color:#98a2b3}
 .bags nav{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .bags nav button,.bags nav label{border:0;border-radius:7px;padding:10px 14px;background:#242b36;color:#fff;font-weight:700;cursor:pointer}
-.bags nav label.btn-upload,.bags nav .btn-upload{background:var(--blue)}
+.bags nav label.btn-upload,.bags nav .btn-upload{background:var(--accent)}
 .bags nav .save{background:#21a366}
 .bags nav button:disabled{opacity:.45;cursor:not-allowed}
 .bags input[type=file]{display:none}
-.welcome{display:grid;place-items:center;padding:32px 16px}
-.welcome-card{max-width:720px;width:100%;background:#fff;border-radius:12px;padding:28px;box-shadow:0 8px 30px #34405420}
-.welcome-card h1{margin:8px 0 18px;font-size:22px;text-align:center}
+.welcome{min-height:100vh;background:#eef1f5}
+.home-shell{display:grid;grid-template-columns:72px 1fr;min-height:100vh}
+.home-main{display:grid;place-items:center;padding:24px 16px}
+.welcome-card{max-width:860px;width:100%;background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 8px 30px #34405420}
+.welcome-card h1{margin:8px 0 10px;font-size:24px;text-align:center}
+.welcome-lead{margin:0 0 20px;text-align:center;color:#667085;font-size:13px;line-height:1.5;max-width:560px;margin-inline:auto}
 .welcome-grid{display:grid;gap:12px}
-.welcome-opt{display:grid;gap:6px;text-align:left;border:1px solid #dfe3e8;border-radius:10px;padding:16px;background:#fff;cursor:pointer}
-.welcome-opt strong{font-size:15px}.welcome-opt span{font-size:12px;color:#667085}
-.welcome-opt.primary{border-color:#7aa2f8;background:#edf3ff}
+.welcome-grid.two-col{grid-template-columns:repeat(2,minmax(0,1fr))}
+.welcome-opt{display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:start;text-align:left;border:1px solid #dfe3e8;border-radius:10px;padding:16px;background:#fff;cursor:pointer;transition:border-color .15s,background .15s}
+.welcome-opt:hover:not(.disabled){border-color:var(--accent);background:#fffaf5}
+.welcome-opt strong{font-size:15px;grid-column:2}.welcome-opt span{font-size:12px;color:#667085;grid-column:2;line-height:1.45}
+.welcome-opt.featured{border-color:var(--accent);background:#fff7ed}
+.welcome-opt.primary{border-color:var(--accent);background:#fff7ed}
 .welcome-opt.disabled{opacity:.55;cursor:not-allowed}
-.auto-wrap{padding:20px;max-width:900px;margin:0 auto}
+.welcome-foot{margin-top:20px;padding-top:16px;border-top:1px solid #dfe3e8;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#667085}
+.welcome-foot strong{color:#111827;font-size:13px}
+.icon-rail{background:#0d1117;color:#98a2b3;display:flex;flex-direction:column;align-items:stretch;padding:8px 0;gap:4px;z-index:6}
+.icon-rail .rail-btn{position:relative;border:0;background:transparent;color:inherit;padding:10px 6px;cursor:pointer;display:grid;justify-items:center;gap:4px;font-size:10px}
+.icon-rail .rail-btn:hover:not(:disabled){color:#fff;background:#1a2230}
+.icon-rail .rail-btn.active{color:#fff;background:#243044;box-shadow:inset 3px 0 0 var(--accent)}
+.icon-rail .rail-btn.soon{opacity:.45;cursor:not-allowed}
+.icon-rail .rail-icon{font-size:18px;line-height:1}
+.icon-rail .rail-label{font-size:9px;font-weight:600;letter-spacing:.02em}
+.icon-rail .rail-badge{position:absolute;top:6px;right:8px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center}
+.sidebar-panel{background:#fff;border-right:1px solid var(--line);width:260px;display:flex;flex-direction:column;overflow:auto}
+.sidebar-hint{margin:0 14px 10px;font-size:11px;color:#667085;line-height:1.45}
+.sidebar-upload-btn{margin:0 14px 12px;display:block;text-align:center;background:var(--accent);color:#fff;border-radius:8px;padding:10px 12px;font-weight:700;font-size:12px;cursor:pointer}
+.refresh-btn{border:1px solid #ccd2da;background:#fff;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:14px}
+.pool-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:0 14px 14px}
+.pool-item{border:1px solid #dfe3e8;border-radius:8px;padding:8px;background:#fff;cursor:pointer;text-align:left;display:grid;gap:6px}
+.pool-item:hover{border-color:var(--accent);background:#fff7ed}
+.pool-item img{width:100%;aspect-ratio:1;object-fit:contain;background:#f3f4f6;border-radius:6px}
+.pool-item span{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344054}
+.pool-item .on-sheet{font-size:9px;font-style:normal;color:var(--accent-dark);font-weight:600}
+.on-sheet-list{border-top:1px solid var(--line);padding:12px 14px;margin-top:auto}
+.on-sheet-list h3{margin:0 0 8px;font-size:12px;color:#475467}
+.sidebar-empty{margin:0;font-size:11px;color:#667085}
+.sidebar-soon{padding:24px 16px;color:#667085;font-size:13px}
+.sidebar-soon strong{display:block;color:#344054;margin-bottom:6px}
+.drop.compact{margin:0 14px 12px;min-height:120px}
+.toast{margin:0;padding:8px 16px;font-size:12px}
+.toast.message{background:#eef7f2;color:#17683e}
+.toast.error{background:#fff0ee;color:#b42318}
+.assets.compact{padding:0}
+.assets.compact>button{margin-bottom:4px}
+@media(max-width:900px){.welcome-grid.two-col{grid-template-columns:1fr}.sidebar-panel{width:220px}}
+.upload-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.upload-tabs .tab{border:1px solid #ccd2da;background:#fff;border-radius:999px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer}
+.upload-tabs .tab.active{background:#fff7ed;border-color:var(--accent);color:var(--accent-dark)}
+.upload-tabs .tab.disabled{opacity:.5;cursor:not-allowed}
+.auto-upload-panel.readonly{opacity:.92}
+.auto-upload-panel.readonly .auto-row{cursor:default}
 .auto-split{display:grid;grid-template-columns:minmax(340px,1fr) minmax(420px,1.2fr);gap:0;min-height:calc(100vh - 68px)}
 .auto-upload-panel{background:#fff;border-right:1px solid #dfe3e8;padding:16px;overflow:auto;max-height:calc(100vh - 68px)}
 .auto-preview-panel{background:#eef1f5;padding:16px;display:grid;grid-template-rows:auto 1fr auto;gap:12px;max-height:calc(100vh - 68px);overflow:auto}
@@ -1294,21 +1637,21 @@ const CSS = `
 .auto-sheet-settings select,.auto-sheet-settings input{padding:7px;border:1px solid #ccd2da;border-radius:6px}
 .auto-list.compact{display:grid;gap:8px}
 .auto-row{display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:start;background:#fff;border:1px solid #dfe3e8;border-radius:10px;padding:10px;cursor:pointer}
-.auto-row.active{border-color:#7aa2f8;background:#edf3ff;box-shadow:0 0 0 1px #7aa2f8}
+.auto-row.active{border-color:var(--accent);background:#fff7ed;box-shadow:0 0 0 1px var(--accent)}
 .auto-row img{width:64px;height:64px;object-fit:contain;background:#eee;border-radius:6px}
 .auto-fields strong{display:block;font-size:12px;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.preset-row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
-.preset-chip{border:1px solid #ccd2da;background:#f8fafc;border-radius:999px;padding:3px 8px;font-size:10px;cursor:pointer}
-.preset-chip:hover{background:#edf3ff;border-color:#7aa2f8}
-.auto-dims{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.auto-dims label{font-size:10px;color:#667085;display:grid;gap:3px}
-.auto-dims input{padding:6px;border:1px solid #ccd2da;border-radius:5px;width:100%}
+.preset-row{margin-bottom:8px}
+.auto-dims{display:grid;grid-template-columns:1fr;gap:6px}
+.lock-aspect{display:flex;align-items:center;gap:8px;font-size:11px;color:#667085;margin:6px 0}
+.auto-actions{display:grid;gap:6px;align-content:start}
+.auto-actions .dup{border:1px solid #ccd2da;background:#fff;border-radius:6px;padding:6px 8px;font-size:10px;cursor:pointer}
+.auto-actions .remove{border:0;background:#fee2e2;color:#991b1b;width:32px;height:32px;border-radius:6px;cursor:pointer}
 .auto-fields small{font-size:10px;color:#667085}
 .nest-preview-wrap{min-height:280px;display:grid;place-items:center;background:#d8dde4;border-radius:10px;padding:20px;border:1px solid #cfd5dc}
 .nest-preview-sheet{position:relative;width:100%;max-width:520px;background:#fff;background-image:linear-gradient(#f0f2f4 1px,transparent 1px),linear-gradient(90deg,#f0f2f4 1px,transparent 1px);background-size:16px 16px;box-shadow:0 6px 20px #34405430}
 .nest-preview-sheet>i{position:absolute;inset:4px;border:1px dashed #e54d4d;pointer-events:none}
 .nest-piece{position:absolute;overflow:hidden;border:1px solid #94a3b8;background:#fff}
-.nest-piece.highlight{outline:2px solid var(--blue);z-index:2}
+.nest-piece.highlight{outline:2px solid var(--accent);z-index:2}
 .nest-piece img{width:100%;height:100%;object-fit:fill;display:block;pointer-events:none}
 .nest-preview-empty{text-align:center;color:#667085;padding:24px;max-width:280px}
 .nest-preview-empty strong{display:block;color:#475467;margin-bottom:6px}
@@ -1327,18 +1670,17 @@ const CSS = `
 .auto-fields input{padding:8px;border:1px solid #ccd2da;border-radius:6px}
 .auto-row .remove{border:0;background:#fee2e2;color:#991b1b;padding:8px 10px;border-radius:6px;cursor:pointer}
 .drop.large{min-height:240px}
-.workspace{display:grid;grid-template-columns:248px minmax(480px,1fr) 280px;height:calc(100vh - 68px)}
+.workspace{display:grid;grid-template-columns:72px 260px minmax(420px,1fr) 280px;height:calc(100vh - 68px)}
 aside{background:#fff;overflow:auto}
-.library{border-right:1px solid var(--line)}
 .properties{border-left:1px solid var(--line)}
 .heading{height:68px;padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
 .heading strong,.heading small{display:block}.heading small{font-size:11px;color:#667085;margin-top:3px}
-.heading .mini-upload{width:32px;height:32px;display:grid;place-items:center;background:#edf3ff;color:var(--blue);border-radius:6px;font-size:20px;cursor:pointer}
+.heading .mini-upload{width:32px;height:32px;display:grid;place-items:center;background:#fff7ed;color:var(--accent);border-radius:6px;font-size:20px;cursor:pointer}
 .drop{margin:16px;min-height:170px;border:1.5px dashed #b5bfcc;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;text-align:center;color:#667085;cursor:pointer}
-.drop>b{font-size:30px;color:var(--blue)}.drop small{font-size:11px}
+.drop>b{font-size:30px;color:var(--accent)}.drop small{font-size:11px}
 .assets{padding:10px}
 .assets>button{width:100%;border:1px solid transparent;background:#fff;border-radius:8px;padding:8px;display:grid;grid-template-columns:48px 1fr 22px;gap:9px;align-items:center;text-align:left;margin-bottom:5px;cursor:pointer}
-.assets>button.active{border-color:#7aa2f8;background:#edf3ff}
+.assets>button.active{border-color:var(--accent);background:#fff7ed}
 .assets img{width:48px;height:48px;object-fit:contain;background:#eee}
 .assets span{min-width:0}.assets strong,.assets small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
 .assets small{color:#667085;margin-top:4px}
@@ -1355,8 +1697,8 @@ aside{background:#fff;overflow:auto}
 .sheet{position:relative;margin:auto;background-color:#fff;background-image:linear-gradient(#f0f2f4 1px,transparent 1px),linear-gradient(90deg,#f0f2f4 1px,transparent 1px);background-size:20px 20px;box-shadow:0 8px 26px #34405438;min-height:300px;touch-action:none}
 .sheet>i{position:absolute;inset:5px;border:1px dashed #e54d4d;pointer-events:none}
 .piece{position:absolute;cursor:move;touch-action:none;user-select:none}
-.piece.selected{outline:2px solid var(--blue);outline-offset:2px}
-.piece.selected:after{content:'';position:absolute;width:10px;height:10px;border:2px solid #fff;background:var(--blue);right:-7px;bottom:-7px;border-radius:50%}
+.piece.selected{outline:2px solid var(--accent);outline-offset:2px}
+.piece.selected:after{content:'';position:absolute;width:10px;height:10px;border:2px solid #fff;background:var(--accent);right:-7px;bottom:-7px;border-radius:50%}
 .piece img{width:100%;height:100%;object-fit:fill;display:block;pointer-events:none}
 .piece em{display:none;position:absolute;left:50%;bottom:-23px;transform:translateX(-50%);background:#111827;color:#fff;padding:3px 6px;border-radius:4px;font-size:9px;white-space:nowrap;font-style:normal}
 .piece.selected em{display:block}
@@ -1382,5 +1724,5 @@ aside{background:#fff;overflow:auto}
 .summary .total strong{font-size:18px;color:#127a4b}
 .message,.error{margin:12px 14px;padding:10px;border-radius:6px;font-size:11px}
 .message{background:#eef7f2;color:#17683e}.error{background:#fff0ee;color:#b42318}
-@media(max-width:900px){.workspace{grid-template-columns:190px minmax(420px,1fr)}.properties{position:fixed;right:0;top:68px;bottom:0;width:270px;z-index:4;box-shadow:-8px 0 24px #34405420}}
+@media(max-width:900px){.workspace{grid-template-columns:72px 200px minmax(320px,1fr)}.properties{position:fixed;right:0;top:68px;bottom:0;width:270px;z-index:4;box-shadow:-8px 0 24px #34405420}}
 `;
