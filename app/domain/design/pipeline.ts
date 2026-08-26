@@ -6,6 +6,7 @@ import {
   type DesignStateV1,
 } from "../design/types";
 import { nestRectangles } from "../nesting";
+import type { NestResult } from "../nesting";
 import { buildPricingSnapshot, resolvePhysicalSize, type SizeInput } from "../pricing";
 import {
   assertNotUsingOutputAsSource,
@@ -49,9 +50,7 @@ export async function nestAndRenderDesign(params: {
       : {}),
   };
 
-  const nest = nestRectangles(params.state.items, sheet, {
-    allowRotate90: params.state.allowRotate90 === true,
-  });
+  const nest = buildNest(params.state, sheet);
 
   const assets = new Map<string, { assetId: string; bytes: Buffer }>();
 
@@ -89,6 +88,43 @@ export async function nestAndRenderDesign(params: {
   };
 }
 
+export function buildNest(
+  state: DesignStateV1,
+  sheet: DesignStateV1["sheet"],
+): NestResult {
+  if (
+    state.layout !== "manual" ||
+    state.items.some((item) => item.xIn == null || item.yIn == null)
+  ) {
+    return nestRectangles(state.items, sheet, {
+      allowRotate90: state.allowRotate90 === true,
+    });
+  }
+
+  const placements = state.items.map((item) => ({
+    assetId: item.assetId,
+    xIn: item.xIn!,
+    yIn: item.yIn!,
+    widthIn: item.widthIn,
+    heightIn: item.heightIn,
+    rotationDeg: item.rotationDeg,
+  }));
+  for (const p of placements) {
+    if (
+      p.xIn < 0 || p.yIn < 0 ||
+      p.xIn + p.widthIn > sheet.widthIn + 1e-6 ||
+      p.yIn + p.heightIn > sheet.maxHeightIn + 1e-6
+    ) throw new Error(`Item ${p.assetId} is outside the sheet`);
+  }
+  const usedArea = placements.reduce((sum, p) => sum + p.widthIn * p.heightIn, 0);
+  return {
+    sheetWidthIn: sheet.widthIn,
+    sheetHeightIn: sheet.maxHeightIn,
+    placements,
+    utilization: usedArea / (sheet.widthIn * sheet.maxHeightIn),
+  };
+}
+
 export function buildUploadBySizeState(params: {
   assetId: string;
   sourceWidthPx: number;
@@ -97,31 +133,61 @@ export function buildUploadBySizeState(params: {
   pricePerSqIn?: number;
   sheet?: DesignStateV1["sheet"];
 }): DesignStateV1 {
-  const resolved = resolvePhysicalSize(
-    params.size,
-    params.sourceWidthPx,
-    params.sourceHeightPx,
-  );
-  const items = [
+  return buildUploadBySizeStateFromLines(
+    [
+      {
+        assetId: params.assetId,
+        sourceWidthPx: params.sourceWidthPx,
+        sourceHeightPx: params.sourceHeightPx,
+        size: params.size,
+      },
+    ],
     {
-      assetId: params.assetId,
+      pricePerSqIn: params.pricePerSqIn,
+      sheet: params.sheet,
+    },
+  );
+}
+
+export function buildUploadBySizeStateFromLines(
+  lines: Array<{
+    assetId: string;
+    sourceWidthPx: number;
+    sourceHeightPx: number;
+    size: SizeInput;
+  }>,
+  options?: {
+    pricePerSqIn?: number;
+    sheet?: DesignStateV1["sheet"];
+  },
+): DesignStateV1 {
+  if (!lines.length) throw new Error("At least one upload is required");
+  const items = lines.map((line) => {
+    const resolved = resolvePhysicalSize(
+      line.size,
+      line.sourceWidthPx,
+      line.sourceHeightPx,
+    );
+    return {
+      assetId: line.assetId,
       widthIn: resolved.widthIn,
       heightIn: resolved.heightIn,
       quantity: resolved.quantity,
       rotationDeg: 0 as const,
-    },
-  ];
+    };
+  });
   const pricing = buildPricingSnapshot(
     items,
-    params.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
+    options?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
   );
   return {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
     workflow: "upload_by_size",
-    sheet: params.sheet ?? DEFAULT_UPLOAD_BY_SIZE_SHEET,
+    sheet: options?.sheet ?? DEFAULT_UPLOAD_BY_SIZE_SHEET,
     items,
     pricing,
     allowRotate90: true,
+    layout: "auto",
   };
 }
 

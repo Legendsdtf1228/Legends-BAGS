@@ -1,20 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import { createAssetFromUpload } from "../services/design-service";
-
-/**
- * Dev/test upload endpoint. Production will use authenticated app proxy / theme session.
- * Requires headers: X-LGS-Shop, X-LGS-Test-Token matching env TEST_API_TOKEN.
- */
-function assertTestAccess(request: Request) {
-  const shop = request.headers.get("X-LGS-Shop");
-  const token = request.headers.get("X-LGS-Test-Token");
-  const expected = process.env.TEST_API_TOKEN;
-  if (!expected || token !== expected) {
-    throw new Response("Unauthorized", { status: 401 });
-  }
-  if (!shop) throw new Response("Missing shop", { status: 400 });
-  return shop;
-}
+import { assertTestAccess } from "../domain/security/test-access";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {

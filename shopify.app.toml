@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "28b4847d8a04edab61a2e99402091c2b"
-name = "Legends Gang Sheet"
+client_id = "09fe27e7030a957490451dbf826afc47"
+name = "Legends BAGS Dev"
 application_url = "https://example.com"
 embedded = true
 

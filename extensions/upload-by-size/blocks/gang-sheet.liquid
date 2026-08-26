@@ -1,38 +1,38 @@
 {% comment %}
-  Legends Gang Sheet — Upload by Size launcher.
+  Legends Gang Sheet — full canvas builder launcher.
 {% endcomment %}
 
 <div
-  id="lgs-upload-by-size"
-  class="lgs-ubs"
+  id="lgs-gang-sheet"
+  class="lgs-gs"
   data-product-id="{{ product.id }}"
   data-product-gid="gid://shopify/Product/{{ product.id }}"
   data-variant-id="{{ product.selected_or_first_available_variant.id }}"
   data-shop="{{ shop.permanent_domain }}"
-  data-builder-type="upload_by_size"
+  data-builder-type="gang_sheet"
   data-editor-base="{{ block.settings.editor_base_url }}"
 >
-  <button type="button" class="lgs-ubs__launch" data-lgs-open>
+  <button type="button" class="lgs-gs__launch" data-lgs-open>
     {{ block.settings.button_label }}
   </button>
-  <p class="lgs-ubs__hint">{{ block.settings.hint_text }}</p>
-  <p class="lgs-ubs__status" data-lgs-status hidden></p>
-  <div class="lgs-ubs__frame-wrap" hidden data-lgs-frame-wrap>
+  <p class="lgs-gs__hint">{{ block.settings.hint_text }}</p>
+  <p class="lgs-gs__status" data-lgs-status hidden></p>
+  <div class="lgs-gs__frame-wrap" hidden data-lgs-frame-wrap>
     <iframe
-      title="Upload by Size"
-      class="lgs-ubs__frame"
+      title="Gang Sheet Builder"
+      class="lgs-gs__frame"
       data-lgs-frame
       allow="clipboard-read; clipboard-write"
     ></iframe>
-    <button type="button" class="lgs-ubs__close" data-lgs-close>Close</button>
+    <button type="button" class="lgs-gs__close" data-lgs-close>Close</button>
   </div>
 </div>
 
 {% schema %}
 {
-  "name": "LGS Upload by Size",
+  "name": "LGS Gang Sheet Builder",
   "target": "section",
-  "stylesheet": "upload-by-size.css",
+  "stylesheet": "gang-sheet.css",
   "javascript": "lgs-launcher.js",
   "enabled_on": {
     "templates": ["product"]
@@ -42,13 +42,13 @@
       "type": "text",
       "id": "button_label",
       "label": "Button label",
-      "default": "Upload artwork by size"
+      "default": "Build your gang sheet"
     },
     {
       "type": "text",
       "id": "hint_text",
       "label": "Hint",
-      "default": "Transparent PNG recommended. Price is calculated from printed area."
+      "default": "Upload artwork, arrange on the sheet, then save to add to cart."
     },
     {
       "type": "text",

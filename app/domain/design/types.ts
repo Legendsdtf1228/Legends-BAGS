@@ -5,7 +5,7 @@ export const OUTPUT_DPI = 300 as const;
 export const CART_DESIGN_ID_PROPERTY = "_lgs_design_id" as const;
 export const CART_DESIGN_VERSION_PROPERTY = "_lgs_design_version" as const;
 
-export type Workflow = "upload_by_size";
+export type Workflow = "upload_by_size" | "gang_sheet";
 
 export type SheetConfig = {
   widthIn: number;
@@ -21,6 +21,9 @@ export type DesignItem = {
   quantity: number;
   /** Preferred rotation hint; nesting may override when allowRotate90 is true */
   rotationDeg: 0 | 90;
+  /** Explicit placement used by the visual gang-sheet builder. */
+  xIn?: number;
+  yIn?: number;
 };
 
 export type PricingSnapshot = {
@@ -38,6 +41,8 @@ export type DesignStateV1 = {
   pricing: PricingSnapshot;
   /** When true, nesting may rotate items by 90° to improve pack */
   allowRotate90?: boolean;
+  /** Preserve customer-authored canvas positions instead of auto nesting. */
+  layout?: "auto" | "manual";
 };
 
 export const DEFAULT_UPLOAD_BY_SIZE_SHEET: SheetConfig = {
@@ -79,7 +84,10 @@ export function assertDesignStateV1(state: unknown): DesignStateV1 {
     throw new Error("Invalid design state");
   }
   const s = state as DesignStateV1;
-  if (s.schemaVersion !== 1 || s.workflow !== "upload_by_size") {
+  if (
+    s.schemaVersion !== 1 ||
+    (s.workflow !== "upload_by_size" && s.workflow !== "gang_sheet")
+  ) {
     throw new Error("Unsupported design state version");
   }
   if (!Array.isArray(s.items) || s.items.length === 0) {

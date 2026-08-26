@@ -1,17 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { getDesignState } from "../services/design-service";
 import prisma from "../db.server";
-
-function assertTestAccess(request: Request) {
-  const shop = request.headers.get("X-LGS-Shop");
-  const token = request.headers.get("X-LGS-Test-Token");
-  const expected = process.env.TEST_API_TOKEN;
-  if (!expected || token !== expected) {
-    throw new Response("Unauthorized", { status: 401 });
-  }
-  if (!shop) throw new Response("Missing shop", { status: 400 });
-  return shop;
-}
+import { assertTestAccess } from "../domain/security/test-access";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const shop = assertTestAccess(request);

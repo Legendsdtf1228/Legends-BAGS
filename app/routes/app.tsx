@@ -7,7 +7,11 @@ import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  const apiKey = process.env.SHOPIFY_API_KEY || "";
+  return {
+    apiKey,
+    appUrl: process.env.SHOPIFY_APP_URL || "",
+  };
 };
 
 export default function App() {
@@ -16,9 +20,11 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <NavMenu>
-        <Link to="/app" rel="home">Home</Link>
+        <Link to="/app" rel="home">
+          Gang sheets
+        </Link>
+        <Link to="/app/setup">Setup</Link>
       </NavMenu>
-
       <Outlet />
     </AppProvider>
   );

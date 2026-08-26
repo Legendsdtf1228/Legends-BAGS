@@ -3,7 +3,8 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, useLoaderData } from "react-router";
+import { Form, Link, useLoaderData } from "react-router";
+import type { CSSProperties } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -63,60 +64,102 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const shop = session.shop;
   const designId = params.designId!;
   const form = await request.formData();
-  const intent = String(form.get("intent") || "");
-
-  if (intent === "retry") {
+  if (String(form.get("intent") || "") === "retry") {
     await enqueueRenderJob({ shop, designId });
     await processNextRenderJob();
   }
-
   return null;
 };
 
 export default function DesignDetail() {
   const data = useLoaderData<typeof loader>();
   return (
-    <s-page heading="Design">
-      <s-section heading={data.design.id}>
-        <s-paragraph>
-          Status: {data.design.status} · Version: {data.design.version}
-        </s-paragraph>
-        <s-paragraph>
-          Area: {data.state.pricing.areaSqIn} in² · Price: $
-          {(data.state.pricing.totalCents / 100).toFixed(2)}
-        </s-paragraph>
+    <div style={page}>
+      <p>
+        <Link to="/app">← Gang sheets</Link>
+      </p>
+      <h1 style={{ marginTop: 0 }}>Design {data.design.id}</h1>
+      <p>
+        Status: <strong>{data.design.status}</strong> · Version{" "}
+        {data.design.version}
+      </p>
+      <p>
+        Area: {data.state.pricing.areaSqIn} in² · Price: $
+        {(data.state.pricing.totalCents / 100).toFixed(2)}
+      </p>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
         {data.previewPath ? (
-          <s-paragraph>
-            <a href={data.previewPath}>Preview (signed)</a>
-          </s-paragraph>
+          <a href={data.previewPath} style={btnSecondary}>
+            Preview (signed)
+          </a>
         ) : null}
         {data.downloadPath ? (
-          <s-paragraph>
-            <a href={data.downloadPath}>Download print PNG (signed)</a>
-          </s-paragraph>
+          <a href={data.downloadPath} style={btnSecondary}>
+            Download print PNG (signed)
+          </a>
         ) : null}
         <Form method="post">
           <input type="hidden" name="intent" value="retry" />
-          <s-button type="submit">Retry / regenerate</s-button>
+          <button type="submit" style={btn}>
+            Retry / regenerate
+          </button>
         </Form>
-      </s-section>
-      <s-section heading="Jobs">
-        <s-unordered-list>
-          {data.jobs.map((j) => (
-            <s-list-item key={j.id}>
-              {j.id} — {j.status} (attempt {j.attempt})
-              {j.widthPx ? ` · ${j.widthPx}×${j.heightPx}px` : ""}
-              {j.sheetWidthIn
-                ? ` · ${j.sheetWidthIn}×${j.sheetHeightIn} in`
-                : ""}
-              {j.lastError ? ` · ${j.lastError}` : ""}
-            </s-list-item>
-          ))}
-        </s-unordered-list>
-      </s-section>
-    </s-page>
+      </div>
+
+      {data.previewPath ? (
+        <img
+          src={data.previewPath}
+          alt="Sheet preview"
+          style={{
+            maxWidth: "100%",
+            border: "1px solid #d9d1c3",
+            background:
+              "linear-gradient(45deg,#eee 25%,transparent 25%),linear-gradient(-45deg,#eee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee 75%),linear-gradient(-45deg,transparent 75%,#eee 75%)",
+            backgroundSize: "20px 20px",
+            backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
+          }}
+        />
+      ) : null}
+
+      <h2>Jobs</h2>
+      <ul>
+        {data.jobs.map((j) => (
+          <li key={j.id}>
+            {j.id} — {j.status} (attempt {j.attempt})
+            {j.widthPx ? ` · ${j.widthPx}×${j.heightPx}px` : ""}
+            {j.sheetWidthIn
+              ? ` · ${j.sheetWidthIn}×${j.sheetHeightIn} in`
+              : ""}
+            {j.lastError ? ` · ${j.lastError}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
+
+const page: CSSProperties = {
+  padding: 24,
+  maxWidth: 900,
+  margin: "0 auto",
+  fontFamily: "system-ui, Segoe UI, sans-serif",
+};
+const btn: CSSProperties = {
+  background: "#0f5c4c",
+  color: "#f4fffb",
+  border: 0,
+  padding: "10px 14px",
+  cursor: "pointer",
+  borderRadius: 6,
+  font: "inherit",
+};
+const btnSecondary: CSSProperties = {
+  ...btn,
+  background: "#1c1915",
+  textDecoration: "none",
+  display: "inline-block",
+};
 
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);

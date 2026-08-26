@@ -1,8 +1,14 @@
 import prisma from "../db.server";
-import { buildUploadBySizeState, nestAndRenderDesign } from "../domain/design/pipeline";
+import {
+  buildUploadBySizeState,
+  buildUploadBySizeStateFromLines,
+  nestAndRenderDesign,
+} from "../domain/design/pipeline";
 import type { DesignStateV1 } from "../domain/design/types";
+import { DEFAULT_PRICE_PER_SQ_IN, DESIGN_STATE_SCHEMA_VERSION } from "../domain/design/types";
+import { buildPricingSnapshot } from "../domain/pricing";
 import { validateUpload } from "../domain/design/upload";
-import { canEnqueue, shouldRequeueStuckProcessing } from "../domain/jobs";
+import { canEnqueue, shouldRequeueStuckProcessing, type JobStatus } from "../domain/jobs";
 import type { SizeInput } from "../domain/pricing";
 import { assetKey, getObjectStore } from "../domain/storage";
 
@@ -97,6 +103,214 @@ export async function createUploadBySizeDesign(params: {
   return { design, state };
 }
 
+export async function createMultiUploadBySizeDesign(params: {
+  shop: string;
+  uploads: Array<{ assetId: string; size: SizeInput }>;
+  productGid?: string;
+  variantGid?: string;
+}) {
+  if (!params.uploads.length) throw new Error("Add at least one artwork upload");
+
+  const assetIds = [...new Set(params.uploads.map((u) => u.assetId))];
+  const assets = await prisma.asset.findMany({
+    where: { shop: params.shop, id: { in: assetIds } },
+  });
+  if (assets.length !== assetIds.length) throw new Error("One or more assets were not found");
+  const assetById = new Map(assets.map((a) => [a.id, a]));
+
+  const config = await prisma.shopConfig.findUnique({
+    where: { shop: params.shop },
+  });
+
+  const state = buildUploadBySizeStateFromLines(
+    params.uploads.map((upload) => {
+      const asset = assetById.get(upload.assetId)!;
+      return {
+        assetId: asset.id,
+        sourceWidthPx: asset.widthPx,
+        sourceHeightPx: asset.heightPx,
+        size: upload.size,
+      };
+    }),
+    {
+      pricePerSqIn: config?.pricePerSqIn,
+      sheet: config
+        ? {
+            widthIn: config.sheetWidthIn,
+            maxHeightIn: config.maxHeightIn,
+            imageMarginIn: config.imageMarginIn,
+            artboardMarginIn: config.artboardMarginIn,
+          }
+        : undefined,
+    },
+  );
+
+  const design = await prisma.design.create({
+    data: {
+      shop: params.shop,
+      status: "draft",
+      productGid: params.productGid,
+      variantGid: params.variantGid,
+      currentVersion: 1,
+      versions: {
+        create: {
+          version: 1,
+          stateJson: JSON.stringify(state),
+          priceCents: state.pricing.totalCents,
+          areaSqIn: state.pricing.areaSqIn,
+        },
+      },
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      shop: params.shop,
+      action: "design.created",
+      actorType: "customer",
+      entityType: "design",
+      entityId: design.id,
+      metaJson: JSON.stringify({
+        workflow: state.workflow,
+        itemCount: state.items.length,
+        priceCents: state.pricing.totalCents,
+      }),
+    },
+  });
+
+  return { design, state };
+}
+
+export async function quoteUploadBySize(params: {
+  shop: string;
+  uploads: Array<{ assetId: string; size: SizeInput }>;
+}) {
+  if (!params.uploads.length) throw new Error("At least one upload is required");
+
+  const assetIds = [...new Set(params.uploads.map((u) => u.assetId))];
+  const assets = await prisma.asset.findMany({
+    where: { shop: params.shop, id: { in: assetIds } },
+  });
+  if (assets.length !== assetIds.length) throw new Error("One or more assets were not found");
+  const assetById = new Map(assets.map((a) => [a.id, a]));
+
+  const config = await prisma.shopConfig.findUnique({
+    where: { shop: params.shop },
+  });
+
+  const state = buildUploadBySizeStateFromLines(
+    params.uploads.map((upload) => {
+      const asset = assetById.get(upload.assetId)!;
+      return {
+        assetId: asset.id,
+        sourceWidthPx: asset.widthPx,
+        sourceHeightPx: asset.heightPx,
+        size: upload.size,
+      };
+    }),
+    { pricePerSqIn: config?.pricePerSqIn },
+  );
+
+  const lines = state.items.map((item) => {
+    const asset = assetById.get(item.assetId)!;
+    const effectiveDpi = Math.min(
+      asset.widthPx / item.widthIn,
+      asset.heightPx / item.heightIn,
+    );
+    return {
+      assetId: item.assetId,
+      widthIn: item.widthIn,
+      heightIn: item.heightIn,
+      quantity: item.quantity,
+      areaSqIn: item.widthIn * item.heightIn * item.quantity,
+      effectiveDpi: Math.round(effectiveDpi),
+      lowDpi: effectiveDpi < 200,
+    };
+  });
+
+  return { pricing: state.pricing, lines };
+}
+
+export async function upsertProductBinding(params: {
+  shop: string;
+  productGid: string;
+  variantGid?: string;
+  builderType: "upload_by_size" | "gang_sheet";
+  pricePerSqIn?: number;
+  sheetWidthIn?: number;
+  maxHeightIn?: number;
+}) {
+  return prisma.productBinding.upsert({
+    where: {
+      shop_productGid: { shop: params.shop, productGid: params.productGid },
+    },
+    create: {
+      shop: params.shop,
+      productGid: params.productGid,
+      variantGid: params.variantGid,
+      builderType: params.builderType,
+      pricePerSqIn: params.pricePerSqIn,
+      sheetWidthIn: params.sheetWidthIn,
+      maxHeightIn: params.maxHeightIn,
+    },
+    update: {
+      variantGid: params.variantGid,
+      builderType: params.builderType,
+      pricePerSqIn: params.pricePerSqIn,
+      sheetWidthIn: params.sheetWidthIn,
+      maxHeightIn: params.maxHeightIn,
+    },
+  });
+}
+
+export async function createGangSheetDesign(params: {
+  shop: string;
+  items: DesignStateV1["items"];
+  sheet: DesignStateV1["sheet"];
+  productGid?: string;
+  variantGid?: string;
+}) {
+  if (!params.items.length) throw new Error("Add at least one artwork item");
+  const assetIds = [...new Set(params.items.map((item) => item.assetId))];
+  const ownedAssets = await prisma.asset.count({
+    where: { shop: params.shop, id: { in: assetIds } },
+  });
+  if (ownedAssets !== assetIds.length) throw new Error("One or more assets were not found");
+
+  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
+  const normalizedItems = params.items.map((item) => ({
+    ...item,
+    quantity: Math.max(1, Math.floor(item.quantity || 1)),
+    widthIn: Math.round(item.widthIn * 1000) / 1000,
+    heightIn: Math.round(item.heightIn * 1000) / 1000,
+    xIn: Math.round((item.xIn ?? 0) * 1000) / 1000,
+    yIn: Math.round((item.yIn ?? 0) * 1000) / 1000,
+  }));
+  const state: DesignStateV1 = {
+    schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
+    workflow: "gang_sheet",
+    sheet: params.sheet,
+    items: normalizedItems,
+    pricing: buildPricingSnapshot(normalizedItems, config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN),
+    allowRotate90: false,
+    layout: "manual",
+  };
+  const design = await prisma.design.create({
+    data: {
+      shop: params.shop,
+      status: "draft",
+      productGid: params.productGid,
+      variantGid: params.variantGid,
+      currentVersion: 1,
+      versions: { create: { version: 1, stateJson: JSON.stringify(state), priceCents: state.pricing.totalCents, areaSqIn: state.pricing.areaSqIn } },
+    },
+  });
+  await prisma.auditEvent.create({
+    data: { shop: params.shop, action: "design.created", actorType: "customer", entityType: "design", entityId: design.id, metaJson: JSON.stringify({ workflow: "gang_sheet", itemCount: state.items.length }) },
+  });
+  return { design, state };
+}
+
 export async function getDesignState(
   shop: string,
   designId: string,
@@ -130,7 +344,7 @@ export async function enqueueRenderJob(params: {
       status: { in: ["queued", "processing"] },
     },
   });
-  if (!canEnqueue(existing)) {
+  if (!canEnqueue(existing.map((j) => ({ status: j.status as JobStatus })))) {
     return existing[0];
   }
 
