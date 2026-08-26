@@ -1,0 +1,179 @@
+// Prisma schema — Legends Gang Sheet Phase 1
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id                    String    @id
+  shop                  String
+  state                 String
+  isOnline              Boolean   @default(false)
+  scope                 String?
+  expires               DateTime?
+  accessToken           String
+  userId                BigInt?
+  firstName             String?
+  lastName              String?
+  email                 String?
+  accountOwner          Boolean   @default(false)
+  locale                String?
+  collaborator          Boolean?  @default(false)
+  emailVerified         Boolean?  @default(false)
+  refreshToken          String?
+  refreshTokenExpires   DateTime?
+}
+
+model ShopConfig {
+  id              String   @id @default(cuid())
+  shop            String   @unique
+  pricePerSqIn    Float    @default(0.049)
+  sheetWidthIn    Float    @default(22.5)
+  maxHeightIn     Float    @default(360)
+  imageMarginIn   Float    @default(0.15)
+  artboardMarginIn Float   @default(0.1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ProductBinding {
+  id               String   @id @default(cuid())
+  shop             String
+  productGid       String
+  variantGid       String?
+  builderType      String   @default("upload_by_size")
+  pricePerSqIn     Float?
+  sheetWidthIn     Float?
+  maxHeightIn      Float?
+  imageMarginIn    Float?
+  artboardMarginIn Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([shop, productGid])
+  @@index([shop])
+}
+
+model Asset {
+  id              String   @id @default(cuid())
+  shop            String
+  storageKey      String
+  contentType     String
+  byteSize        Int
+  widthPx         Int
+  heightPx        Int
+  dpi             Float?
+  checksumSha256  String
+  createdAt       DateTime @default(now())
+
+  @@index([shop])
+}
+
+model Design {
+  id              String   @id @default(cuid())
+  shop            String
+  status          String   @default("draft")
+  productGid      String?
+  variantGid      String?
+  currentVersion  Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  versions        DesignVersion[]
+  orderLinks      OrderLink[]
+  renderJobs      RenderJob[]
+
+  @@index([shop, status])
+  @@index([shop, updatedAt])
+}
+
+model DesignVersion {
+  id          String   @id @default(cuid())
+  designId    String
+  design      Design   @relation(fields: [designId], references: [id])
+  version     Int
+  stateJson   String
+  priceCents  Int
+  areaSqIn    Float
+  createdAt   DateTime @default(now())
+
+  @@unique([designId, version])
+  @@index([designId])
+}
+
+model OrderLink {
+  id             String   @id @default(cuid())
+  shop           String
+  orderId        String
+  orderGid       String?
+  lineItemId     String
+  designId       String
+  design         Design   @relation(fields: [designId], references: [id])
+  designVersion  Int
+  createdAt      DateTime @default(now())
+  renderJobs     RenderJob[]
+
+  @@unique([shop, orderId, lineItemId, designId])
+  @@index([shop, orderId])
+  @@index([designId])
+}
+
+model RenderJob {
+  id              String    @id @default(cuid())
+  shop            String
+  designId        String
+  design          Design    @relation(fields: [designId], references: [id])
+  orderLinkId     String?
+  orderLink       OrderLink? @relation(fields: [orderLinkId], references: [id])
+  status          String    @default("queued")
+  attempt         Int       @default(0)
+  lastError       String?
+  outputKey       String?
+  previewKey      String?
+  sheetWidthIn    Float?
+  sheetHeightIn   Float?
+  widthPx         Int?
+  heightPx        Int?
+  leaseExpiresAt  DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([shop, status])
+  @@index([designId, status])
+  @@index([status, updatedAt])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  shop        String
+  action      String
+  actorType   String
+  entityType  String
+  entityId    String
+  metaJson    String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([entityType, entityId])
+}
+
+model WebhookDelivery {
+  id              String   @id @default(cuid())
+  shop            String
+  topic           String
+  webhookId       String?
+  orderId         String?
+  payloadHash     String
+  idempotencyKey  String   @unique
+  status          String   @default("processed")
+  createdAt       DateTime @default(now())
+
+  @@index([shop, topic, payloadHash])
+}

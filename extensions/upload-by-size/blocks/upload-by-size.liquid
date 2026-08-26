@@ -1,0 +1,56 @@
+{% comment %}
+  Legends Gang Sheet — Upload by Size launcher.
+  Embeds the app editor; cart line gets _lgs_design_id after design creation.
+{% endcomment %}
+
+<div
+  id="lgs-upload-by-size"
+  class="lgs-ubs"
+  data-product-id="{{ product.id }}"
+  data-product-gid="gid://shopify/Product/{{ product.id }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+  data-editor-base="{{ block.settings.editor_base_url }}"
+>
+  <button type="button" class="lgs-ubs__launch" data-lgs-open>
+    {{ block.settings.button_label }}
+  </button>
+  <p class="lgs-ubs__hint">{{ block.settings.hint_text }}</p>
+  <div class="lgs-ubs__frame-wrap" hidden data-lgs-frame-wrap>
+    <iframe
+      title="Upload by Size"
+      class="lgs-ubs__frame"
+      data-lgs-frame
+      allow="clipboard-read; clipboard-write"
+    ></iframe>
+    <button type="button" class="lgs-ubs__close" data-lgs-close>Close</button>
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "LGS Upload by Size",
+  "target": "section",
+  "stylesheet": "upload-by-size.css",
+  "javascript": "upload-by-size.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "Upload artwork by size"
+    },
+    {
+      "type": "text",
+      "id": "hint_text",
+      "label": "Hint",
+      "default": "Transparent PNG recommended. Price is calculated from printed area."
+    },
+    {
+      "type": "text",
+      "id": "editor_base_url",
+      "label": "Editor base URL (dev app URL)",
+      "default": ""
+    }
+  ]
+}
+{% endschema %}
