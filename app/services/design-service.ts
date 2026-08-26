@@ -1,10 +1,10 @@
-import prisma from "../../db.server";
-import { buildUploadBySizeState, nestAndRenderDesign } from "../design/pipeline";
-import type { DesignStateV1 } from "../design/types";
-import { validateUpload } from "../design/upload";
-import { canEnqueue, shouldRequeueStuckProcessing } from "../jobs";
-import type { SizeInput } from "../pricing";
-import { assetKey, getObjectStore } from "../storage";
+import prisma from "../db.server";
+import { buildUploadBySizeState, nestAndRenderDesign } from "../domain/design/pipeline";
+import type { DesignStateV1 } from "../domain/design/types";
+import { validateUpload } from "../domain/design/upload";
+import { canEnqueue, shouldRequeueStuckProcessing } from "../domain/jobs";
+import type { SizeInput } from "../domain/pricing";
+import { assetKey, getObjectStore } from "../domain/storage";
 
 export async function createAssetFromUpload(shop: string, bytes: Buffer) {
   const validated = await validateUpload(bytes);
