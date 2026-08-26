@@ -17,11 +17,11 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial
 - [x] Upload-by-Size editor UI
 - [x] orders/paid + orders/updated webhook handlers
 - [x] Merchant dashboard list + detail/retry
-- [~] Automated tests for core domain (run `npm test`)
+- [x] Automated tests for core domain (run `npm test`)
+- [x] Tiled renderer for tall sheets (auto above ~40MP)
 - [ ] End-to-end Shopify checkout on a **dev** store
 - [ ] RIP import validation of generated PNG
 - [ ] Mobile interaction QA on real devices
-- [ ] Tiled renderer for max-length sheets (memory)
 - [ ] App proxy auth replacing TEST_API_TOKEN for storefront
 - [ ] PostgreSQL + S3 for non-local environments
 - [ ] Security review sign-off

@@ -12,6 +12,7 @@ import {
   renderPreviewPng,
   renderSheetPng,
 } from "../rendering";
+import { renderSheetPngTiled } from "../rendering/tiled";
 import { assetKey, outputKey, previewKey, type ObjectStore } from "../storage";
 
 export type PipelineAssetLoader = {
@@ -30,6 +31,9 @@ export async function nestAndRenderDesign(params: {
   store: ObjectStore;
   /** Optional override sheet width for reprocess — applied to a copy of state.sheet */
   reprocessWidthIn?: number;
+  /** Force tiled path (also auto-selected above maxPixels). */
+  forceTiled?: boolean;
+  maxPixels?: number;
 }): Promise<{
   sheetWidthIn: number;
   sheetHeightIn: number;
@@ -49,10 +53,7 @@ export async function nestAndRenderDesign(params: {
     allowRotate90: params.state.allowRotate90 === true,
   });
 
-  const assets = new Map<
-    string,
-    { assetId: string; bytes: Buffer }
-  >();
+  const assets = new Map<string, { assetId: string; bytes: Buffer }>();
 
   for (const item of params.state.items) {
     if (assets.has(item.assetId)) continue;
@@ -62,7 +63,15 @@ export async function nestAndRenderDesign(params: {
     assets.set(item.assetId, { assetId: item.assetId, bytes });
   }
 
-  const rendered = await renderSheetPng({ nest, assets });
+  const widthPx = Math.round(nest.sheetWidthIn * 300);
+  const heightPx = Math.round(nest.sheetHeightIn * 300);
+  const maxPixels = params.maxPixels ?? 40_000_000;
+  const useTiled =
+    params.forceTiled === true || widthPx * heightPx > maxPixels;
+
+  const rendered = useTiled
+    ? await renderSheetPngTiled({ nest, assets })
+    : await renderSheetPng({ nest, assets, maxPixels });
   const preview = await renderPreviewPng(rendered.png);
 
   const outKey = outputKey(params.shop, params.designId, params.jobId);
