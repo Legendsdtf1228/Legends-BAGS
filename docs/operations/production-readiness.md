@@ -18,7 +18,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial
 - [x] orders/paid + orders/updated webhook handlers
 - [x] Merchant dashboard list + detail/retry
 - [x] Automated tests for core domain (run `npm test`)
+- [x] Prisma pipeline integration test (upload→webhook→render)
 - [x] Tiled renderer for tall sheets (auto above ~40MP)
+- [x] Local SQLite migrations applied
 - [ ] End-to-end Shopify checkout on a **dev** store
 - [ ] RIP import validation of generated PNG
 - [ ] Mobile interaction QA on real devices
