@@ -16,7 +16,11 @@
     {{ block.settings.button_label }}
   </button>
   <p class="lgs-gs__hint">{{ block.settings.hint_text }}</p>
-  <p class="lgs-gs__status" data-lgs-status hidden></p>
+  <p class="lgs-gs__warn" data-lgs-design-warn role="status" tabindex="-1">
+    Design required — open the builder and save before adding this product to cart.
+  </p>
+  <p class="lgs-gs__attached" data-lgs-design-attached hidden role="status"></p>
+  <p class="lgs-gs__status" data-lgs-status hidden aria-live="polite"></p>
   <div class="lgs-gs__frame-wrap" hidden data-lgs-frame-wrap>
     <iframe
       title="Gang Sheet Builder"

@@ -16,7 +16,11 @@
     {{ block.settings.button_label }}
   </button>
   <p class="lgs-ubs__hint">{{ block.settings.hint_text }}</p>
-  <p class="lgs-ubs__status" data-lgs-status hidden></p>
+  <p class="lgs-ubs__warn" data-lgs-design-warn role="status" tabindex="-1">
+    Design required — open the editor and save before adding this product to cart.
+  </p>
+  <p class="lgs-ubs__attached" data-lgs-design-attached hidden role="status"></p>
+  <p class="lgs-ubs__status" data-lgs-status hidden aria-live="polite"></p>
   <div class="lgs-ubs__frame-wrap" hidden data-lgs-frame-wrap>
     <iframe
       title="Upload by Size"

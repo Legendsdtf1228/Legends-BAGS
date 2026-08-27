@@ -8,17 +8,49 @@
     var wrap = root.querySelector("[data-lgs-frame-wrap]");
     var frame = root.querySelector("[data-lgs-frame]");
     var status = root.querySelector("[data-lgs-status]");
+    var warn = root.querySelector("[data-lgs-design-warn]");
+    var attached = root.querySelector("[data-lgs-design-attached]");
     var base = root.getAttribute("data-editor-base") || "";
     var productGid = root.getAttribute("data-product-gid") || "";
     var variantId = root.getAttribute("data-variant-id") || "";
     var shop = root.getAttribute("data-shop") || "";
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
 
+    function hasDesign() {
+      return Boolean(root.dataset.lgsDesignId);
+    }
+
+    function syncUi() {
+      var ready = hasDesign();
+      root.classList.toggle("lgs--design-ready", ready);
+      root.classList.toggle("lgs--needs-design", !ready);
+      if (warn) warn.hidden = ready;
+      if (attached) {
+        attached.hidden = !ready;
+        if (ready) {
+          attached.textContent =
+            "Design attached ✓  ·  ready for cart  ·  v" +
+            (root.dataset.lgsDesignVersion || "1");
+        }
+      }
+      if (status) {
+        if (ready) {
+          status.hidden = false;
+          status.textContent =
+            status.textContent || "Design attached — you can add this product to cart.";
+          status.classList.add("lgs-status--ok");
+          status.classList.remove("lgs-status--warn");
+        } else {
+          status.classList.remove("lgs-status--ok");
+        }
+      }
+    }
+
     function attachDesign(designId, version, cartProperties) {
       if (!designId) return;
       root.dataset.lgsDesignId = designId;
       root.dataset.lgsDesignVersion = String(version || 1);
-      setStatus("Design saved — add to cart to continue.");
+      setStatus("Design attached — add to cart to continue.", "ok");
       document
         .querySelectorAll('form[action="/cart/add"], form[action*="/cart/add"]')
         .forEach(function (form) {
@@ -36,6 +68,7 @@
             });
           }
         });
+      syncUi();
     }
 
     function editorPath() {
@@ -53,10 +86,12 @@
       return u.toString();
     }
 
-    function setStatus(text) {
+    function setStatus(text, kind) {
       if (!status) return;
       status.hidden = !text;
       status.textContent = text || "";
+      status.classList.toggle("lgs-status--ok", kind === "ok");
+      status.classList.toggle("lgs-status--warn", kind === "warn");
     }
 
     openBtn &&
@@ -88,11 +123,36 @@
       attachDesign(designId, version, event.data.cartProperties);
     });
 
-    var params = new URLSearchParams(window.location.search);
-    attachDesign(
-      params.get("lgs_design_id"),
-      params.get("lgs_design_version") || "1",
+    // Soft gate: only intercept ATC controls that live inside this LGS block
+    // (themes that place ATC beside the launcher). Never touch shop-wide forms.
+    root.addEventListener(
+      "click",
+      function (event) {
+        if (hasDesign()) return;
+        var target = event.target;
+        if (!target || !target.closest) return;
+        var btn = target.closest(
+          'button[name="add"], button[type="submit"], [name="add"], .product-form__submit, [data-lgs-require-design]',
+        );
+        if (!btn || !root.contains(btn)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setStatus("Create and save a design before adding this product to cart.", "warn");
+        if (warn) {
+          warn.hidden = false;
+          warn.focus && warn.focus();
+        }
+      },
+      true,
     );
+
+    var params = new URLSearchParams(window.location.search);
+    var fromUrl = params.get("lgs_design_id");
+    if (fromUrl) {
+      attachDesign(fromUrl, params.get("lgs_design_version") || "1");
+    } else {
+      syncUi();
+    }
   }
 
   function upsertHidden(form, name, value) {

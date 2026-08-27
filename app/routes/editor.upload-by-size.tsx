@@ -44,6 +44,11 @@ type QuoteLine = {
   lowDpi: boolean;
 };
 
+type RemovedSnapshot = {
+  line: QueueLine;
+  index: number;
+};
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop") || process.env.DEV_SHOP || "";
@@ -91,8 +96,13 @@ export default function UploadBySizeEditor() {
   const [quoteLines, setQuoteLines] = useState<QuoteLine[]>([]);
   const [totalCents, setTotalCents] = useState<number | null>(null);
   const [totalArea, setTotalArea] = useState<number | null>(null);
+  const [pricePerSqIn, setPricePerSqIn] = useState(page.pricePerSqIn);
+  const [lastRemoved, setLastRemoved] = useState<RemovedSnapshot | null>(null);
 
   const active = queue.find((l) => l.id === activeId) ?? queue[0] ?? null;
+  const busy = uploading || saving;
+  const emptyQueue = queue.length === 0;
+  const hasLowDpi = quoteLines.some((l) => l.lowDpi);
 
   const headers = useCallback(
     (extra?: Record<string, string>) =>
@@ -134,6 +144,15 @@ export default function UploadBySizeEditor() {
     return { widthIn: w, heightIn: h };
   }
 
+  function lineCents(quote: QuoteLine | undefined) {
+    if (!quote) return null;
+    return Math.round(quote.areaSqIn * pricePerSqIn * 100);
+  }
+
+  function formatMoney(cents: number) {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
   const refreshQuote = useCallback(
     async (lines: QueueLine[]) => {
       if (!lines.length) {
@@ -155,7 +174,7 @@ export default function UploadBySizeEditor() {
           }),
         });
         const json = (await res.json()) as {
-          pricing?: { totalCents: number; areaSqIn: number };
+          pricing?: { totalCents: number; areaSqIn: number; pricePerSqIn?: number };
           lines?: QuoteLine[];
           error?: string;
         };
@@ -163,6 +182,9 @@ export default function UploadBySizeEditor() {
         setQuoteLines(json.lines ?? []);
         setTotalCents(json.pricing?.totalCents ?? null);
         setTotalArea(json.pricing?.areaSqIn ?? null);
+        if (json.pricing?.pricePerSqIn != null) {
+          setPricePerSqIn(json.pricing.pricePerSqIn);
+        }
       } catch {
         const area = lines.reduce((sum, line) => {
           const d = resolvedDims(line);
@@ -184,7 +206,7 @@ export default function UploadBySizeEditor() {
   async function onFiles(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!files.length) return;
+    if (!files.length || busy) return;
     setUploading(true);
     setError("");
     setSaved(false);
@@ -220,6 +242,7 @@ export default function UploadBySizeEditor() {
       }
       setQueue((q) => [...q, ...added]);
       setActiveId(added.at(-1)?.id ?? null);
+      setLastRemoved(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -236,14 +259,53 @@ export default function UploadBySizeEditor() {
   }
 
   function removeLine(id: string) {
+    const index = queue.findIndex((l) => l.id === id);
+    if (index < 0) return;
+    setLastRemoved({ line: queue[index], index });
     setSaved(false);
     setQueue((lines) => lines.filter((l) => l.id !== id));
-    if (activeId === id) setActiveId(null);
+    if (activeId === id) {
+      const next = queue.filter((l) => l.id !== id);
+      setActiveId(next[Math.min(index, next.length - 1)]?.id ?? null);
+    }
+  }
+
+  function undoRemove() {
+    if (!lastRemoved) return;
+    const { line, index } = lastRemoved;
+    setQueue((lines) => {
+      const next = [...lines];
+      next.splice(Math.min(index, next.length), 0, line);
+      return next;
+    });
+    setActiveId(line.id);
+    setLastRemoved(null);
+    setSaved(false);
+    setError("");
+  }
+
+  function duplicateLine(id: string) {
+    const index = queue.findIndex((l) => l.id === id);
+    if (index < 0) return;
+    const source = queue[index];
+    const copy: QueueLine = {
+      ...source,
+      id: crypto.randomUUID(),
+    };
+    setQueue((lines) => {
+      const next = [...lines];
+      next.splice(index + 1, 0, copy);
+      return next;
+    });
+    setActiveId(copy.id);
+    setSaved(false);
+    setError("");
   }
 
   async function save() {
+    if (busy) return;
     if (!queue.length) {
-      setError("Upload at least one design");
+      setError("Add at least one image before saving — your design queue is empty.");
       return;
     }
     setSaving(true);
@@ -306,12 +368,14 @@ export default function UploadBySizeEditor() {
     }
   }
 
-  const activeQuote = useMemo(
-    () => quoteLines.find((l) => l.assetId === active?.asset.assetId),
-    [quoteLines, active],
-  );
+  const activeQuote = useMemo(() => {
+    if (!active) return undefined;
+    const idx = queue.findIndex((l) => l.id === active.id);
+    return idx >= 0 ? quoteLines[idx] : undefined;
+  }, [quoteLines, active, queue]);
 
   const activeDims = active ? resolvedDims(active) : null;
+  const activeCents = lineCents(activeQuote);
 
   return (
     <div className="ubs lgs-editor">
@@ -325,14 +389,26 @@ export default function UploadBySizeEditor() {
           </span>
         </div>
         <div className="actions">
-          <label className="btn primary">
+          {lastRemoved ? (
+            <button type="button" className="btn ghost" onClick={undoRemove} disabled={busy}>
+              Undo remove
+            </button>
+          ) : null}
+          <label className={`btn primary${busy ? " disabled" : ""}`}>
             {uploading ? "Uploading…" : "＋ Choose images"}
-            <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={onFiles} />
+            <input
+              type="file"
+              multiple
+              accept="image/png,image/jpeg"
+              hidden
+              disabled={busy}
+              onChange={onFiles}
+            />
           </label>
           <button
             type="button"
             className="btn save"
-            disabled={saving || !queue.length}
+            disabled={busy || emptyQueue}
             onClick={save}
           >
             {saving ? "Saving…" : saved ? "Saved ✓" : "Add to cart"}
@@ -341,9 +417,23 @@ export default function UploadBySizeEditor() {
       </header>
 
       {!page.hasDevAuth ? (
-        <p className="banner err">
+        <p className="banner err" role="alert">
           Dev auth missing — set DEV_SHOP and TEST_API_TOKEN in <code>.env</code>, then restart{" "}
           <code>shopify app dev</code>.
+        </p>
+      ) : null}
+
+      {emptyQueue ? (
+        <p className="banner info" role="status">
+          Upload at least one PNG or JPEG to build your order. Transparent PNG is recommended for
+          print.
+        </p>
+      ) : null}
+
+      {hasLowDpi ? (
+        <p className="banner warn" role="status">
+          Low DPI detected on one or more items — print quality may suffer. Use a smaller size or a
+          higher-resolution file before saving.
         </p>
       ) : null}
 
@@ -352,16 +442,24 @@ export default function UploadBySizeEditor() {
           <h2>Your designs</h2>
           <p className="panel-sub">Upload multiple images — size each one before checkout.</p>
           {!queue.length ? (
-            <label className="drop">
+            <label className={`drop${busy ? " disabled" : ""}`}>
               <strong>Upload to get started</strong>
               <small>PNG or JPEG · transparent PNG recommended</small>
-              <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={onFiles} />
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg"
+                hidden
+                disabled={busy}
+                onChange={onFiles}
+              />
             </label>
           ) : (
             <ul>
-              {queue.map((line) => {
+              {queue.map((line, idx) => {
                 const d = resolvedDims(line);
-                const q = quoteLines.find((x) => x.assetId === line.asset.assetId);
+                const q = quoteLines[idx];
+                const cents = lineCents(q);
                 return (
                   <li key={line.id}>
                     <button
@@ -369,27 +467,56 @@ export default function UploadBySizeEditor() {
                       className={line.id === active?.id ? "active" : ""}
                       onClick={() => setActiveId(line.id)}
                     >
-                      <img src={line.previewUrl} alt="" />
+                      <span className="thumb checkerboard">
+                        <img src={line.previewUrl} alt="" />
+                      </span>
                       <span>
                         <strong>{line.name}</strong>
                         <small>
                           {d.widthIn.toFixed(2)}×{d.heightIn.toFixed(2)} in · qty {line.quantity}
+                          {cents != null ? ` · ${formatMoney(cents)}` : ""}
                           {q?.lowDpi ? " · low DPI" : ""}
                         </small>
                       </span>
                     </button>
-                    <button type="button" className="remove" onClick={() => removeLine(line.id)}>
-                      ×
-                    </button>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="dup"
+                        aria-label={`Duplicate ${line.name}`}
+                        title="Duplicate"
+                        disabled={busy}
+                        onClick={() => duplicateLine(line.id)}
+                      >
+                        ⧉
+                      </button>
+                      <button
+                        type="button"
+                        className="remove"
+                        aria-label={`Remove ${line.name}`}
+                        title="Remove"
+                        disabled={busy}
+                        onClick={() => removeLine(line.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
                   </li>
                 );
               })}
             </ul>
           )}
           {queue.length ? (
-            <label className="btn ghost block">
+            <label className={`btn ghost block${busy ? " disabled" : ""}`}>
               ＋ Add more
-              <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={onFiles} />
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg"
+                hidden
+                disabled={busy}
+                onChange={onFiles}
+              />
             </label>
           ) : null}
         </aside>
@@ -406,10 +533,12 @@ export default function UploadBySizeEditor() {
                   {active.asset.widthPx}×{active.asset.heightPx}px
                   {active.asset.dpi ? ` · ${active.asset.dpi} DPI tagged` : " · DPI not tagged"}
                   {activeQuote ? ` · ~${activeQuote.effectiveDpi} DPI effective` : ""}
+                  {activeCents != null ? ` · ${formatMoney(activeCents)}` : ""}
                 </span>
                 {activeQuote?.lowDpi || (activeQuote && activeQuote.effectiveDpi < 200) ? (
                   <span className="warn">
-                    Low resolution for print — upload a higher-resolution file or use Upscale (soon).
+                    Low resolution for print — upload a higher-resolution file or use a smaller size.
+                    Upscale is coming soon.
                   </span>
                 ) : null}
               </div>
@@ -424,6 +553,7 @@ export default function UploadBySizeEditor() {
                   Sizing mode
                   <select
                     value={active.mode}
+                    disabled={busy}
                     onChange={(e) =>
                       patchActive({ mode: e.target.value as "preset" | "custom" })
                     }
@@ -439,6 +569,7 @@ export default function UploadBySizeEditor() {
                       Preset
                       <select
                         value={active.presetId}
+                        disabled={busy}
                         onChange={(e) => patchActive({ presetId: e.target.value })}
                       >
                         {page.presets.map((p) => (
@@ -494,6 +625,7 @@ export default function UploadBySizeEditor() {
                       <input
                         type="checkbox"
                         checked={active.lockAspect}
+                        disabled={busy}
                         onChange={(e) => patchActive({ lockAspect: e.target.checked })}
                       />
                       Keep aspect ratio
@@ -526,12 +658,17 @@ export default function UploadBySizeEditor() {
 
               {activeDims ? (
                 <p className="line-area">
-                  Printed area: {(activeDims.widthIn * activeDims.heightIn * active.quantity).toFixed(3)} in²
+                  Printed area:{" "}
+                  {(activeDims.widthIn * activeDims.heightIn * active.quantity).toFixed(3)} in²
+                  {activeCents != null ? ` · ${formatMoney(activeCents)}` : ""}
                 </p>
               ) : null}
             </>
           ) : (
             <div className="empty">
+              <div className="welcome-icon" aria-hidden>
+                ＋
+              </div>
               <strong>Select or upload a design</strong>
               <p>Size each artwork, set quantity, then add everything to cart in one order.</p>
             </div>
@@ -542,27 +679,64 @@ export default function UploadBySizeEditor() {
           <h2>Your design order</h2>
           <p>
             <span>Price</span>
-            <strong>${page.pricePerSqIn.toFixed(3)}/in²</strong>
+            <strong>${pricePerSqIn.toFixed(3)}/in²</strong>
           </p>
           <p>
             <span>Total area</span>
             <strong>{totalArea != null ? `${totalArea.toFixed(3)} in²` : "—"}</strong>
           </p>
+          {quoteLines.length ? (
+            <ul className="line-prices">
+              {queue.map((line, idx) => {
+                const q = quoteLines[idx];
+                const cents = lineCents(q);
+                if (cents == null) return null;
+                return (
+                  <li key={line.id}>
+                    <span>{line.name}</span>
+                    <strong>{formatMoney(cents)}</strong>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
           <p className="total">
             <span>Total</span>
-            <strong>{totalCents != null ? `$${(totalCents / 100).toFixed(2)}` : "—"}</strong>
+            <strong>{totalCents != null ? formatMoney(totalCents) : "—"}</strong>
           </p>
           <p className="fine">Pricing is verified server-side when you save.</p>
-          {error ? <p className="err">{error}</p> : null}
-          {saved ? <p className="ok">Design saved — return to the product page and add to cart.</p> : null}
+          {emptyQueue ? (
+            <p className="err" role="status">
+              Queue is empty — upload an image to continue.
+            </p>
+          ) : null}
+          {hasLowDpi ? (
+            <p className="warn-inline" role="status">
+              Fix low-DPI items before saving for best print quality.
+            </p>
+          ) : null}
+          {error ? (
+            <p className="err" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {saved ? (
+            <p className="ok" role="status">
+              Design saved — return to the product page and add to cart.
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="btn save block"
+            disabled={busy || emptyQueue}
+            onClick={save}
+          >
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Add to cart"}
+          </button>
         </aside>
       </div>
     </div>
   );
-}
-
-function round(v: number) {
-  return Math.round(v * 100) / 100;
 }
 
 const CSS = `
@@ -576,25 +750,35 @@ const CSS = `
 .btn.primary{background:var(--accent);color:#fff;display:inline-grid;place-items:center}
 .btn.save{background:var(--green);color:#fff}
 .btn.ghost{background:#fff;border:1px solid #ccd2da;color:#111}
-.btn.block{display:block;text-align:center;margin-top:8px}
-.btn:disabled{opacity:.5;cursor:not-allowed}
-.banner{margin:0;padding:10px 20px}.banner.err{background:#fff0ee;color:#b42318}
-.layout{display:grid;grid-template-columns:260px minmax(420px,1fr) 240px;min-height:calc(100vh - 68px)}
-aside{background:#fff;border-right:1px solid #dfe3e8}
-.summary{border-right:0;border-left:1px solid #dfe3e8;padding:16px;display:grid;gap:10px;align-content:start}
+.btn.block{display:block;width:100%;text-align:center;margin-top:8px}
+.btn:disabled,.btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+.banner{margin:0;padding:10px 20px;font-size:13px}
+.banner.err{background:#fff0ee;color:#b42318}
+.banner.info{background:#eff6ff;color:#1d4ed8}
+.banner.warn{background:#fff7ed;color:#b45309}
+.layout{display:grid;grid-template-columns:280px minmax(420px,1fr) 260px;min-height:calc(100vh - 68px)}
+aside{background:#fff;border-right:1px solid var(--line)}
+.summary{border-right:0;border-left:1px solid var(--line);padding:16px;display:grid;gap:10px;align-content:start}
 .queue{padding:14px}
 .queue h2,.summary h2{margin:0 0 4px;font-size:15px}
 .panel-sub{margin:0 0 10px;font-size:11px;color:var(--muted)}
-.drop{display:grid;gap:6px;place-items:center;text-align:center;border:1.5px dashed #b5bfcc;border-radius:10px;padding:28px 16px;cursor:pointer;color:#667085}
+.drop{display:grid;gap:6px;place-items:center;text-align:center;border:1.5px dashed #b5bfcc;border-radius:10px;padding:28px 16px;cursor:pointer;color:#667085;background:#fafbfc}
+.drop.disabled{opacity:.55;pointer-events:none}
 .queue ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .queue li{display:grid;grid-template-columns:1fr auto;gap:4px;align-items:start}
-.queue li button{display:grid;grid-template-columns:48px 1fr;gap:8px;width:100%;text-align:left;border:1px solid transparent;background:#fff;border-radius:8px;padding:8px;cursor:pointer}
-.queue li button.active{border-color:var(--accent);background:#fff7ed}
-.queue img{width:48px;height:48px;object-fit:contain;background:#eee;border-radius:6px}
+.queue li>button:first-child{display:grid;grid-template-columns:48px 1fr;gap:8px;width:100%;text-align:left;border:1px solid transparent;background:#fff;border-radius:8px;padding:8px;cursor:pointer}
+.queue li>button:first-child.active{border-color:var(--accent);background:#fff7ed}
+.thumb{width:48px;height:48px;border-radius:6px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line)}
+.queue img{width:100%;height:100%;object-fit:contain}
 .queue strong,.queue small{display:block;font-size:11px}.queue small{color:#667085;margin-top:3px}
-.remove{border:0;background:#fee2e2;color:#991b1b;width:28px;height:28px;border-radius:6px;cursor:pointer}
+.row-actions{display:grid;gap:4px}
+.dup,.remove{border:0;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px;line-height:1}
+.dup{background:#f3f4f6;color:#344054}
+.dup:hover{background:#ffe8d5;color:var(--accent-dark)}
+.remove{background:#fee2e2;color:#991b1b}
+.dup:disabled,.remove:disabled{opacity:.45;cursor:not-allowed}
 main{padding:20px;display:grid;gap:14px;align-content:start}
-.preview{display:grid;place-items:center;padding:16px;border-radius:10px;border:1px solid #dfe3e8;min-height:200px}
+.preview{display:grid;place-items:center;padding:16px;border-radius:10px;border:1px solid var(--line);min-height:200px}
 .preview img{max-width:100%;max-height:260px;object-fit:contain}
 .meta{display:grid;gap:4px}.meta span{font-size:12px;color:#667085}.warn{color:#b45309;font-size:12px}
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -604,12 +788,17 @@ main{padding:20px;display:grid;gap:14px;align-content:start}
 .fields input,.fields select{padding:8px;border:1px solid #ccd2da;border-radius:6px}
 .check{flex-direction:row;align-items:center;display:flex!important;gap:8px;color:#111}
 .line-area{margin:0;font-size:13px;color:#667085}
-.empty{padding:40px 10px;color:#667085;text-align:center}
+.empty{padding:40px 10px;color:#667085;text-align:center;display:grid;gap:8px;justify-items:center}
 .summary p{display:flex;justify-content:space-between;margin:0;font-size:13px;color:#667085}
 .summary strong{color:#111}
-.summary .total{border-top:1px solid #dfe3e8;padding-top:10px;font-size:15px}
+.summary .total{border-top:1px solid var(--line);padding-top:10px;font-size:15px}
 .summary .total strong{font-size:20px;color:var(--green)}
+.line-prices{list-style:none;margin:0;padding:0;display:grid;gap:6px;border-top:1px solid var(--line);padding-top:8px}
+.line-prices li{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#667085}
+.line-prices strong{color:#111;font-weight:600;white-space:nowrap}
 .fine{font-size:11px;opacity:.8}
-.err{color:#b42318;font-size:12px;margin:0}.ok{color:#17683e;font-size:12px;margin:0}
-@media(max-width:960px){.layout{grid-template-columns:1fr}.summary{border-left:0;border-top:1px solid #dfe3e8}}
+.err{color:#b42318;font-size:12px;margin:0}
+.warn-inline{color:#b45309;font-size:12px;margin:0}
+.ok{color:#17683e;font-size:12px;margin:0}
+@media(max-width:960px){.layout{grid-template-columns:1fr}.summary{border-left:0;border-top:1px solid var(--line)}}
 `;
