@@ -15,6 +15,7 @@ import { assetKey, getObjectStore } from "../domain/storage";
 import { assertDesignStateV1 } from "../domain/design/types";
 import { verifyPriceRef } from "../domain/security/design-access";
 import { signDownload } from "../domain/security/signed-urls";
+import { removeBackgroundFromBytes, type BackgroundRemovalTuning } from "../domain/image/background-removal";
 import { resolveProductBinding } from "../lib/editor-config.server";
 import sharp from "sharp";
 
@@ -91,6 +92,22 @@ export async function upscaleAssetForPrint(params: {
     .toBuffer();
 
   return createAssetFromUpload(params.shop, upscaled);
+}
+
+/** Remove image background; returns a new PNG asset with alpha. */
+export async function removeBackgroundFromAsset(params: {
+  shop: string;
+  assetId: string;
+  tuning?: BackgroundRemovalTuning;
+}) {
+  const asset = await prisma.asset.findFirst({
+    where: { id: params.assetId, shop: params.shop },
+  });
+  if (!asset) throw new Error("Asset not found");
+
+  const bytes = await getObjectStore().get(asset.storageKey);
+  const cutout = await removeBackgroundFromBytes(bytes, params.tuning ?? {});
+  return createAssetFromUpload(params.shop, cutout);
 }
 
 export async function createUploadBySizeDesign(params: {

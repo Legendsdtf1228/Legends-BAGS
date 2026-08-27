@@ -9,6 +9,11 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import {
+  BACKGROUND_REMOVAL_MODAL_CSS,
+  BackgroundRemovalModal,
+  type ProcessedAsset,
+} from "../components/editor/background-removal-modal";
+import {
   alignSelected,
   assetPreviewUrl,
   clearDraft,
@@ -107,6 +112,11 @@ type AutoDraft = {
 };
 
 type AutoPhase = "setup" | "review";
+
+type BgRemoveTarget = {
+  sourceAssetId: string;
+  sourcePreviewUrl: string;
+};
 
 type PoolItem = {
   id: string;
@@ -385,6 +395,7 @@ export default function GangSheetEditor() {
   const [libraryRenameValue, setLibraryRenameValue] = useState("");
   const [showLibrarySave, setShowLibrarySave] = useState(false);
   const [libraryName, setLibraryName] = useState("");
+  const [bgRemove, setBgRemove] = useState<BgRemoveTarget | null>(null);
   const [librarySaving, setLibrarySaving] = useState(false);
   const [editingDesignId, setEditingDesignId] = useState<string | null>(page.designId || null);
   const [editingVersion, setEditingVersion] = useState<number | null>(
@@ -1220,6 +1231,42 @@ export default function GangSheetEditor() {
     setUploadPool((pool) => pool.filter((p) => p.id !== poolId));
   }
 
+  function openBgRemoveForAsset(assetId: string, previewUrl: string) {
+    setBgRemove({ sourceAssetId: assetId, sourcePreviewUrl: previewUrl });
+  }
+
+  function replaceAssetEverywhere(oldAssetId: string, asset: Asset, previewUrl: string) {
+    setUploadPool((pool) =>
+      pool.map((p) =>
+        p.asset.assetId === oldAssetId ? { ...p, asset, previewUrl } : p,
+      ),
+    );
+    setAutoDrafts((drafts) =>
+      drafts.map((d) =>
+        d.asset.assetId === oldAssetId ? { ...d, asset, previewUrl } : d,
+      ),
+    );
+    pushHistory(
+      itemsRef.current.map((i) =>
+        i.assetId === oldAssetId
+          ? {
+              ...i,
+              ...asset,
+              previewUrl,
+            }
+          : i,
+      ),
+    );
+    setSaved(false);
+    setMessage("Background removed — artwork updated.");
+  }
+
+  function applyBgRemoveResult(processed: ProcessedAsset, previewUrl: string) {
+    if (!bgRemove) return;
+    replaceAssetEverywhere(bgRemove.sourceAssetId, processed, previewUrl);
+    setBgRemove(null);
+  }
+
   function handleSidebarTab(tab: SidebarTab) {
     if (tab === "auto") {
       setScreen("auto_build");
@@ -1790,7 +1837,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{CSS}</style>
+        <style>{BAGS_BASE_CSS}{CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -2132,7 +2179,7 @@ export default function GangSheetEditor() {
 
     return (
       <div className="bags auto-mode lgs-editor" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{CSS}</style>
+        <style>{BAGS_BASE_CSS}{CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         <header>
           <div className="brand">
             <b>L</b>
@@ -2617,7 +2664,7 @@ export default function GangSheetEditor() {
 
   return (
     <div className="bags lgs-editor" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{CSS}</style>
+      <style>{BAGS_BASE_CSS}{CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <header className="editor-header">
@@ -2829,6 +2876,7 @@ export default function GangSheetEditor() {
                         </button>
                         <div className="pool-item-actions">
                           <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
+                          <button type="button" aria-label="Remove background" title="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>✂</button>
                           <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>×</button>
                         </div>
                       </div>
@@ -3157,6 +3205,15 @@ export default function GangSheetEditor() {
                 <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
                 <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
                 <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
+                {selected.kind !== "text" && !selected.assetId.startsWith("text-") ? (
+                  <button
+                    type="button"
+                    onClick={() => openBgRemoveForAsset(selected.assetId, selected.previewUrl)}
+                    aria-label="Remove background"
+                  >
+                    ✂ Remove BG
+                  </button>
+                ) : null}
                 <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
                 <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
               </div>
@@ -3214,6 +3271,17 @@ export default function GangSheetEditor() {
           {saving ? "…" : "Save"}
         </button>
       </nav>
+
+      {bgRemove ? (
+        <BackgroundRemovalModal
+          open
+          sourceAssetId={bgRemove.sourceAssetId}
+          sourcePreviewUrl={bgRemove.sourcePreviewUrl}
+          requestHeaders={{ "X-LGS-Shop": page.shop }}
+          onClose={() => setBgRemove(null)}
+          onApply={applyBgRemoveResult}
+        />
+      ) : null}
     </div>
   );
 }

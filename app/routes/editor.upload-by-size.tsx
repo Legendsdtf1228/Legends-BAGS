@@ -12,6 +12,11 @@ import {
   PresetSizeChips,
   StepperField,
 } from "../components/editor/bags-ui";
+import {
+  BACKGROUND_REMOVAL_MODAL_CSS,
+  BackgroundRemovalModal,
+  type ProcessedAsset,
+} from "../components/editor/background-removal-modal";
 
 const CHIP_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12, 14, 16] as const;
 
@@ -49,6 +54,12 @@ type QuoteLine = {
 type RemovedSnapshot = {
   line: QueueLine;
   index: number;
+};
+
+type BgRemoveTarget = {
+  lineId: string;
+  sourceAssetId: string;
+  sourcePreviewUrl: string;
 };
 
 type RemoteDesignPayload = {
@@ -152,6 +163,7 @@ export default function UploadBySizeEditor() {
   );
   const [dirty, setDirty] = useState(false);
   const [loadingDesign, setLoadingDesign] = useState(Boolean(page.designId));
+  const [bgRemove, setBgRemove] = useState<BgRemoveTarget | null>(null);
 
   const active = queue.find((l) => l.id === activeId) ?? queue[0] ?? null;
   const busy = uploading || saving;
@@ -246,6 +258,39 @@ export default function UploadBySizeEditor() {
     } finally {
       setUploading(false);
     }
+  }
+
+  function openBgRemoveModal() {
+    if (!active) return;
+    setBgRemove({
+      lineId: active.id,
+      sourceAssetId: active.asset.assetId,
+      sourcePreviewUrl: active.previewUrl,
+    });
+  }
+
+  function applyBgRemoveResult(asset: ProcessedAsset, previewUrl: string) {
+    if (!bgRemove) return;
+    setQueue((lines) =>
+      lines.map((line) =>
+        line.id === bgRemove.lineId
+          ? {
+              ...line,
+              asset: {
+                assetId: asset.assetId,
+                widthPx: asset.widthPx,
+                heightPx: asset.heightPx,
+                dpi: asset.dpi,
+                contentType: asset.contentType,
+              },
+              previewUrl,
+            }
+          : line,
+      ),
+    );
+    setDirty(true);
+    setSaved(false);
+    setBgRemove(null);
   }
 
   const refreshQuote = useCallback(
@@ -728,13 +773,20 @@ export default function UploadBySizeEditor() {
               <div className="tool-row">
                 <button
                   type="button"
-                  className="tool-toggle"
+                  className="tool-toggle on"
                   disabled={busy || !active}
                   onClick={() => void upscaleActive()}
                 >
                   Upscale to ~300 DPI
                 </button>
-                <span className="tool-toggle muted">Remove background (soon)</span>
+                <button
+                  type="button"
+                  className="tool-toggle on"
+                  disabled={busy || !active}
+                  onClick={openBgRemoveModal}
+                >
+                  Remove background
+                </button>
               </div>
 
               <div className="fields">
@@ -924,6 +976,17 @@ export default function UploadBySizeEditor() {
           </button>
         </aside>
       </div>
+
+      {bgRemove ? (
+        <BackgroundRemovalModal
+          open
+          sourceAssetId={bgRemove.sourceAssetId}
+          sourcePreviewUrl={bgRemove.sourcePreviewUrl}
+          requestHeaders={headers()}
+          onClose={() => setBgRemove(null)}
+          onApply={applyBgRemoveResult}
+        />
+      ) : null}
     </div>
   );
 }
@@ -989,5 +1052,6 @@ main{padding:20px;display:grid;gap:14px;align-content:start}
 .err{color:#b42318;font-size:12px;margin:0}
 .warn-inline{color:#b45309;font-size:12px;margin:0}
 .ok{color:#17683e;font-size:12px;margin:0}
+${BACKGROUND_REMOVAL_MODAL_CSS}
 @media(max-width:960px){.layout{grid-template-columns:1fr}.summary{border-left:0;border-top:1px solid var(--line)}}
 `;
