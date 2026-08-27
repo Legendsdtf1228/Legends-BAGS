@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
 import { loadEditorPageConfig } from "../lib/editor-config.server";
+import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
 import { getShopAppearance, DEFAULT_APPEARANCE } from "../lib/shop-appearance.server";
 import type { SizeInput } from "../domain/pricing";
 import { SIZE_PRESETS } from "../domain/design/types";
@@ -105,19 +106,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const designId = url.searchParams.get("designId") ?? "";
   const designVersion = url.searchParams.get("designVersion") ?? "";
   const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
-  const token = process.env.TEST_API_TOKEN || "";
 
-  const headers = new Headers();
-  if (token && shop) {
-    headers.append(
-      "Set-Cookie",
-      `lgs_shop=${encodeURIComponent(shop)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-    headers.append(
-      "Set-Cookie",
-      `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-  }
+  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, shop);
 
   const editorConfig = shop
     ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
@@ -138,7 +128,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         label: p.label,
         longestSideIn: p.longestSideIn,
       })),
-      hasDevAuth: Boolean(token && shop),
+      hasDevAuth: hasApiAuth,
     },
     { headers },
   );

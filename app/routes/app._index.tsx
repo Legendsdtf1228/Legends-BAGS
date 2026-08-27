@@ -8,7 +8,8 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { processNextRenderJob, recoverStuckJobs } from "../services/design-service";
 import { ensureShopConfig, getHomeStats, listMerchantDesignRows } from "../lib/merchant-loaders.server";
-import { BagsPageHeader, BagsCard, BagsStat } from "../components/merchant/bags-admin-ui";
+import { customerEditorUrls } from "../lib/editor-links.server";
+import { BagsPageHeader, BagsCard, BagsStat, EditorTryCard } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -20,6 +21,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     shop,
     appUrl: process.env.SHOPIFY_APP_URL || "",
+    editors: customerEditorUrls(shop, process.env.SHOPIFY_APP_URL || ""),
     config: config ?? {
       pricePerSqIn: 0.049,
       sheetWidthIn: 22.5,
@@ -44,7 +46,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function MerchantHomePage() {
-  const { shop, appUrl, config, stats, recent } = useLoaderData<typeof loader>();
+  const { shop, appUrl, editors, config, stats, recent } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -100,6 +102,12 @@ export default function MerchantHomePage() {
             </code>
           </BagsCard>
         </div>
+
+        <EditorTryCard
+          uploadBySizeUrl={editors.uploadBySize}
+          gangSheetUrl={editors.gangSheet}
+          style={{ marginBottom: 16 }}
+        />
 
         {actionData ? (
           <BagsCard title="Job processor" style={{ marginBottom: 16 }}>

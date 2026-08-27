@@ -49,6 +49,7 @@ import {
   type ShopAppearance,
 } from "../lib/shop-appearance.server";
 import { loadEditorPageConfig } from "../lib/editor-config.server";
+import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
 
 type Asset = {
   assetId: string;
@@ -286,18 +287,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const designId = url.searchParams.get("designId") ?? "";
   const designVersion = url.searchParams.get("designVersion") ?? "";
   const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
-  const token = process.env.TEST_API_TOKEN || "";
-  const headers = new Headers();
-  if (token && shop) {
-    headers.append(
-      "Set-Cookie",
-      `lgs_shop=${encodeURIComponent(shop)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-    headers.append(
-      "Set-Cookie",
-      `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-  }
+  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, shop);
   const editorConfig = shop
     ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
     : null;
@@ -311,7 +301,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       designVersion,
       parentOrigin,
       editorOrigin: process.env.SHOPIFY_APP_URL || "",
-      hasDevAuth: Boolean(token && shop),
+      hasDevAuth: hasApiAuth,
       appearance,
       pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
       variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
@@ -1905,6 +1895,12 @@ export default function GangSheetEditor() {
                   </select>
                 </label>
               </div>
+
+              <p className="welcome-tip">
+                Upload is inside the canvas: choose <strong>Build a Gang Sheet</strong> below, then use{" "}
+                <strong>＋ Upload image(s)</strong> in the left sidebar (or drag PNG/JPEG onto the drop
+                zone).
+              </p>
 
               <div className="welcome-grid two-col">
                 <button

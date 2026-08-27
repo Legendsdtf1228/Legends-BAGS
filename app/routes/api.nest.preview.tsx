@@ -1,13 +1,13 @@
 import type { ActionFunctionArgs } from "react-router";
 import { nestRectangles, nestRectanglesPartial } from "../domain/nesting";
 import type { DesignStateV1 } from "../domain/design/types";
-import { assertTestAccess } from "../domain/security/test-access";
+import { assertCustomerApiAccess } from "../domain/security/test-access";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  assertTestAccess(request);
+  assertCustomerApiAccess(request);
   const body = (await request.json()) as {
     items?: DesignStateV1["items"];
     sheet?: DesignStateV1["sheet"];

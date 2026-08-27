@@ -15,6 +15,13 @@
   <button type="button" class="lgs-gs__launch" data-lgs-open data-label-open="{{ block.settings.button_label }}" data-label-edit="Edit design">
     {{ block.settings.button_label }}
   </button>
+  <div class="lgs-gs__variant-picker" data-lgs-variant-picker hidden>
+    <label class="lgs-gs__variant-label">
+      <span>Sheet height</span>
+      <select data-lgs-variant-select aria-label="Sheet height"></select>
+    </label>
+    <p class="lgs-gs__variant-hint" data-lgs-variant-hint hidden></p>
+  </div>
   <button type="button" class="lgs-gs__edit" data-lgs-edit hidden>Edit design</button>
   <button type="button" class="lgs-gs__reset" data-lgs-reset hidden>Start over</button>
   <p class="lgs-gs__hint">{{ block.settings.hint_text }}</p>

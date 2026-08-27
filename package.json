@@ -10,7 +10,7 @@
     "config:use": "shopify app config use",
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",
-    "docker-start": "npm run setup && npm run start",
+    "docker-start": "node ./scripts/ensure-data-dirs.mjs && npm run setup && npm run start",
     "setup": "prisma generate && prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
     "test": "vitest run",

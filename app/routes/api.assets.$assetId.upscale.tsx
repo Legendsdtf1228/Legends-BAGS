@@ -1,12 +1,12 @@
 import type { ActionFunctionArgs } from "react-router";
 import { upscaleAssetForPrint } from "../services/design-service";
-import { assertTestAccess } from "../domain/security/test-access";
+import { assertCustomerApiAccess } from "../domain/security/test-access";
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const shop = assertTestAccess(request);
+  const shop = assertCustomerApiAccess(request);
   const assetId = params.assetId;
   if (!assetId) return Response.json({ error: "Not found" }, { status: 404 });
 

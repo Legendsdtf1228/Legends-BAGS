@@ -1,6 +1,6 @@
 # Known limitations (Phase 1)
 
-- Storefront appearance/config uses Shopify app proxy (`/apps/legends-bags/storefront-config`); editor APIs still use `TEST_API_TOKEN` / design access tokens until full proxy coverage
+- Storefront appearance/config and cart design hydration use Shopify app proxy (`/apps/legends-bags/*`); editor APIs accept signed storefront session cookies or dev `TEST_API_TOKEN`
 - In-process sharp render caps at ~40MP; long sheets need tiled rendering (not yet shipped)
 - SVG uploads are rasterized at 300 DPI on ingest (vector editing not supported)
 - Background removal uses local color segmentation by default; set `REMOVE_BG_API_KEY` for remove.bg on complex photos

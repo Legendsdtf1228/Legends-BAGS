@@ -1,12 +1,12 @@
 import type { ActionFunctionArgs } from "react-router";
 import { createAssetFromUpload } from "../services/design-service";
-import { assertTestAccess } from "../domain/security/test-access";
+import { assertCustomerApiAccess } from "../domain/security/test-access";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const shop = assertTestAccess(request);
+  const shop = assertCustomerApiAccess(request);
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {

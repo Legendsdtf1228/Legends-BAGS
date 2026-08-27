@@ -5,12 +5,12 @@ import {
   saveDesignToLibrary,
   updateDesignLibraryEntry,
 } from "../services/design-service";
-import { assertTestAccess } from "../domain/security/test-access";
+import { assertCustomerApiAccess } from "../domain/security/test-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 import { getDesignState } from "../services/design-service";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const shop = assertTestAccess(request);
+  const shop = assertCustomerApiAccess(request);
   const url = new URL(request.url);
   const search = url.searchParams.get("search") ?? undefined;
   const sort = (url.searchParams.get("sort") as "recent" | "name") || "recent";
@@ -20,7 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const shop = assertTestAccess(request);
+  const shop = assertCustomerApiAccess(request);
   const body = (await request.json()) as {
     intent?: string;
     designId?: string;
