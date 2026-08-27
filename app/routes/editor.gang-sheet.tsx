@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
 import {
@@ -8,6 +8,24 @@ import {
   PresetSizeChips,
   StepperField,
 } from "../components/editor/bags-ui";
+import {
+  assetPreviewUrl,
+  clearDraft,
+  findOobIds,
+  findOverlappingIds,
+  fitZoomPercent,
+  inside,
+  isTypingTarget,
+  nextZIndex,
+  NUDGE_IN,
+  NUDGE_SHIFT_IN,
+  readDraft,
+  reorderLayer,
+  round,
+  sortByZIndex,
+  writeDraft,
+  type GangDraftV1,
+} from "../components/editor/gang-sheet-helpers";
 
 type Asset = {
   assetId: string;
@@ -26,7 +44,29 @@ type CanvasItem = Asset & {
   widthIn: number;
   heightIn: number;
   rotationDeg: 0 | 90;
+  zIndex: number;
 };
+
+type Interaction =
+  | {
+      mode: "drag";
+      id: string;
+      x: number;
+      y: number;
+      sx: number;
+      sy: number;
+      snapshot: CanvasItem[];
+    }
+  | {
+      mode: "resize";
+      id: string;
+      startW: number;
+      startH: number;
+      aspect: number;
+      sx: number;
+      sy: number;
+      snapshot: CanvasItem[];
+    };
 
 type AutoDraft = {
   id: string;
@@ -89,6 +129,8 @@ type AutoNestPreview = {
   totalPieces: number;
   totalAreaSqIn: number;
   estimateUsd: number;
+  fittedCount?: number;
+  remainingCount?: number;
 };
 
 const SHEET_WIDTHS = [22.5, 24, 30] as const;
@@ -184,17 +226,22 @@ export default function GangSheetEditor() {
   const [autoPreviewError, setAutoPreviewError] = useState("");
   const [selectedAutoId, setSelectedAutoId] = useState<string | null>(null);
   const [autoPhase, setAutoPhase] = useState<AutoPhase>("setup");
+  const [allowRotate90, setAllowRotate90] = useState(true);
   const [uploadPool, setUploadPool] = useState<PoolItem[]>([]);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("uploads");
   const [poolTick, setPoolTick] = useState(0);
+  const [draftOffer, setDraftOffer] = useState<GangDraftV1 | null>(null);
+  const [hasStoredDraft, setHasStoredDraft] = useState(false);
+  const [showFirstTip, setShowFirstTip] = useState(true);
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
-
   const canvas = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; x: number; y: number; sx: number; sy: number } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const interaction = useRef<Interaction | null>(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const selected = items.find((i) => i.id === selectedId) ?? null;
+  const paintedItems = useMemo(() => sortByZIndex(items), [items]);
 
   const usedArea = useMemo(
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
@@ -203,40 +250,128 @@ export default function GangSheetEditor() {
   const estimate = Math.round(usedArea * 4.9) / 100;
   const utilization = Math.min(100, Math.round((usedArea / (sheetWidth * sheetHeight)) * 100));
 
-  const pushHistory = useCallback((next: CanvasItem[]) => {
-    setHistory((h) => [...h.slice(-30), items]);
+  const overlappingIds = useMemo(() => findOverlappingIds(items), [items]);
+  const oobIds = useMemo(
+    () => findOobIds(items, sheetWidth, sheetHeight),
+    [items, sheetWidth, sheetHeight],
+  );
+
+  const commitFromSnapshot = useCallback((snapshot: CanvasItem[], next: CanvasItem[]) => {
+    setHistory((h) => [...h.slice(-30), snapshot]);
     setFuture([]);
     setItems(next);
     setSaved(false);
-  }, [items]);
+  }, []);
+
+  const pushHistory = useCallback((next: CanvasItem[]) => {
+    setHistory((h) => [...h.slice(-30), itemsRef.current]);
+    setFuture([]);
+    setItems(next);
+    setSaved(false);
+  }, []);
+
+  useEffect(() => {
+    const draft = readDraft(page.shop);
+    setHasStoredDraft(Boolean(draft?.items.length));
+    if (draft?.items.length) setDraftOffer(draft);
+  }, [page.shop]);
+
+  useEffect(() => {
+    if (screen !== "canvas") return;
+    const t = window.setTimeout(() => {
+      if (!items.length) return;
+      const payload: GangDraftV1 = {
+        v: 1,
+        sheetWidth,
+        sheetHeight,
+        gap,
+        items: items.map(
+          ({
+            assetId,
+            name,
+            widthPx,
+            heightPx,
+            dpi,
+            contentType,
+            widthIn,
+            heightIn,
+            xIn,
+            yIn,
+            rotationDeg,
+            zIndex,
+          }) => ({
+            assetId,
+            name,
+            widthPx,
+            heightPx,
+            dpi,
+            contentType,
+            widthIn,
+            heightIn,
+            xIn,
+            yIn,
+            rotationDeg,
+            zIndex,
+          }),
+        ),
+        savedAt: Date.now(),
+      };
+      writeDraft(page.shop, payload);
+      setHasStoredDraft(true);
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [items, sheetWidth, sheetHeight, gap, page.shop, screen, history.length]);
 
   useEffect(() => {
     const move = (e: PointerEvent) => {
-      const d = drag.current;
+      const d = interaction.current;
       const c = canvas.current;
       if (!d || !c) return;
       const r = c.getBoundingClientRect();
+      if (d.mode === "drag") {
+        setItems((all) =>
+          all.map((i) =>
+            i.id === d.id
+              ? inside(
+                  {
+                    ...i,
+                    xIn: d.x + ((e.clientX - d.sx) / r.width) * sheetWidth,
+                    yIn: d.y + ((e.clientY - d.sy) / r.height) * sheetHeight,
+                  },
+                  sheetWidth,
+                  sheetHeight,
+                )
+              : i,
+          ),
+        );
+        return;
+      }
+      const dx = ((e.clientX - d.sx) / r.width) * sheetWidth;
+      let widthIn = Math.max(0.1, d.startW + dx);
+      let heightIn = widthIn / d.aspect;
       setItems((all) =>
         all.map((i) =>
           i.id === d.id
-            ? inside(
-                {
-                  ...i,
-                  xIn: d.x + ((e.clientX - d.sx) / r.width) * sheetWidth,
-                  yIn: d.y + ((e.clientY - d.sy) / r.height) * sheetHeight,
-                },
-                sheetWidth,
-                sheetHeight,
-              )
+            ? inside({ ...i, widthIn, heightIn }, sheetWidth, sheetHeight)
             : i,
         ),
       );
     };
     const up = () => {
-      if (drag.current) {
-        pushHistory(itemsRef.current);
-        drag.current = null;
-      }
+      const d = interaction.current;
+      if (!d) return;
+      const next = itemsRef.current;
+      const before = d.snapshot.find((i) => i.id === d.id);
+      const after = next.find((i) => i.id === d.id);
+      const moved =
+        before &&
+        after &&
+        (before.xIn !== after.xIn ||
+          before.yIn !== after.yIn ||
+          before.widthIn !== after.widthIn ||
+          before.heightIn !== after.heightIn);
+      if (moved) commitFromSnapshot(d.snapshot, next);
+      interaction.current = null;
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -244,13 +379,43 @@ export default function GangSheetEditor() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [items, pushHistory, sheetHeight, sheetWidth]);
+  }, [commitFromSnapshot, sheetHeight, sheetWidth]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (e.key === "Escape" && draftOffer) {
+        setDraftOffer(null);
+        return;
+      }
+      if (!selectedId || screen !== "canvas") return;
+      let dx = 0;
+      let dy = 0;
+      const step = e.shiftKey ? NUDGE_SHIFT_IN : NUDGE_IN;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dy = -step;
+      else if (e.key === "ArrowDown") dy = step;
+      else return;
+      e.preventDefault();
+      const cur = itemsRef.current;
+      const next = cur.map((i) =>
+        i.id === selectedId
+          ? inside({ ...i, xIn: i.xIn + dx, yIn: i.yIn + dy }, sheetWidth, sheetHeight)
+          : i,
+      );
+      pushHistory(next);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [draftOffer, pushHistory, screen, selectedId, sheetHeight, sheetWidth]);
 
   function createPlacedItem(
     asset: Asset,
     previewUrl: string,
     name: string,
     index: number,
+    existing: CanvasItem[] = items,
   ): CanvasItem {
     const w = Math.min(6, sheetWidth - 0.4);
     const h = w / (asset.widthPx / asset.heightPx);
@@ -264,6 +429,7 @@ export default function GangSheetEditor() {
       widthIn: w,
       heightIn: h,
       rotationDeg: 0,
+      zIndex: nextZIndex(existing) + index,
     };
   }
 
@@ -271,15 +437,85 @@ export default function GangSheetEditor() {
     setScreen("canvas");
     setSidebarTab(options?.tab ?? "uploads");
     setMessage("");
+    setShowFirstTip(true);
     if (options?.pickUpload) {
       window.setTimeout(() => sidebarUploadRef.current?.click(), 50);
     }
   }
 
+  function applySheetSize(w: number, h: number) {
+    setSheetWidth(w);
+    setSheetHeight(h);
+    if (itemsRef.current.length) {
+      pushHistory(
+        itemsRef.current.map((i) => inside({ ...i }, w, h)),
+      );
+    }
+    setSaved(false);
+  }
+
+  function fitToViewport() {
+    const el = scrollRef.current;
+    if (!el) return;
+    setZoom(fitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight));
+  }
+
+  async function restoreDraft(draft: GangDraftV1) {
+    setSheetWidth(draft.sheetWidth);
+    setSheetHeight(draft.sheetHeight);
+    setGap(draft.gap);
+    const restored: CanvasItem[] = draft.items.map((d, idx) => ({
+      assetId: d.assetId,
+      widthPx: d.widthPx,
+      heightPx: d.heightPx,
+      dpi: d.dpi,
+      contentType: d.contentType,
+      id: crypto.randomUUID(),
+      name: d.name,
+      previewUrl: assetPreviewUrl(d.assetId),
+      xIn: d.xIn,
+      yIn: d.yIn,
+      widthIn: d.widthIn,
+      heightIn: d.heightIn,
+      rotationDeg: d.rotationDeg,
+      zIndex: d.zIndex ?? idx + 1,
+    }));
+    setHistory([]);
+    setFuture([]);
+    setItems(restored);
+    setSelectedId(null);
+    setDraftOffer(null);
+    setScreen("canvas");
+    setMessage(`Restored draft · ${restored.length} piece${restored.length === 1 ? "" : "s"}.`);
+  }
+
+  function discardDraft() {
+    clearDraft(page.shop);
+    setDraftOffer(null);
+    setHasStoredDraft(false);
+  }
+
+  function clearSheet() {
+    if (!items.length) return;
+    if (!window.confirm("Clear all artwork from this gang sheet?")) return;
+    pushHistory([]);
+    setSelectedId(null);
+    clearDraft(page.shop);
+    setHasStoredDraft(false);
+    setMessage("Sheet cleared.");
+  }
+
+  function layerAction(mode: "forward" | "backward" | "front" | "back") {
+    if (!selectedId) return;
+    const next = reorderLayer(items, selectedId, mode);
+    if (!next) return;
+    pushHistory(next);
+  }
+
   function placeFromPool(poolId: string) {
     const entry = uploadPool.find((p) => p.id === poolId);
     if (!entry) return;
-    const placed = createPlacedItem(entry.asset, entry.previewUrl, entry.name, items.length);
+    const placed = createPlacedItem(entry.asset, entry.previewUrl, entry.name, 0, items);
     pushHistory([...items, placed]);
     setSelectedId(placed.id);
     setMessage(`Placed "${entry.name}" on the sheet — drag to position.`);
@@ -303,6 +539,7 @@ export default function GangSheetEditor() {
         const poolAdded: PoolItem[] = [];
         const placed: CanvasItem[] = [];
         const placeOnSheet = options?.placeOnSheet ?? false;
+        let base = items;
         for (const file of files) {
           const asset = await postUpload(file);
           const previewUrl = URL.createObjectURL(file);
@@ -314,7 +551,11 @@ export default function GangSheetEditor() {
             uploadedAt: Date.now(),
           });
           if (placeOnSheet) {
-            placed.push(createPlacedItem(asset, previewUrl, file.name, placed.length));
+            const item = createPlacedItem(asset, previewUrl, file.name, placed.length, [
+              ...base,
+              ...placed,
+            ]);
+            placed.push(item);
           }
         }
         setUploadPool((pool) => [...pool, ...poolAdded]);
@@ -405,6 +646,7 @@ export default function GangSheetEditor() {
         id: crypto.randomUUID(),
         xIn: selected.xIn + 0.35,
         yIn: selected.yIn + 0.35,
+        zIndex: nextZIndex(items),
       },
       sheetWidth,
       sheetHeight,
@@ -431,9 +673,10 @@ export default function GangSheetEditor() {
   function fillSheet() {
     if (!selected) return;
     const copies: CanvasItem[] = [];
+    let z = nextZIndex(items);
     for (let y = 0.1; y + selected.heightIn <= sheetHeight; y += selected.heightIn + gap) {
       for (let x = 0.1; x + selected.widthIn <= sheetWidth; x += selected.widthIn + gap) {
-        copies.push({ ...selected, id: crypto.randomUUID(), xIn: x, yIn: y });
+        copies.push({ ...selected, id: crypto.randomUUID(), xIn: x, yIn: y, zIndex: z++ });
         if (copies.length >= 250) break;
       }
       if (copies.length >= 250) break;
@@ -489,7 +732,7 @@ export default function GangSheetEditor() {
             imageMarginIn: gap,
             artboardMarginIn: 0.1,
           },
-          allowRotate90: true,
+          allowRotate90,
         }),
       });
       const json = (await res.json()) as {
@@ -497,6 +740,8 @@ export default function GangSheetEditor() {
         sheetHeightIn?: number;
         sheetWidthIn?: number;
         utilization?: number;
+        fittedCount?: number;
+        remainingCount?: number;
         error?: string;
       };
       if (!res.ok || !json.placements) {
@@ -513,6 +758,8 @@ export default function GangSheetEditor() {
         totalPieces: nestItems.length,
         totalAreaSqIn: totalArea,
         estimateUsd: Math.round(totalArea * 0.049 * 100) / 100,
+        fittedCount: json.fittedCount,
+        remainingCount: json.remainingCount,
       };
       setAutoPreview(preview);
       return preview;
@@ -524,7 +771,7 @@ export default function GangSheetEditor() {
     } finally {
       setAutoPreviewLoading(false);
     }
-  }, [autoDrafts, gap, page.shop, sheetHeight, sheetWidth]);
+  }, [allowRotate90, autoDrafts, gap, page.shop, sheetHeight, sheetWidth]);
 
   useEffect(() => {
     if (screen !== "auto_build" || autoPhase !== "setup") return;
@@ -549,6 +796,7 @@ export default function GangSheetEditor() {
         throw new Error(autoPreviewError || "Generate a nest preview first");
       }
 
+      let z = nextZIndex(items);
       const placed: CanvasItem[] = preview.pieces.map((p) => {
         const draft = autoDrafts.find((d) => d.id === p.draftId) ?? autoDrafts[0];
         return {
@@ -561,6 +809,7 @@ export default function GangSheetEditor() {
           widthIn: p.widthIn,
           heightIn: p.heightIn,
           rotationDeg: p.rotationDeg,
+          zIndex: z++,
         };
       });
 
@@ -569,9 +818,7 @@ export default function GangSheetEditor() {
         setSheetHeight(SHEET_HEIGHTS.find((h) => h >= needed) ?? Math.ceil(needed));
       }
 
-      setHistory([]);
-      setFuture([]);
-      setItems(placed);
+      pushHistory(placed);
       setAutoPreview(null);
       setAutoDrafts([]);
       setScreen("canvas");
@@ -581,6 +828,12 @@ export default function GangSheetEditor() {
     } finally {
       setAutoBusy(false);
     }
+  }
+
+  function undoAutoResult() {
+    setAutoPreview(null);
+    setAutoPhase("setup");
+    setMessage("Back to Auto Build setup — adjust sizes or regenerate.");
   }
 
   async function save() {
@@ -606,13 +859,14 @@ export default function GangSheetEditor() {
             imageMarginIn: gap,
             artboardMarginIn: 0.1,
           },
-          items: items.map(({ assetId, widthIn, heightIn, xIn, yIn, rotationDeg }) => ({
+          items: items.map(({ assetId, widthIn, heightIn, xIn, yIn, rotationDeg, zIndex }) => ({
             assetId,
             widthIn,
             heightIn,
             xIn,
             yIn,
             rotationDeg,
+            zIndex,
             quantity: 1,
           })),
         }),
@@ -626,6 +880,8 @@ export default function GangSheetEditor() {
       };
       if (!res.ok || !json.designId) throw new Error(json.error || "Could not save design");
       setSaved(true);
+      clearDraft(page.shop);
+      setHasStoredDraft(false);
       setMessage(
         `Design saved · $${((json.state?.pricing.totalCents || 0) / 100).toFixed(2)}`,
       );
@@ -647,13 +903,47 @@ export default function GangSheetEditor() {
     }
   }
 
+  const restoreDialog =
+    draftOffer && screen === "welcome" ? (
+      <div
+        className="draft-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="draft-restore-title"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setDraftOffer(null);
+        }}
+      >
+        <div className="draft-modal-card">
+          <h2 id="draft-restore-title">Continue your draft?</h2>
+          <p>
+            A local draft with {draftOffer.items.length} piece
+            {draftOffer.items.length === 1 ? "" : "s"} was found for this shop.
+          </p>
+          <div className="draft-modal-actions">
+            <button type="button" className="save" onClick={() => void restoreDraft(draftOffer)}>
+              Restore
+            </button>
+            <button type="button" onClick={discardDraft}>
+              Discard
+            </button>
+            <button type="button" className="ghost-btn" onClick={() => setDraftOffer(null)}>
+              Not now
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null;
+
   if (screen === "welcome") {
+    const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor">
         <style>{BAGS_BASE_CSS}{CSS}</style>
+        {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
-            <button type="button" className="rail-btn active" title="Home">
+            <button type="button" className="rail-btn active" title="Home" aria-label="Home">
               <span className="rail-icon">🏠</span>
               <span className="rail-label">Home</span>
             </button>
@@ -663,6 +953,7 @@ export default function GangSheetEditor() {
                 type="button"
                 className={`rail-btn ${tab.soon ? "soon" : ""}`}
                 title={tab.label}
+                aria-label={tab.label}
                 disabled={tab.soon}
                 onClick={() => openCanvas({ tab: tab.id })}
               >
@@ -683,35 +974,61 @@ export default function GangSheetEditor() {
               </div>
               <h1>How would you like to start?</h1>
               <p className="welcome-lead">
-                Choose a workflow below. Upload images from Home first — then manage them in the
-                Uploads sidebar and click to place on your sheet.
+                Pick a sheet size, then build a gang sheet — or jump into Auto Build for bulk nesting.
               </p>
               {!page.hasDevAuth ? (
                 <p className="error block">Dev auth not configured — check DEV_SHOP / TEST_API_TOKEN.</p>
               ) : null}
 
+              <div className="welcome-sheet-pick">
+                <label>
+                  Sheet width
+                  <select
+                    value={sheetWidth}
+                    onChange={(e) => setSheetWidth(+e.target.value)}
+                    aria-label="Sheet width"
+                  >
+                    {SHEET_WIDTHS.map((w) => (
+                      <option key={w} value={w}>
+                        {w} in
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Sheet length
+                  <select
+                    value={sheetHeight}
+                    onChange={(e) => setSheetHeight(+e.target.value)}
+                    aria-label="Sheet length"
+                  >
+                    {SHEET_HEIGHTS.map((h) => (
+                      <option key={h} value={h}>
+                        {h} in
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
               <div className="welcome-grid two-col">
                 <button
                   type="button"
-                  className="welcome-opt featured"
-                  onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
+                  className="welcome-opt primary featured"
+                  onClick={() => openCanvas({ tab: "uploads" })}
                 >
-                  <div className="welcome-icon">⬆</div>
-                  <strong>Upload image(s)</strong>
-                  <span>Add files to Uploads, then click each one to place on the gang sheet.</span>
+                  <div className="welcome-icon">🎨</div>
+                  <strong>Build a Gang Sheet</strong>
+                  <span>Open the canvas with your selected sheet size — upload, place, and arrange.</span>
                 </button>
+                <a className="welcome-opt" href={ubsHref}>
+                  <div className="welcome-icon">📐</div>
+                  <strong>Upload by Size</strong>
+                  <span>Single-design workflow with presets and live pricing.</span>
+                </a>
                 <button
                   type="button"
                   className="welcome-opt"
-                  onClick={() => openCanvas()}
-                >
-                  <div className="welcome-icon">🎨</div>
-                  <strong>Start a brand new gang sheet</strong>
-                  <span>Blank canvas — drag, resize, rotate, and arrange manually.</span>
-                </button>
-                <button
-                  type="button"
-                  className="welcome-opt primary"
                   onClick={() => {
                     setScreen("auto_build");
                     setAutoPhase("setup");
@@ -727,25 +1044,45 @@ export default function GangSheetEditor() {
                   <span>Bulk upload with live nest preview — fastest for many designs.</span>
                 </button>
                 <button type="button" className="welcome-opt disabled" disabled>
-                  <div className="welcome-icon">↺</div>
-                  <strong>Open a previously ordered gang sheet</strong>
-                  <span>Coming soon — saved designs & reorder.</span>
+                  <div className="welcome-icon">💾</div>
+                  <strong>Start from saved design</strong>
+                  <span>Coming soon — reopen a previously saved gang sheet.</span>
                 </button>
-                <button type="button" className="welcome-opt disabled" disabled>
-                  <div className="welcome-icon">👕</div>
-                  <strong>Names and Numbers</strong>
-                  <span>Coming soon — roster and jersey layouts.</span>
-                </button>
-                <button type="button" className="welcome-opt disabled" disabled>
-                  <div className="welcome-icon">🖼</div>
-                  <strong>Gallery</strong>
-                  <span>Coming soon — stock art from your shop library.</span>
+                {hasStoredDraft ? (
+                  <button
+                    type="button"
+                    className="welcome-opt continue-draft"
+                    onClick={() => {
+                      const d = readDraft(page.shop);
+                      if (d) void restoreDraft(d);
+                    }}
+                  >
+                    <div className="welcome-icon">↺</div>
+                    <strong>Continue draft</strong>
+                    <span>Resume the local draft saved on this device.</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="welcome-opt"
+                  onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
+                >
+                  <div className="welcome-icon">⬆</div>
+                  <strong>Upload image(s)</strong>
+                  <span>Add files to Uploads, then click each one to place on the gang sheet.</span>
                 </button>
               </div>
 
+              <p className="welcome-tip">
+                Tip: Arrow keys nudge selected art by 0.05″ (Shift = 0.25″). Drag the corner handle to
+                resize with aspect lock.
+              </p>
+
               <div className="welcome-foot">
-                <span>Default sheet</span>
-                <strong>{sheetWidth}″ wide · up to {sheetHeight}″ long · $0.049/in²</strong>
+                <span>Selected sheet</span>
+                <strong>
+                  {sheetWidth}″ wide · up to {sheetHeight}″ long · $0.049/in²
+                </strong>
               </div>
             </div>
           </div>
@@ -804,6 +1141,17 @@ export default function GangSheetEditor() {
               </>
             ) : (
               <>
+                <button type="button" onClick={undoAutoResult} aria-label="Undo auto nest result">
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  disabled={autoPreviewLoading || !autoDrafts.length}
+                  onClick={() => void refreshAutoPreview()}
+                  aria-label="Regenerate nest preview"
+                >
+                  {autoPreviewLoading ? "Regenerating…" : "Regenerate"}
+                </button>
                 <button type="button" onClick={() => setAutoPhase("setup")}>
                   Back and adjust
                 </button>
@@ -812,8 +1160,9 @@ export default function GangSheetEditor() {
                   className="save"
                   disabled={autoBusy || !autoPreview?.pieces.length}
                   onClick={() => void applyAutoBuild()}
+                  aria-label="Accept nest and continue to editor"
                 >
-                  {autoBusy ? "Building…" : "Continue"}
+                  {autoBusy ? "Building…" : "Accept & Continue"}
                 </button>
               </>
             )}
@@ -893,6 +1242,15 @@ export default function GangSheetEditor() {
                     />
                   </label>
                 </div>
+                <label className="lock-aspect rotate-toggle">
+                  <input
+                    type="checkbox"
+                    checked={allowRotate90}
+                    disabled={autoPhase === "review"}
+                    onChange={(e) => setAllowRotate90(e.target.checked)}
+                  />
+                  Allow 90° rotation when nesting
+                </label>
 
                 <div className="auto-list compact">
                   {autoDrafts.map((d) => (
@@ -1120,6 +1478,15 @@ export default function GangSheetEditor() {
                 <span>Total pieces</span>
                 <strong>{autoPreview?.totalPieces ?? 0}</strong>
               </p>
+              {autoPreview?.fittedCount != null && autoPreview.remainingCount != null ? (
+                <p className="overflow-note">
+                  <span>Fit status</span>
+                  <strong>
+                    Fitted {autoPreview.fittedCount} of {autoPreview.totalPieces} —{" "}
+                    {autoPreview.remainingCount} remain
+                  </strong>
+                </p>
+              ) : null}
               <p>
                 <span>Printed area</span>
                 <strong>{(autoPreview?.totalAreaSqIn ?? 0).toFixed(2)} in²</strong>
@@ -1148,8 +1515,9 @@ export default function GangSheetEditor() {
                 </>
               ) : (
                 <>
-                  Click <strong>Continue</strong> to open the gang sheet canvas with these
-                  placements, or <strong>Back and adjust</strong> to change sizes.
+                  <strong>Accept &amp; Continue</strong> opens the canvas with these placements.
+                  Use <strong>Undo</strong> or <strong>Regenerate</strong> to try again, or{" "}
+                  <strong>Back and adjust</strong> to change sizes.
                 </>
               )}
             </p>
@@ -1162,6 +1530,7 @@ export default function GangSheetEditor() {
   return (
     <div className="bags lgs-editor">
       <style>{BAGS_BASE_CSS}{CSS}</style>
+      {restoreDialog}
       <header>
         <div className="brand">
           <b>L</b>
@@ -1171,17 +1540,30 @@ export default function GangSheetEditor() {
           </span>
         </div>
         <nav>
-          <button type="button" onClick={() => setScreen("welcome")}>
+          <button type="button" onClick={() => setScreen("welcome")} aria-label="Go to Home">
             Home
           </button>
-          <button type="button" onClick={undo} disabled={!history.length}>
+          <button type="button" onClick={undo} disabled={!history.length} aria-label="Undo">
             Undo
           </button>
-          <button type="button" onClick={redo} disabled={!future.length}>
+          <button type="button" onClick={redo} disabled={!future.length} aria-label="Redo">
             Redo
           </button>
-          <button type="button" onClick={autoArrange} disabled={!items.length}>
+          <button
+            type="button"
+            onClick={autoArrange}
+            disabled={!items.length}
+            aria-label="Auto arrange artwork"
+          >
             Auto arrange
+          </button>
+          <button
+            type="button"
+            onClick={clearSheet}
+            disabled={!items.length}
+            aria-label="Clear sheet"
+          >
+            Clear
           </button>
           <label className="btn-upload">
             {uploading ? "Uploading…" : "＋ Add artwork"}
@@ -1197,19 +1579,45 @@ export default function GangSheetEditor() {
               }
             />
           </label>
-          <button type="button" className="save" onClick={() => void save()} disabled={saving || !items.length}>
+          <button
+            type="button"
+            className="save"
+            onClick={() => void save()}
+            disabled={saving || !items.length}
+            aria-label="Save and add to cart"
+          >
             {saving ? "Saving…" : saved ? "Saved ✓" : "Save & add to cart"}
           </button>
         </nav>
       </header>
+      {overlappingIds.size > 0 ? (
+        <p className="warn toast" role="status">
+          {overlappingIds.size} piece{overlappingIds.size === 1 ? "" : "s"} overlapping — layouts
+          still save; consider rearranging.
+        </p>
+      ) : null}
+      {oobIds.size > 0 ? (
+        <p className="warn toast" role="status">
+          {oobIds.size} piece{oobIds.size === 1 ? "" : "s"} outside the 0.1″ artboard margin.
+        </p>
+      ) : null}
       {message ? <p className="message toast">{message}</p> : null}
       {error ? <p className="error toast">{error}</p> : null}
+      {showFirstTip && items.length === 0 ? (
+        <p className="tip toast">
+          Tip: Upload in the sidebar, click to place, then drag / resize. Escape closes dialogs.
+          <button type="button" className="tip-dismiss" onClick={() => setShowFirstTip(false)}>
+            Got it
+          </button>
+        </p>
+      ) : null}
       <div className="workspace">
         <nav className="icon-rail" aria-label="Builder navigation">
           <button
             type="button"
             className="rail-btn"
             title="Home"
+            aria-label="Home"
             onClick={() => setScreen("welcome")}
           >
             <span className="rail-icon">🏠</span>
@@ -1221,6 +1629,7 @@ export default function GangSheetEditor() {
               type="button"
               className={`rail-btn ${sidebarTab === tab.id ? "active" : ""} ${tab.soon ? "soon" : ""}`}
               title={tab.label}
+              aria-label={tab.label}
               disabled={tab.soon}
               onClick={() => !tab.soon && setSidebarTab(tab.id)}
             >
@@ -1245,6 +1654,7 @@ export default function GangSheetEditor() {
                   type="button"
                   className="refresh-btn"
                   title="Refresh uploads"
+                  aria-label="Refresh uploads"
                   onClick={() => setPoolTick((t) => t + 1)}
                 >
                   ↻
@@ -1349,10 +1759,8 @@ export default function GangSheetEditor() {
               Sheet
               <select
                 value={sheetWidth}
-                onChange={(e) => {
-                  setSheetWidth(+e.target.value);
-                  setSaved(false);
-                }}
+                aria-label="Sheet width"
+                onChange={(e) => applySheetSize(+e.target.value, sheetHeight)}
               >
                 {SHEET_WIDTHS.map((w) => (
                   <option key={w} value={w}>
@@ -1365,10 +1773,8 @@ export default function GangSheetEditor() {
               Length
               <select
                 value={sheetHeight}
-                onChange={(e) => {
-                  setSheetHeight(+e.target.value);
-                  setSaved(false);
-                }}
+                aria-label="Sheet length"
+                onChange={(e) => applySheetSize(sheetWidth, +e.target.value)}
               >
                 {SHEET_HEIGHTS.map((h) => (
                   <option key={h} value={h}>
@@ -1381,40 +1787,63 @@ export default function GangSheetEditor() {
               {sheetWidth} × {sheetHeight} in
             </strong>
             <div className="zoom">
-              <button type="button" onClick={() => setZoom((z) => Math.max(35, z - 10))}>
+              <button
+                type="button"
+                aria-label="Zoom out"
+                onClick={() => setZoom((z) => Math.max(20, z - 10))}
+              >
                 −
               </button>
               <span>{zoom}%</span>
-              <button type="button" onClick={() => setZoom((z) => Math.min(120, z + 10))}>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                onClick={() => setZoom((z) => Math.min(150, z + 10))}
+              >
                 ＋
+              </button>
+              <button type="button" aria-label="Fit sheet to viewport" onClick={fitToViewport}>
+                Fit
               </button>
             </div>
           </div>
-          <div className="scroll" onClick={() => setSelectedId(null)}>
+          <div className="scroll" ref={scrollRef} onClick={() => setSelectedId(null)}>
             <div
               ref={canvas}
               className="sheet"
               style={{ width: `${zoom}%`, aspectRatio: `${sheetWidth}/${sheetHeight}` }}
             >
               <i />
-              {items.map((i) => (
+              {paintedItems.map((i) => (
                 <div
                   key={i.id}
-                  className={`piece ${i.id === selectedId ? "selected" : ""}`}
+                  className={`piece ${i.id === selectedId ? "selected" : ""} ${
+                    overlappingIds.has(i.id) ? "overlap" : ""
+                  } ${oobIds.has(i.id) ? "oob" : ""}`}
                   style={{
                     left: `${(i.xIn / sheetWidth) * 100}%`,
                     top: `${(i.yIn / sheetHeight) * 100}%`,
                     width: `${(i.widthIn / sheetWidth) * 100}%`,
                     height: `${(i.heightIn / sheetHeight) * 100}%`,
+                    zIndex: i.zIndex,
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedId(i.id);
                   }}
                   onPointerDown={(e: ReactPointerEvent) => {
+                    if ((e.target as HTMLElement).closest(".resize-handle")) return;
                     e.stopPropagation();
                     setSelectedId(i.id);
-                    drag.current = { id: i.id, x: i.xIn, y: i.yIn, sx: e.clientX, sy: e.clientY };
+                    interaction.current = {
+                      mode: "drag",
+                      id: i.id,
+                      x: i.xIn,
+                      y: i.yIn,
+                      sx: e.clientX,
+                      sy: e.clientY,
+                      snapshot: itemsRef.current,
+                    };
                   }}
                 >
                   <img
@@ -1424,6 +1853,28 @@ export default function GangSheetEditor() {
                     draggable={false}
                   />
                   <em>{i.widthIn.toFixed(1)}″</em>
+                  {i.id === selectedId ? (
+                    <button
+                      type="button"
+                      className="resize-handle se"
+                      aria-label="Resize piece"
+                      onPointerDown={(e: ReactPointerEvent) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setSelectedId(i.id);
+                        interaction.current = {
+                          mode: "resize",
+                          id: i.id,
+                          startW: i.widthIn,
+                          startH: i.heightIn,
+                          aspect: i.widthIn / Math.max(0.01, i.heightIn),
+                          sx: e.clientX,
+                          sy: e.clientY,
+                          snapshot: itemsRef.current,
+                        };
+                      }}
+                    />
+                  ) : null}
                 </div>
               ))}
               {!items.length && (
@@ -1488,17 +1939,48 @@ export default function GangSheetEditor() {
                 </label>
               </div>
               <div className="actions">
-                <button type="button" onClick={duplicate}>
+                <button type="button" onClick={duplicate} aria-label="Duplicate selected">
                   ⧉ Duplicate
                 </button>
-                <button type="button" onClick={rotate}>
+                <button type="button" onClick={rotate} aria-label="Rotate selected">
                   ↻ Rotate
                 </button>
-                <button type="button" onClick={fillSheet}>
+                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">
                   ▦ Fill sheet
                 </button>
-                <button type="button" onClick={removeSelected}>
+                <button type="button" onClick={removeSelected} aria-label="Delete selected">
                   ⌫ Delete
+                </button>
+              </div>
+              <div className="layer-actions">
+                <span>Layer</span>
+                <button
+                  type="button"
+                  onClick={() => layerAction("forward")}
+                  aria-label="Bring forward"
+                >
+                  Forward
+                </button>
+                <button
+                  type="button"
+                  onClick={() => layerAction("backward")}
+                  aria-label="Send backward"
+                >
+                  Backward
+                </button>
+                <button
+                  type="button"
+                  onClick={() => layerAction("front")}
+                  aria-label="Bring to front"
+                >
+                  To front
+                </button>
+                <button
+                  type="button"
+                  onClick={() => layerAction("back")}
+                  aria-label="Send to back"
+                >
+                  To back
                 </button>
               </div>
               <label className="spacing">
@@ -1509,6 +1991,7 @@ export default function GangSheetEditor() {
                   max={0.5}
                   step={0.05}
                   value={gap}
+                  aria-label="Spacing between pieces"
                   onChange={(e) => setGap(+e.target.value)}
                 />
               </label>
@@ -1539,26 +2022,6 @@ export default function GangSheetEditor() {
   );
 }
 
-function inside<T extends CanvasItem>(i: T, w: number, h: number): T {
-  const iw = clamp(i.widthIn, 0.1, w);
-  const ih = clamp(i.heightIn, 0.1, h);
-  return {
-    ...i,
-    widthIn: iw,
-    heightIn: ih,
-    xIn: clamp(i.xIn, 0, w - iw),
-    yIn: clamp(i.yIn, 0, h - ih),
-  };
-}
-
-function clamp(v: number, a: number, b: number) {
-  return Math.min(b, Math.max(a, v));
-}
-
-function round(v: number) {
-  return Math.round(v * 100) / 100;
-}
-
 const CSS = `
 *{box-sizing:border-box}
 .bags{--blue:var(--accent);--line:#dfe3e8;min-height:100vh;background:#eef1f5;color:#111827;font:14px/1.35 Inter,system-ui,sans-serif}
@@ -1587,8 +2050,36 @@ const CSS = `
 .welcome-opt.featured{border-color:var(--accent);background:#fff7ed}
 .welcome-opt.primary{border-color:var(--accent);background:#fff7ed}
 .welcome-opt.disabled{opacity:.55;cursor:not-allowed}
-.welcome-foot{margin-top:20px;padding-top:16px;border-top:1px solid #dfe3e8;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#667085}
-.welcome-foot strong{color:#111827;font-size:13px}
+.bags nav button:focus-visible,.bags nav label:focus-visible,.welcome-opt:focus-visible,.rail-btn:focus-visible,.actions button:focus-visible,.layer-actions button:focus-visible,.zoom button:focus-visible,.resize-handle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.welcome-sheet-pick{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:420px;margin:0 auto 18px}
+.welcome-sheet-pick label{font-size:11px;color:#667085;display:grid;gap:4px}
+.welcome-sheet-pick select{padding:8px;border:1px solid #ccd2da;border-radius:6px;background:#fff}
+.welcome-tip{margin:16px 0 0;padding:10px 12px;background:#f8fafc;border:1px solid #e4e7ec;border-radius:8px;font-size:12px;color:#475467;line-height:1.45;text-align:center}
+.welcome-opt.continue-draft{border-color:#21a366;background:#eef7f2}
+a.welcome-opt{text-decoration:none;color:inherit}
+.draft-modal{position:fixed;inset:0;background:#0d111780;display:grid;place-items:center;z-index:40;padding:16px}
+.draft-modal-card{background:#fff;border-radius:12px;padding:24px;max-width:400px;width:100%;box-shadow:0 16px 40px #0004}
+.draft-modal-card h2{margin:0 0 8px;font-size:18px}
+.draft-modal-card p{margin:0 0 16px;color:#667085;font-size:13px;line-height:1.45}
+.draft-modal-actions{display:flex;flex-wrap:wrap;gap:8px}
+.draft-modal-actions button{border:0;border-radius:7px;padding:10px 14px;background:#242b36;color:#fff;font-weight:700;cursor:pointer}
+.draft-modal-actions .save{background:#21a366}
+.draft-modal-actions .ghost-btn{background:#fff;color:#344054;border:1px solid #ccd2da}
+.rotate-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#475467;margin:0 0 12px}
+.toast.warn{background:#fff7ed;color:#9a3412}
+.toast.tip{background:#f8fafc;color:#475467;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tip-dismiss{border:1px solid #ccd2da;background:#fff;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;white-space:nowrap}
+.layer-actions{padding:0 14px 14px;display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.layer-actions>span{grid-column:1/-1;font-size:11px;color:#667085;font-weight:600}
+.layer-actions button{border:1px solid #ccd2da;background:#fff;border-radius:6px;padding:8px 4px;font-size:11px;cursor:pointer}
+.nest-stats .overflow-note strong{color:#9a3412;font-size:11px;text-align:right;max-width:70%}
+.piece.overlap{box-shadow:0 0 0 2px #f59e0b}
+.piece.oob{box-shadow:0 0 0 2px #ef4444}
+.piece.overlap.oob{box-shadow:0 0 0 2px #ef4444,0 0 0 4px #f59e0b}
+.piece.selected{outline:2px solid var(--accent);outline-offset:2px}
+.resize-handle{position:absolute;width:12px;height:12px;border:2px solid #fff;background:var(--accent);border-radius:2px;padding:0;cursor:nwse-resize;z-index:3}
+.resize-handle.se{right:-7px;bottom:-7px}
+.zoom button:last-child{border-left:1px solid #d4d9df;font-size:11px;font-weight:700;padding:6px 10px}
 .icon-rail{background:#0d1117;color:#98a2b3;display:flex;flex-direction:column;align-items:stretch;padding:8px 0;gap:4px;z-index:6}
 .icon-rail .rail-btn{position:relative;border:0;background:transparent;color:inherit;padding:10px 6px;cursor:pointer;display:grid;justify-items:center;gap:4px;font-size:10px}
 .icon-rail .rail-btn:hover:not(:disabled){color:#fff;background:#1a2230}
@@ -1697,8 +2188,6 @@ aside{background:#fff;overflow:auto}
 .sheet{position:relative;margin:auto;background-color:#fff;background-image:linear-gradient(#f0f2f4 1px,transparent 1px),linear-gradient(90deg,#f0f2f4 1px,transparent 1px);background-size:20px 20px;box-shadow:0 8px 26px #34405438;min-height:300px;touch-action:none}
 .sheet>i{position:absolute;inset:5px;border:1px dashed #e54d4d;pointer-events:none}
 .piece{position:absolute;cursor:move;touch-action:none;user-select:none}
-.piece.selected{outline:2px solid var(--accent);outline-offset:2px}
-.piece.selected:after{content:'';position:absolute;width:10px;height:10px;border:2px solid #fff;background:var(--accent);right:-7px;bottom:-7px;border-radius:50%}
 .piece img{width:100%;height:100%;object-fit:fill;display:block;pointer-events:none}
 .piece em{display:none;position:absolute;left:50%;bottom:-23px;transform:translateX(-50%);background:#111827;color:#fff;padding:3px 6px;border-radius:4px;font-size:9px;white-space:nowrap;font-style:normal}
 .piece.selected em{display:block}
