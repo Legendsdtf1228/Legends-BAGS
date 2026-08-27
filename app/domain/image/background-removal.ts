@@ -89,6 +89,36 @@ function sampleCornerBackground(
   return { r: rs[mid], g: gs[mid], b: bs[mid] };
 }
 
+/** Build RGBA buffer: R/G/B from source raw pixels, alpha from mask (one byte per pixel). */
+export function composeRgbaFromMask(
+  rgbSource: Buffer,
+  sourceChannels: number,
+  alpha: Buffer,
+  width: number,
+  height: number,
+): Buffer {
+  const pixelCount = width * height;
+  const rgba = Buffer.alloc(pixelCount * 4);
+  for (let i = 0; i < pixelCount; i++) {
+    const src = i * sourceChannels;
+    const dst = i * 4;
+    rgba[dst] = rgbSource[src];
+    rgba[dst + 1] = rgbSource[src + 1];
+    rgba[dst + 2] = rgbSource[src + 2];
+    rgba[dst + 3] = alpha[i];
+  }
+  return rgba;
+}
+
+/** Encode 4-channel raw RGBA as PNG without flattening or compositing onto a backdrop. */
+export async function encodeRgbaPng(
+  rgba: Buffer,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  return sharp(rgba, { raw: { width, height, channels: 4 } }).png().toBuffer();
+}
+
 async function refineAlphaChannel(
   alpha: Buffer,
   width: number,
@@ -150,15 +180,8 @@ async function refineExistingAlphaPng(
   }
 
   const refinedAlpha = await refineAlphaChannel(alphaOnly, width, height, keepMargin, feather);
-  const rgb = await sharp(pngBytes).removeAlpha().raw().toBuffer();
-  const rgba = Buffer.alloc(width * height * 4);
-  for (let i = 0; i < width * height; i++) {
-    rgba[i * 4] = rgb[i * 3];
-    rgba[i * 4 + 1] = rgb[i * 3 + 1];
-    rgba[i * 4 + 2] = rgb[i * 3 + 2];
-    rgba[i * 4 + 3] = refinedAlpha[i];
-  }
-  return sharp(rgba, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  const rgba = composeRgbaFromMask(data, channels, refinedAlpha, width, height);
+  return encodeRgbaPng(rgba, width, height);
 }
 
 async function removeBackgroundLocal(
@@ -197,15 +220,8 @@ async function removeBackgroundLocal(
     opts.feather,
   );
 
-  const rgb = await sharp(bytes).removeAlpha().raw().toBuffer();
-  const rgba = Buffer.alloc(width * height * 4);
-  for (let i = 0; i < width * height; i++) {
-    rgba[i * 4] = rgb[i * 3];
-    rgba[i * 4 + 1] = rgb[i * 3 + 1];
-    rgba[i * 4 + 2] = rgb[i * 3 + 2];
-    rgba[i * 4 + 3] = refinedAlpha[i];
-  }
-  return sharp(rgba, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  const rgba = composeRgbaFromMask(data, channels, refinedAlpha, width, height);
+  return encodeRgbaPng(rgba, width, height);
 }
 
 /** Remove background and return PNG bytes with alpha. */
