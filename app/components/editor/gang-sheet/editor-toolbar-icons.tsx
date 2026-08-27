@@ -104,6 +104,17 @@ export const TOOLBAR_ICONS = {
       <path d="M3 6h18M8 6V4h8v2M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" />
     </Icon>
   ),
+  grid: () => (
+    <Icon>
+      <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />
+    </Icon>
+  ),
+  pan: () => (
+    <Icon>
+      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+      <path d="m8 8 8 8M16 8l-8 8" />
+    </Icon>
+  ),
 };
 
 export function ToolbarIcon(props: { name: keyof typeof TOOLBAR_ICONS; label?: string }) {

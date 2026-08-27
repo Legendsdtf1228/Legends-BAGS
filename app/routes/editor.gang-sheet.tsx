@@ -9,10 +9,23 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
-import { GangSheetCommandBar } from "../components/editor/gang-sheet/gang-sheet-command-bar";
+import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
+import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
+import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import {
+  fitWidthZoomPercent,
+  smartFitZoomPercent,
+  zoomDisplayLabel,
+  type ZoomMode,
+} from "../components/editor/gang-sheet/editor-zoom";
+import {
+  QualityInspectorPanel,
+  QualityStatusButton,
+  type QualityDisplayPrefs,
+} from "../components/editor/gang-sheet/quality-inspector";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
@@ -25,7 +38,6 @@ import {
   distributeSelected,
   findOobIds,
   findOverlappingIds,
-  fitZoomPercent,
   inside,
   isTypingTarget,
   nextZIndex,
@@ -150,7 +162,7 @@ const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string }[] = [
   { id: "gallery", label: "Gallery", icon: "gallery" },
   { id: "text", label: "Text", icon: "text" },
   { id: "names", label: "Names", icon: "names" },
-  { id: "auto", label: "Auto", icon: "auto" },
+  { id: "auto", label: "Auto Arrange", icon: "auto" },
   { id: "layers", label: "Layers", icon: "layers" },
   { id: "templates", label: "Templates", icon: "template" },
   { id: "help", label: "Help", icon: "help" },
@@ -348,6 +360,16 @@ export default function GangSheetEditor() {
     return match?.sheetHeightIn ?? page.defaultSheet.maxHeightIn;
   });
   const [zoom, setZoom] = useState(70);
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("custom");
+  const [gridVisible, setGridVisible] = useState(true);
+  const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
+  const [qualityPrefs, setQualityPrefs] = useState<QualityDisplayPrefs>({
+    showResolutionOutlines: true,
+    showOverlapOutlines: true,
+    showSafeZone: false,
+    showOobShading: true,
+  });
+  const [scrollMetrics, setScrollMetrics] = useState({ top: 0, height: 0, client: 0 });
   const [gap, setGap] = useState(0.15);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -452,9 +474,19 @@ export default function GangSheetEditor() {
     [items, sheetWidth, sheetHeight],
   );
   const lowDpiCount = useMemo(
-    () => items.filter((i) => i.kind !== "text" && i.dpi != null && i.dpi < 200).length,
+    () =>
+      items.filter((i) => {
+        if (i.kind === "text") return false;
+        const tier = dpiQualityTier(i.dpi).tier;
+        return tier === "low" || tier === "poor" || tier === "unknown";
+      }).length,
     [items],
   );
+  const qualitySummary = useMemo(
+    () => summarizeQuality(items, overlappingIds, oobIds),
+    [items, overlappingIds, oobIds],
+  );
+  const zoomLabel = useMemo(() => zoomDisplayLabel(zoom, zoomMode), [zoom, zoomMode]);
   const savePreviewUrl = useMemo(
     () => items.find((i) => i.previewUrl)?.previewUrl ?? null,
     [items],
@@ -494,8 +526,32 @@ export default function GangSheetEditor() {
   }, [page.shop, page.designId]);
 
   useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const sync = () =>
+      setScrollMetrics({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight });
+    sync();
+    el.addEventListener("scroll", sync, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      ro.disconnect();
+    };
+  }, [sheetHeight, zoom, items.length]);
+
+  useEffect(() => {
     if (sidebarTab === "gallery") void refreshGallery();
   }, [sidebarTab]);
+
+  useEffect(() => {
+    if (screen !== "canvas") return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const fit = smartFitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight);
+    setZoom(fit.zoom);
+    setZoomMode(fit.mode);
+  }, [sheetWidth, sheetHeight, screen]);
 
   useEffect(() => {
     if (!page.gangSheetVariants.length) return;
@@ -706,10 +762,54 @@ export default function GangSheetEditor() {
     setSaved(false);
   }
 
-  function fitToViewport() {
+  function fitToViewport(mode: "width" | "sheet" = "sheet") {
     const el = scrollRef.current;
     if (!el) return;
-    setZoom(fitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight));
+    if (mode === "width") {
+      setZoom(fitWidthZoomPercent(el.clientWidth, sheetWidth));
+      setZoomMode("fit-width");
+      return;
+    }
+    const fit = smartFitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight);
+    setZoom(fit.zoom);
+    setZoomMode(fit.mode);
+  }
+
+  function handleOverflowAction(action: OverflowAction) {
+    if (action === "arrange") {
+      setScreen("auto_build");
+      setAutoPhase("setup");
+      setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
+      return;
+    }
+    if (action === "duplicate-design") {
+      if (!items.length) return;
+      const copy = items.map((i) => ({ ...i, id: crypto.randomUUID(), xIn: i.xIn + 0.25, yIn: i.yIn + 0.25 }));
+      pushHistory([...items, ...copy]);
+      setMessage("Duplicated all artwork on the sheet.");
+      return;
+    }
+    if (action === "clear-sheet") {
+      if (!items.length) return;
+      if (!window.confirm("Clear all artwork from this sheet? This can be undone with Ctrl+Z.")) return;
+      pushHistory([]);
+      selectItem(null);
+      setMessage("Sheet cleared.");
+      return;
+    }
+    if (action === "library") {
+      setShowLibrarySave(true);
+      return;
+    }
+    if (action === "shortcuts" || action === "help") {
+      setSidebarTab("help");
+      setScreen("canvas");
+      setMobileDrawer("sidebar");
+      return;
+    }
+    if (action === "exit") {
+      setScreen("welcome");
+    }
   }
 
   async function restoreDraft(draft: GangDraftV1) {
@@ -1284,7 +1384,7 @@ export default function GangSheetEditor() {
     if (tab === "auto") {
       setScreen("auto_build");
       setAutoPhase("setup");
-      setMessage("Auto Build — upload, size, and nest in bulk.");
+      setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
       return;
     }
     setSidebarTab(tab);
@@ -1960,7 +2060,7 @@ export default function GangSheetEditor() {
                   }}
                 >
                   <div className="welcome-icon"><EditorRailIcon name="auto" label="Auto Build" /></div>
-                  <strong>Auto Build</strong>
+                  <strong>Auto Arrange</strong>
                   <span>Bulk upload with live nest preview — fastest for many designs.</span>
                 </button>
                 <button type="button" className="welcome-opt" onClick={() => setShowTemplates((v) => !v)}>
@@ -2209,8 +2309,8 @@ export default function GangSheetEditor() {
           <div className="brand">
             <b>L</b>
             <span>
-              <strong>Auto Build</strong>
-              <small>{autoPhase === "setup" ? "Upload → size & qty → Apply" : "Review nest → Continue"}</small>
+              <strong>Auto Arrange</strong>
+              <small>{autoPhase === "setup" ? "Upload → quantity → Apply" : "Review → Continue"}</small>
             </span>
           </div>
           <nav>
@@ -2720,16 +2820,29 @@ export default function GangSheetEditor() {
           setDesignName(name);
           setDirty(true);
         }}
+        dirty={dirty}
+        saved={saved}
         sheetWidth={sheetWidth}
         sheetHeight={sheetHeight}
         sheetWidths={SHEET_WIDTHS}
         sheetHeights={SHEET_HEIGHTS}
         onSheetSizeChange={applySheetSize}
         estimateUsd={estimate}
-        zoom={zoom}
-        onZoomOut={() => setZoom((z) => Math.max(20, z - 10))}
-        onZoomIn={() => setZoom((z) => Math.min(150, z + 10))}
-        onFit={fitToViewport}
+        zoomLabel={zoomLabel}
+        onZoomOut={() => {
+          setZoom((z) => Math.max(15, z - 10));
+          setZoomMode("custom");
+        }}
+        onZoomIn={() => {
+          setZoom((z) => Math.min(200, z + 10));
+          setZoomMode("custom");
+        }}
+        onFitWidth={() => fitToViewport("width")}
+        onFitSheet={() => fitToViewport("sheet")}
+        panMode={spacePan}
+        onTogglePan={() => setSpacePan((v) => !v)}
+        gridVisible={gridVisible}
+        onToggleGrid={() => setGridVisible((v) => !v)}
         canUndo={history.length > 0}
         canRedo={future.length > 0}
         onUndo={undo}
@@ -2738,28 +2851,30 @@ export default function GangSheetEditor() {
         onSaveOnly={openSaveDialog}
         onSaveAndCart={openSaveDialog}
         saving={saving}
-        saved={saved}
         hasItems={items.length > 0}
-        uploading={uploading}
-        onAddFiles={(files) =>
-          void uploadFiles(Array.from(files ?? []), "canvas", { placeOnSheet: true })
+        onOverflowAction={handleOverflowAction}
+        qualityButton={
+          <QualityStatusButton
+            summary={qualitySummary}
+            active={qualityPanelOpen}
+            onClick={() => setQualityPanelOpen((v) => !v)}
+          />
         }
-        onOverflowAction={(action) => {
-          if (action === "arrange") autoArrange();
-          if (action === "library") setShowLibrarySave(true);
+      />
+      <QualityInspectorPanel
+        open={qualityPanelOpen}
+        onOpenChange={setQualityPanelOpen}
+        summary={qualitySummary}
+        items={items}
+        overlappingIds={overlappingIds}
+        oobIds={oobIds}
+        prefs={qualityPrefs}
+        onPrefsChange={setQualityPrefs}
+        onSelectItem={(id) => {
+          selectItem(id);
+          setQualityPanelOpen(false);
         }}
       />
-      {overlappingIds.size > 0 ? (
-        <p className="warn toast" role="status">
-          {overlappingIds.size} piece{overlappingIds.size === 1 ? "" : "s"} overlapping — layouts
-          still save; consider rearranging.
-        </p>
-      ) : null}
-      {oobIds.size > 0 ? (
-        <p className="warn toast" role="status">
-          {oobIds.size} piece{oobIds.size === 1 ? "" : "s"} outside the 0.1″ artboard margin.
-        </p>
-      ) : null}
       {message ? <p className="message toast">{message}</p> : null}
       {error ? <p className="error toast">{error}</p> : null}
       {showFirstTip && items.length === 0 ? (
@@ -2870,15 +2985,19 @@ export default function GangSheetEditor() {
               ) : (
                 <div className="pool-grid" key={poolTick}>
                   {filteredPool.map((p) => {
+                    const dpiInfo = dpiQualityTier(p.asset.dpi);
                     const onSheet = sheetCountForAsset(p.asset.assetId);
-                    const lowDpi = p.asset.dpi != null && p.asset.dpi < 200;
                     return (
                       <div key={p.id} className="pool-item-wrap">
                         <button type="button" className="pool-item" onClick={() => placeFromPool(p.id)} title="Click to place on gang sheet" draggable onDragStart={(e) => e.dataTransfer.setData("text/pool-id", p.id)}>
                           <img src={p.previewUrl} alt="" className="checkerboard" />
                           <span>{p.name}</span>
                           {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
-                          {lowDpi ? <em className="dpi-warn">Low DPI</em> : null}
+                          {dpiInfo.tier !== "excellent" && dpiInfo.tier !== "good" ? (
+                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label} DPI</em>
+                          ) : (
+                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label}</em>
+                          )}
                         </button>
                         <div className="pool-item-actions">
                           <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
@@ -3031,12 +3150,25 @@ export default function GangSheetEditor() {
               ))}
             </div>
             <div className="canvas-stage">
+            <CanvasMinimap
+              sheetWidth={sheetWidth}
+              sheetHeight={sheetHeight}
+              scrollTop={scrollMetrics.top}
+              scrollHeight={scrollMetrics.height}
+              clientHeight={scrollMetrics.client}
+              visible={screen === "canvas"}
+              onNavigate={(ratio) => {
+                const el = scrollRef.current;
+                if (!el) return;
+                el.scrollTop = ratio * Math.max(0, el.scrollHeight - el.clientHeight);
+              }}
+            />
             <div
               ref={canvas}
-              className="sheet"
+              className={`sheet ${gridVisible ? "grid-on" : "grid-off"} ${qualityPrefs.showSafeZone ? "safe-zone-on" : ""}`}
               style={{ width: `${zoom}%`, aspectRatio: `${sheetWidth}/${sheetHeight}` }}
             >
-              <i />
+              <i className={qualityPrefs.showSafeZone ? "safe-zone" : undefined} />
               {snapGuides.map((g, idx) => (
                 <div
                   key={`${g.axis}-${g.valueIn}-${idx}`}
@@ -3052,8 +3184,8 @@ export default function GangSheetEditor() {
                 <div
                   key={i.id}
                   className={`piece ${selectedIds.has(i.id) ? "selected" : ""} ${
-                    overlappingIds.has(i.id) ? "overlap" : ""
-                  } ${oobIds.has(i.id) ? "oob" : ""}`}
+                    qualityPrefs.showOverlapOutlines && overlappingIds.has(i.id) ? "overlap" : ""
+                  } ${qualityPrefs.showOobShading && oobIds.has(i.id) ? "oob" : ""}`}
                   style={{
                     left: `${(i.xIn / sheetWidth) * 100}%`,
                     top: `${(i.yIn / sheetHeight) * 100}%`,
@@ -3292,12 +3424,11 @@ export default function GangSheetEditor() {
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
         <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
-        <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
-        <button type="button" onClick={fitToViewport}>Fit</button>
+        <button type="button" onClick={() => { setSidebarTab("gallery"); setMobileDrawer("sidebar"); }}>Gallery</button>
+        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto Arrange</button>
         <button type="button" onClick={() => { setSidebarTab("layers"); setMobileDrawer("sidebar"); }}>Layers</button>
-        <button type="button" onClick={() => setMobileDrawer("properties")} disabled={!selected}>Edit</button>
         <button type="button" className="save" onClick={openSaveDialog} disabled={saving || !items.length}>
-          {saving ? "…" : "Save"}
+          {saving ? "Saving…" : "Save"}
         </button>
       </nav>
 

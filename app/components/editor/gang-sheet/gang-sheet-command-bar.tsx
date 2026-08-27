@@ -1,18 +1,35 @@
+import type { ReactNode } from "react";
 import { ToolbarIcon } from "./editor-toolbar-icons";
+
+export type OverflowAction =
+  | "arrange"
+  | "duplicate-design"
+  | "clear-sheet"
+  | "shortcuts"
+  | "help"
+  | "library"
+  | "exit";
 
 export type GangSheetCommandBarProps = {
   designName: string | null;
   onDesignNameChange: (name: string) => void;
+  dirty: boolean;
+  saved: boolean;
   sheetWidth: number;
   sheetHeight: number;
   sheetWidths: readonly number[];
   sheetHeights: readonly number[];
   onSheetSizeChange: (width: number, height: number) => void;
   estimateUsd: number;
-  zoom: number;
+  zoomLabel: string;
   onZoomOut: () => void;
   onZoomIn: () => void;
-  onFit: () => void;
+  onFitWidth: () => void;
+  onFitSheet: () => void;
+  panMode: boolean;
+  onTogglePan: () => void;
+  gridVisible: boolean;
+  onToggleGrid: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -22,27 +39,32 @@ export type GangSheetCommandBarProps = {
   onSaveOnly: () => void;
   onSaveAndCart: () => void;
   saving: boolean;
-  saved: boolean;
   hasItems: boolean;
-  uploading: boolean;
-  onAddFiles: (files: FileList | null) => void;
-  onOverflowAction?: (action: "arrange" | "library") => void;
+  onOverflowAction?: (action: OverflowAction) => void;
+  qualityButton?: ReactNode;
 };
 
 export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
   const {
     designName,
     onDesignNameChange,
+    dirty,
+    saved,
     sheetWidth,
     sheetHeight,
     sheetWidths,
     sheetHeights,
     onSheetSizeChange,
     estimateUsd,
-    zoom,
+    zoomLabel,
     onZoomOut,
     onZoomIn,
-    onFit,
+    onFitWidth,
+    onFitSheet,
+    panMode,
+    onTogglePan,
+    gridVisible,
+    onToggleGrid,
     canUndo,
     canRedo,
     onUndo,
@@ -52,26 +74,23 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
     onSaveOnly,
     onSaveAndCart,
     saving,
-    saved,
     hasItems,
-    uploading,
-    onAddFiles,
     onOverflowAction,
+    qualityButton,
   } = props;
+
+  const saveState =
+    saving ? "Saving…" : saved && !dirty ? "Saved" : dirty ? "Unsaved changes" : "Saved";
 
   return (
     <header className="gs-command-bar" role="banner">
-      <div className="gs-command-brand">
+      <div className="gs-command-left">
         <span className="gs-command-logo" aria-hidden>
           L
         </span>
-        <div className="gs-command-brand-text">
-          <strong>Legends BAGS</strong>
-          <small>Gang Sheet Builder</small>
-        </div>
-      </div>
-
-      <div className="gs-command-center">
+        <button type="button" className="gs-ghost-btn gs-back-btn" onClick={onHome} title="Welcome Center" aria-label="Back to Welcome Center">
+          <ToolbarIcon name="home" />
+        </button>
         <label className="gs-design-name-field">
           <span className="sr-only">Design name</span>
           <input
@@ -83,69 +102,17 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
             aria-label="Design name"
           />
         </label>
+        <span className={`gs-save-state ${dirty ? "dirty" : "clean"}`} aria-live="polite">
+          {saveState}
+        </span>
+      </div>
 
-        <div className="gs-command-divider" aria-hidden />
-
-        <div className="gs-sheet-meta">
-          <label className="gs-sheet-select">
-            <span>Width</span>
-            <select
-              value={sheetWidth}
-              aria-label="Sheet width"
-              onChange={(e) => onSheetSizeChange(+e.target.value, sheetHeight)}
-            >
-              {sheetWidths.map((w) => (
-                <option key={w} value={w}>
-                  {w}″
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="gs-sheet-times" aria-hidden>
-            ×
-          </span>
-          <label className="gs-sheet-select">
-            <span>Length</span>
-            <select
-              value={sheetHeight}
-              aria-label="Sheet length"
-              onChange={(e) => onSheetSizeChange(sheetWidth, +e.target.value)}
-            >
-              {sheetHeights.map((h) => (
-                <option key={h} value={h}>
-                  {h}″
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="gs-price-pill" aria-label={`Estimated price ${estimateUsd.toFixed(2)} dollars`}>
-          <span>Est.</span>
-          <strong>${estimateUsd.toFixed(2)}</strong>
-        </div>
-
-        <div className="gs-command-divider" aria-hidden />
-
+      <div className="gs-command-center">
         <div className="gs-history-group">
-          <button
-            type="button"
-            className="gs-icon-btn"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="Undo"
-            aria-label="Undo"
-          >
+          <button type="button" className="gs-icon-btn" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
             <ToolbarIcon name="undo" />
           </button>
-          <button
-            type="button"
-            className="gs-icon-btn"
-            onClick={onRedo}
-            disabled={!canRedo}
-            title="Redo"
-            aria-label="Redo"
-          >
+          <button type="button" className="gs-icon-btn" onClick={onRedo} disabled={!canRedo} title="Redo" aria-label="Redo">
             <ToolbarIcon name="redo" />
           </button>
         </div>
@@ -154,14 +121,39 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           <button type="button" className="gs-icon-btn" onClick={onZoomOut} title="Zoom out" aria-label="Zoom out">
             <ToolbarIcon name="zoomOut" />
           </button>
-          <span className="gs-zoom-label">{zoom}%</span>
+          <span className="gs-zoom-label">{zoomLabel}</span>
           <button type="button" className="gs-icon-btn" onClick={onZoomIn} title="Zoom in" aria-label="Zoom in">
             <ToolbarIcon name="zoomIn" />
           </button>
-          <button type="button" className="gs-icon-btn gs-fit-btn" onClick={onFit} title="Fit to viewport" aria-label="Fit to viewport">
+          <button type="button" className="gs-ghost-btn gs-zoom-mode-btn" onClick={onFitWidth} title="Fit width" aria-label="Fit width">
+            Width
+          </button>
+          <button type="button" className="gs-icon-btn gs-fit-btn" onClick={onFitSheet} title="Fit full sheet" aria-label="Fit full sheet">
             <ToolbarIcon name="fit" />
           </button>
         </div>
+
+        <button
+          type="button"
+          className={`gs-icon-btn ${panMode ? "active" : ""}`}
+          onClick={onTogglePan}
+          title="Pan mode (hold Space)"
+          aria-label="Toggle pan mode"
+          aria-pressed={panMode}
+        >
+          <ToolbarIcon name="pan" />
+        </button>
+
+        <button
+          type="button"
+          className={`gs-icon-btn ${gridVisible ? "active" : ""}`}
+          onClick={onToggleGrid}
+          title="Toggle grid"
+          aria-label="Toggle grid"
+          aria-pressed={gridVisible}
+        >
+          <ToolbarIcon name="grid" />
+        </button>
 
         {onPreview ? (
           <button type="button" className="gs-ghost-btn" onClick={onPreview} title="Preview sheet">
@@ -169,27 +161,36 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
             <span>Preview</span>
           </button>
         ) : null}
+
+        {qualityButton}
       </div>
 
-      <nav className="gs-command-actions" aria-label="Editor actions">
-        <button type="button" className="gs-ghost-btn" onClick={onHome} title="Welcome center" aria-label="Home">
-          <ToolbarIcon name="home" />
-          <span className="gs-hide-mobile">Home</span>
-        </button>
+      <nav className="gs-command-right" aria-label="Editor actions">
+        <div className="gs-sheet-meta">
+          <label className="gs-sheet-select">
+            <span>Size</span>
+            <select
+              value={`${sheetWidth}x${sheetHeight}`}
+              aria-label="Sheet size"
+              onChange={(e) => {
+                const [w, h] = e.target.value.split("x").map(Number);
+                if (w && h) onSheetSizeChange(w, h);
+              }}
+            >
+              {sheetWidths.flatMap((w) =>
+                sheetHeights.map((h) => (
+                  <option key={`${w}-${h}`} value={`${w}x${h}`}>
+                    {w} × {h}″
+                  </option>
+                )),
+              )}
+            </select>
+          </label>
+        </div>
 
-        <label className="gs-add-btn">
-          {uploading ? "Uploading…" : "Add"}
-          <input
-            type="file"
-            multiple
-            accept="image/png,image/jpeg"
-            hidden
-            onChange={(e) => {
-              onAddFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-        </label>
+        <div className="gs-price-pill" aria-label={`Estimated price ${estimateUsd.toFixed(2)} dollars`}>
+          <strong>${estimateUsd.toFixed(2)}</strong>
+        </div>
 
         <button
           type="button"
@@ -199,7 +200,7 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           aria-label="Save design"
         >
           <ToolbarIcon name="save" />
-          {saving ? "Saving…" : saved ? "Saved" : "Save"}
+          {saving ? "Saving…" : "Save"}
         </button>
 
         <button
@@ -218,16 +219,26 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
             <ToolbarIcon name="more" />
           </summary>
           <div className="gs-overflow-panel" role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!hasItems}
-              onClick={() => onOverflowAction?.("arrange")}
-            >
-              Auto arrange
+            <button type="button" role="menuitem" disabled={!hasItems} onClick={() => onOverflowAction?.("arrange")}>
+              Auto Arrange…
+            </button>
+            <button type="button" role="menuitem" disabled={!hasItems} onClick={() => onOverflowAction?.("duplicate-design")}>
+              Duplicate design
+            </button>
+            <button type="button" role="menuitem" disabled={!hasItems} onClick={() => onOverflowAction?.("clear-sheet")}>
+              Clear sheet…
             </button>
             <button type="button" role="menuitem" onClick={() => onOverflowAction?.("library")}>
               Save to library…
+            </button>
+            <button type="button" role="menuitem" onClick={() => onOverflowAction?.("shortcuts")}>
+              Keyboard shortcuts
+            </button>
+            <button type="button" role="menuitem" onClick={() => onOverflowAction?.("help")}>
+              Help
+            </button>
+            <button type="button" role="menuitem" onClick={() => onOverflowAction?.("exit")}>
+              Exit to Welcome Center
             </button>
           </div>
         </details>
