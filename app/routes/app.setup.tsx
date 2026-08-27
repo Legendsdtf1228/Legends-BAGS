@@ -8,6 +8,9 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { upsertProductBinding } from "../services/design-service";
 import { customerEditorUrls } from "../lib/editor-links.server";
+import { builderLinksFromBindings, buildBuilderLaunchUrl } from "../lib/builder-links.server";
+import { numericIdFromGid } from "../domain/builder/builder-launch-context";
+import prisma from "../db.server";
 import { BagsPageHeader, BagsCard, EditorTryCard } from "../components/merchant/bags-admin-ui";
 
 const UBS_TITLE = "[LGS DEV] Upload by Size — Test Gang Sheet";
@@ -111,10 +114,18 @@ async function ensureProduct(
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const appUrl = process.env.SHOPIFY_APP_URL || "";
+  const bindings = await prisma.productBinding.findMany({
+    where: { shop: session.shop },
+    orderBy: [{ builderType: "asc" }, { sheetHeightIn: "asc" }],
+    take: 20,
+  });
+
   return {
     shop: session.shop,
-    appUrl: process.env.SHOPIFY_APP_URL || "",
-    editors: customerEditorUrls(session.shop, process.env.SHOPIFY_APP_URL || ""),
+    appUrl,
+    editors: customerEditorUrls(session.shop, appUrl),
+    builderLinks: builderLinksFromBindings(session.shop, appUrl, bindings),
     testApiConfigured: Boolean(process.env.TEST_API_TOKEN),
   };
 };
@@ -156,6 +167,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       product: result.product,
       themeBlock: "LGS Upload by Size",
       storeUrl: `https://${session.shop}/products/${result.product.handle}`,
+      builderUrl: buildBuilderLaunchUrl({
+        appUrl: process.env.SHOPIFY_APP_URL || "",
+        shop: session.shop,
+        productId: numericIdFromGid(result.product.id) || "",
+        variantId: numericIdFromGid(result.variantId),
+      }),
     };
   }
 
@@ -189,6 +206,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       product: result.product,
       themeBlock: "LGS Gang Sheet Builder",
       storeUrl: `https://${session.shop}/products/${result.product.handle}`,
+      builderUrl: buildBuilderLaunchUrl({
+        appUrl: process.env.SHOPIFY_APP_URL || "",
+        shop: session.shop,
+        productId: numericIdFromGid(result.product.id) || "",
+        variantId: numericIdFromGid(result.variantId),
+      }),
     };
   }
 
@@ -228,17 +251,42 @@ export default function SetupPage() {
           </div>
         </BagsCard>
 
-        <BagsCard title="2. Theme blocks" style={{ marginTop: 16 }}>
-          <p className="bags-admin-muted">Editor base URL (paste into each block):</p>
+        <BagsCard title="2. Theme blocks & /builder" style={{ marginTop: 16 }}>
+          <p className="bags-admin-muted">
+            Storefront blocks launch <code>/builder</code> (BAGS-compatible). Editor base URL is still
+            required on each block:
+          </p>
           <code style={{ display: "block", marginTop: 8, wordBreak: "break-all", fontSize: 12 }}>
             {data.appUrl || "(SHOPIFY_APP_URL — run shopify app dev)"}
           </code>
           <ol className="bags-admin-muted" style={{ marginTop: 12, paddingLeft: 20 }}>
             <li>Open each test product in the Online Store theme editor.</li>
             <li>Add LGS Upload by Size or LGS Gang Sheet Builder block.</li>
-            <li>Set Editor base URL to the tunnel URL above.</li>
+            <li>Set Editor base URL to the Railway or tunnel URL above.</li>
             <li>Add LGS Cart Edit Design block to the cart template.</li>
+            <li>Deploy theme extension: <code>shopify app deploy</code></li>
           </ol>
+          {data.builderLinks.length ? (
+            <div style={{ marginTop: 16 }}>
+              <strong style={{ fontSize: 13 }}>Bound product /builder URLs</strong>
+              <ul className="bags-admin-muted" style={{ marginTop: 8, paddingLeft: 20 }}>
+                {data.builderLinks.map((link) => (
+                  <li key={link.id} style={{ marginBottom: 8 }}>
+                    {link.builderType === "gang_sheet" ? "Gang sheet" : "Upload by Size"}
+                    {link.sheetHeightIn ? ` · ${link.sheetHeightIn}″` : ""}
+                    <br />
+                    <a href={link.builderUrl} target="_blank" rel="noopener noreferrer">
+                      {link.builderUrl}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="bags-admin-muted" style={{ marginTop: 12 }}>
+              Create test products above to generate /builder URLs.
+            </p>
+          )}
         </BagsCard>
 
         <BagsCard title="3. Editor auth (dev)" style={{ marginTop: 16 }}>

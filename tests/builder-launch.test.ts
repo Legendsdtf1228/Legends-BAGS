@@ -129,6 +129,21 @@ describe("builder-launch-context", () => {
     expect(toVariantGid("987654321")).toBe("gid://shopify/ProductVariant/987654321");
     expect(numericIdFromGid("gid://shopify/Product/10088258109734")).toBe("10088258109734");
   });
+
+  it("builds storefront /builder URL", async () => {
+    const { buildBuilderLaunchUrl } = await import("../app/lib/builder-links.server");
+    const url = buildBuilderLaunchUrl({
+      appUrl: "https://upload-by-size-production.up.railway.app",
+      shop: DEV_SHOP,
+      productId: "10088258109734",
+      variantId: "987654321",
+      quantity: 1,
+    });
+    expect(url).toContain("/builder?");
+    expect(url).toContain("product=10088258109734");
+    expect(url).toContain("variant=987654321");
+    expect(url).toContain("shop_mode=1");
+  });
 });
 
 describe("resolveBuilderLaunch", () => {

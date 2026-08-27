@@ -23,6 +23,8 @@
     "setup:dev-webhooks": "node --env-file=.env ./scripts/setup-dev-webhooks.mjs",
     "setup:dev-all": "node ./scripts/setup-dev-all.mjs",
     "e2e:checkout": "tsx ./scripts/e2e-checkout.ts",
+    "e2e:builder": "node ./scripts/e2e-builder.mjs",
+    "print:builder-urls": "node ./scripts/print-builder-urls.mjs",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",
