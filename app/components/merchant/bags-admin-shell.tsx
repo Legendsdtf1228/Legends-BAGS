@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { BAGS_ADMIN_NAV, isNavActive } from "./bags-admin-nav";
@@ -6,18 +7,25 @@ import { bagsAdminStyles } from "./bags-admin-ui";
 
 const SECTION_LABELS: Record<string, string> = {
   main: "Main",
-  builders: "Builder settings",
-  settings: "Install",
+  settings: "Settings",
+  support: "Support",
 };
+
+const APP_VERSION = "1.0.0-dev";
 
 export function BagsAdminShell(props: { shop?: string; children: ReactNode }) {
   const { pathname } = useLocation();
-  const sections = ["main", "builders", "settings"] as const;
+  const sections = ["main", "settings", "support"] as const;
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="bags-admin-shell">
       <style>{bagsAdminStyles}</style>
-      <aside className="bags-admin-sidebar" aria-label="Legends BAGS navigation">
+      <aside
+        className={`bags-admin-sidebar${collapsed ? " is-collapsed" : ""}${mobileOpen ? " is-mobile-open" : ""}`}
+        aria-label="Legends BAGS navigation"
+      >
         <div className="bags-admin-brand">
           <div className="bags-admin-logo" aria-hidden>
             L
@@ -28,6 +36,17 @@ export function BagsAdminShell(props: { shop?: string; children: ReactNode }) {
               <em>Legends</em> BAGS
             </span>
           </div>
+          <button
+            type="button"
+            className="bags-admin-nav-toggle"
+            aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((v) => !v)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
         </div>
         <nav className="bags-admin-nav">
           {sections.map((section) => {
@@ -43,11 +62,13 @@ export function BagsAdminShell(props: { shop?: string; children: ReactNode }) {
                       key={item.id}
                       to={item.to}
                       className={`bags-admin-nav-link${isNavActive(pathname, item) ? " active" : ""}`}
+                      title={item.label}
+                      onClick={() => setMobileOpen(false)}
                     >
                       <span className="bags-admin-nav-icon" aria-hidden>
                         {Icon ? Icon() : null}
                       </span>
-                      {item.label}
+                      <span>{item.label}</span>
                     </Link>
                   );
                 })}
@@ -58,7 +79,7 @@ export function BagsAdminShell(props: { shop?: string; children: ReactNode }) {
         {props.shop ? (
           <div className="bags-admin-sidebar-foot">
             <div>{props.shop}</div>
-            <div style={{ marginTop: 4, opacity: 0.85 }}>Merchant admin</div>
+            <div style={{ marginTop: 4 }}>Legends BAGS v{APP_VERSION}</div>
           </div>
         ) : null}
       </aside>

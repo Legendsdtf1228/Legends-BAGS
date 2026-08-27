@@ -14,6 +14,7 @@ import {
   PresetSizeChips,
   StepperField,
 } from "../components/editor/bags-ui";
+import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
@@ -657,11 +658,11 @@ export default function UploadBySizeEditor() {
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
             <button type="button" className="rail-btn active" title="Home" aria-label="Home">
-              <span className="rail-icon">🏠</span>
+              <EditorRailIcon name="home" label="Home" />
               <span className="rail-label">Home</span>
             </button>
             <label className={`rail-btn${busy ? " soon" : ""}`} title="Upload" aria-label="Upload">
-              <span className="rail-icon">📁</span>
+              <EditorRailIcon name="upload" label="Upload" />
               <span className="rail-label">Upload</span>
               <input
                 type="file"
@@ -688,7 +689,7 @@ export default function UploadBySizeEditor() {
 
               <div className="welcome-grid two-col">
                 <label className={`welcome-opt primary featured${busy ? " disabled" : ""}`}>
-                  <div className="welcome-icon">＋</div>
+                  <div className="welcome-icon"><EditorRailIcon name="upload" label="Upload by Size" /></div>
                   <strong>Upload by Size</strong>
                   <span>
                     Choose PNG or JPEG files — size each design with presets or custom dimensions,
@@ -704,7 +705,7 @@ export default function UploadBySizeEditor() {
                   />
                 </label>
                 <a className="welcome-opt" href={gangHref}>
-                  <div className="welcome-icon">🎨</div>
+                  <div className="welcome-icon"><EditorRailIcon name="sheet" label="Gang Sheet" /></div>
                   <strong>Build a Gang Sheet</strong>
                   <span>Nest multiple designs on a shared sheet with drag-and-drop placement.</span>
                 </a>
@@ -714,7 +715,7 @@ export default function UploadBySizeEditor() {
                     className="welcome-opt"
                     onClick={() => void loadRemoteDesign(savedDesigns[0].id, savedDesigns[0].version)}
                   >
-                    <div className="welcome-icon">💾</div>
+                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
                     <strong>Open saved design</strong>
                     <span>
                       {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} in your
@@ -723,7 +724,7 @@ export default function UploadBySizeEditor() {
                   </button>
                 ) : (
                   <button type="button" className="welcome-opt disabled">
-                    <div className="welcome-icon">💾</div>
+                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
                     <strong>Open saved design</strong>
                     <span>Save a design from the editor to build your library.</span>
                   </button>
