@@ -85,7 +85,7 @@ export default function BuildAssignPage() {
           <BagsCard style={{ marginBottom: 16 }}>
             <p style={{ color: "#b42318", margin: 0 }}>{loadError}</p>
             <p className="bags-admin-muted" style={{ margin: "8px 0 0" }}>
-              Run <code>npm run setup</code> to apply migrations, then restart the dev server.
+              Run <code>npm run setup</code>, then restart <code>shopify app dev</code> (stop the running process first).
             </p>
           </BagsCard>
         ) : null}

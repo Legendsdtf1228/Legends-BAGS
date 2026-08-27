@@ -11,7 +11,14 @@ import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  return { fonts: await listShopFonts(session.shop) };
+  try {
+    return { fonts: await listShopFonts(session.shop), loadError: null as string | null };
+  } catch (err) {
+    return {
+      fonts: [] as Awaited<ReturnType<typeof listShopFonts>>,
+      loadError: err instanceof Error ? err.message : "Fonts are temporarily unavailable.",
+    };
+  }
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -36,7 +43,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function FontsPage() {
-  const { fonts } = useLoaderData<typeof loader>();
+  const { fonts, loadError } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -46,6 +53,14 @@ export default function FontsPage() {
         subtitle="Enabled fonts for Text and Names & Numbers in the customer editor"
       />
       <div className="bags-admin-content">
+        {loadError ? (
+          <BagsCard style={{ marginBottom: 16 }}>
+            <p style={{ color: "#b42318", margin: 0 }}>{loadError}</p>
+            <p className="bags-admin-muted" style={{ margin: "8px 0 0" }}>
+              Run <code>npm run setup</code>, then restart <code>shopify app dev</code>.
+            </p>
+          </BagsCard>
+        ) : null}
         {actionData?.message ? (
           <BagsCard style={{ marginBottom: 16 }}>
             <p className="bags-admin-muted">{actionData.message}</p>

@@ -1,17 +1,7 @@
 import prisma from "../db.server";
 
-function assertAssignmentDelegate() {
-  const delegate = prisma.designAssignment;
-  if (!delegate?.findMany) {
-    throw new Error(
-      "Design assignments are not available yet. Run database migrations and restart the app (npm run setup).",
-    );
-  }
-  return delegate;
-}
-
 export async function listDesignAssignments(shop: string) {
-  const rows = await assertAssignmentDelegate().findMany({
+  const rows = await prisma.designAssignment.findMany({
     where: { shop },
     orderBy: { updatedAt: "desc" },
     take: 100,
@@ -43,7 +33,7 @@ export async function createDesignAssignment(params: {
   if (!design) throw new Error("Design not found");
   const name = params.assigneeName.trim();
   if (!name) throw new Error("Assignee name required");
-  return assertAssignmentDelegate().create({
+  return prisma.designAssignment.create({
     data: {
       shop: params.shop,
       designId: design.id,
@@ -60,11 +50,11 @@ export async function updateAssignmentStatus(
   assignmentId: string,
   status: "pending" | "completed",
 ) {
-  const row = await assertAssignmentDelegate().findFirst({
+  const row = await prisma.designAssignment.findFirst({
     where: { id: assignmentId, shop },
   });
   if (!row) throw new Error("Assignment not found");
-  return assertAssignmentDelegate().update({
+  return prisma.designAssignment.update({
     where: { id: row.id },
     data: { status },
   });
@@ -75,11 +65,11 @@ export async function updateDesignAssignment(
   assignmentId: string,
   patch: { assigneeName?: string; assigneeEmail?: string | null; notes?: string | null },
 ) {
-  const row = await assertAssignmentDelegate().findFirst({
+  const row = await prisma.designAssignment.findFirst({
     where: { id: assignmentId, shop },
   });
   if (!row) throw new Error("Assignment not found");
-  return assertAssignmentDelegate().update({
+  return prisma.designAssignment.update({
     where: { id: row.id },
     data: {
       ...(patch.assigneeName !== undefined ? { assigneeName: patch.assigneeName.trim() } : {}),
@@ -92,9 +82,9 @@ export async function updateDesignAssignment(
 }
 
 export async function deleteDesignAssignment(shop: string, assignmentId: string) {
-  const row = await assertAssignmentDelegate().findFirst({
+  const row = await prisma.designAssignment.findFirst({
     where: { id: assignmentId, shop },
   });
   if (!row) throw new Error("Assignment not found");
-  await assertAssignmentDelegate().delete({ where: { id: row.id } });
+  await prisma.designAssignment.delete({ where: { id: row.id } });
 }

@@ -14,10 +14,10 @@ export async function ensureDefaultGallery(shop: string) {
   const existing = await prisma.galleryCategory.count({ where: { shop } });
   if (existing > 0) return;
 
-  const categories = ["Sports", "Mascots", "Numbers", "Seasonal"];
-  for (let i = 0; i < categories.length; i++) {
+  const names = ["Sports", "Mascots", "Numbers", "Seasonal"];
+  for (let i = 0; i < names.length; i++) {
     await prisma.galleryCategory.create({
-      data: { shop, name: categories[i], sortOrder: i },
+      data: { shop, name: names[i], sortOrder: i },
     });
   }
 }
