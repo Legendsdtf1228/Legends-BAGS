@@ -1,11 +1,4 @@
 import prisma from "../db.server";
-import { GALLERY_ITEMS } from "../components/editor/gang-sheet/editor-data";
-import { createAssetFromUpload } from "./design-service";
-
-const MIN_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
 
 export type GalleryListItem = {
   id: string;
@@ -22,33 +15,9 @@ export async function ensureDefaultGallery(shop: string) {
   if (existing > 0) return;
 
   const categories = ["Sports", "Mascots", "Numbers", "Seasonal"];
-  const categoryByName = new Map<string, string>();
-
   for (let i = 0; i < categories.length; i++) {
-    const cat = await prisma.galleryCategory.create({
+    await prisma.galleryCategory.create({
       data: { shop, name: categories[i], sortOrder: i },
-    });
-    categoryByName.set(cat.name, cat.id);
-  }
-
-  const placeholderAsset = await createAssetFromUpload(shop, MIN_PNG);
-
-  for (const item of GALLERY_ITEMS) {
-    const categoryId = categoryByName.get(item.category);
-    if (!categoryId) continue;
-    await prisma.galleryAsset.create({
-      data: {
-        shop,
-        categoryId,
-        assetId: placeholderAsset.id,
-        name: item.name,
-        tags: item.tags.join(","),
-        defaultWidthIn: item.widthIn,
-        defaultHeightIn: item.heightIn,
-        thumbUrl: item.thumb,
-        sortOrder: 0,
-        active: true,
-      },
     });
   }
 }

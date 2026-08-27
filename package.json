@@ -2,7 +2,8 @@
   "name": "legends-gang-sheet",
   "private": true,
   "scripts": {
-    "build": "react-router build",
+    "build": "node ./scripts/sync-launcher-full.mjs && react-router build",
+    "prebuild": "node ./scripts/sync-launcher-full.mjs",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",

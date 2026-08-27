@@ -256,3 +256,43 @@ model WebhookDelivery {
 
   @@index([shop, topic, payloadHash])
 }
+
+model ShopFont {
+  id                    String   @id @default(cuid())
+  shop                  String
+  name                  String
+  family                String
+  source                String   @default("system")
+  storageKey            String?
+  category              String   @default("general")
+  enabled               Boolean  @default(true)
+  isDefault             Boolean  @default(false)
+  licenseAcknowledged   Boolean  @default(false)
+  previewText           String   @default("Legends BAGS")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([shop, family])
+  @@index([shop, enabled])
+}
+
+model FitCheckTemplate {
+  id              String   @id @default(cuid())
+  shop            String
+  name            String
+  previewAssetId  String?
+  regionX         Float    @default(0)
+  regionY         Float    @default(0)
+  regionWidthIn   Float    @default(10)
+  regionHeightIn  Float    @default(10)
+  regionShape     String   @default("rect")
+  rotationDeg     Float    @default(0)
+  cylindrical     Boolean  @default(false)
+  productGids     String   @default("")
+  active          Boolean  @default(true)
+  archived        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop, active])
+}
