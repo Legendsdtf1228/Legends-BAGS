@@ -24,6 +24,8 @@ export type DesignItem = {
   /** Explicit placement used by the visual gang-sheet builder. */
   xIn?: number;
   yIn?: number;
+  /** Layer order; higher paints later / on top. Defaults to item index when omitted. */
+  zIndex?: number;
 };
 
 export type PricingSnapshot = {

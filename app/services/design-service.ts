@@ -278,14 +278,20 @@ export async function createGangSheetDesign(params: {
   if (ownedAssets !== assetIds.length) throw new Error("One or more assets were not found");
 
   const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
-  const normalizedItems = params.items.map((item) => ({
-    ...item,
-    quantity: Math.max(1, Math.floor(item.quantity || 1)),
-    widthIn: Math.round(item.widthIn * 1000) / 1000,
-    heightIn: Math.round(item.heightIn * 1000) / 1000,
-    xIn: Math.round((item.xIn ?? 0) * 1000) / 1000,
-    yIn: Math.round((item.yIn ?? 0) * 1000) / 1000,
-  }));
+  const normalizedItems = params.items.map((item, index) => {
+    if (!Number.isFinite(item.xIn) || !Number.isFinite(item.yIn)) {
+      throw new Error("Every gang sheet item requires finite xIn and yIn");
+    }
+    return {
+      ...item,
+      quantity: Math.max(1, Math.floor(item.quantity || 1)),
+      widthIn: Math.round(item.widthIn * 1000) / 1000,
+      heightIn: Math.round(item.heightIn * 1000) / 1000,
+      xIn: Math.round(item.xIn! * 1000) / 1000,
+      yIn: Math.round(item.yIn! * 1000) / 1000,
+      zIndex: item.zIndex ?? index,
+    };
+  });
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
     workflow: "gang_sheet",

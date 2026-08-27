@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import { inchesToPx, OUTPUT_DPI } from "../design/types";
 import type { NestResult } from "../nesting";
-import type { RenderAsset, RenderOutput } from "./index";
+import { sortPlacementsForPaint, type RenderAsset, type RenderOutput } from "./index";
 
 export type TileRenderInput = {
   nest: NestResult;
@@ -23,7 +23,8 @@ export async function renderSheetPngTiled(
   const heightPx = inchesToPx(input.nest.sheetHeightIn);
   const tileHeight = input.tileHeightPx ?? DEFAULT_TILE_HEIGHT;
 
-  const placementsPx = input.nest.placements.map((p) => ({
+  const orderedPlacements = sortPlacementsForPaint(input.nest.placements);
+  const placementsPx = orderedPlacements.map((p) => ({
     assetId: p.assetId,
     x: inchesToPx(p.xIn),
     y: inchesToPx(p.yIn),
