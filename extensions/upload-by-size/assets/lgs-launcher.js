@@ -20,6 +20,32 @@
       return Boolean(root.dataset.lgsDesignId);
     }
 
+    function cartForms() {
+      var section = root.closest("section") || root.parentElement;
+      var nearby = section
+        ? Array.prototype.slice.call(
+            section.querySelectorAll('form[action="/cart/add"], form[action*="/cart/add"]'),
+          )
+        : [];
+      if (nearby.length) return nearby;
+      return Array.prototype.slice
+        .call(document.querySelectorAll('form[action="/cart/add"], form[action*="/cart/add"]'))
+        .filter(function (form) {
+          var idInput = form.querySelector('[name="id"]');
+          return idInput && String(idInput.value) === String(variantId);
+        });
+    }
+
+    function isTargetForm(form) {
+      return Boolean(form && cartForms().indexOf(form) !== -1);
+    }
+
+    function currentVariantId() {
+      var form = cartForms()[0];
+      var idInput = form && form.querySelector('[name="id"]');
+      return (idInput && idInput.value) || variantId;
+    }
+
     function syncUi() {
       var ready = hasDesign();
       root.classList.toggle("lgs--design-ready", ready);
@@ -51,9 +77,7 @@
       root.dataset.lgsDesignId = designId;
       root.dataset.lgsDesignVersion = String(version || 1);
       setStatus("Design attached — add to cart to continue.", "ok");
-      document
-        .querySelectorAll('form[action="/cart/add"], form[action*="/cart/add"]')
-        .forEach(function (form) {
+      cartForms().forEach(function (form) {
           upsertHidden(form, "properties[_lgs_design_id]", designId);
           upsertHidden(
             form,
@@ -80,7 +104,7 @@
     function editorUrl() {
       var u = new URL(editorPath(), base || window.location.origin);
       u.searchParams.set("productGid", productGid);
-      u.searchParams.set("variantId", variantId);
+      u.searchParams.set("variantId", currentVariantId());
       u.searchParams.set("shop", shop);
       u.searchParams.set("embedded", "1");
       return u.toString();
@@ -123,9 +147,29 @@
       attachDesign(designId, version, event.data.cartProperties);
     });
 
-    // Soft gate: only intercept ATC controls that live inside this LGS block
-    // (themes that place ATC beside the launcher). Never touch shop-wide forms.
-    root.addEventListener(
+    function blockMissingDesign(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      setStatus("Create and save a design before adding this product to cart.", "warn");
+      if (warn) {
+        warn.hidden = false;
+        warn.focus && warn.focus();
+      }
+    }
+
+    // Product-scoped hard gate. Only the cart form in the same product section
+    // is blocked; quick-add forms and unrelated products remain untouched.
+    document.addEventListener(
+      "submit",
+      function (event) {
+        if (hasDesign() || !isTargetForm(event.target)) return;
+        blockMissingDesign(event);
+      },
+      true,
+    );
+
+    document.addEventListener(
       "click",
       function (event) {
         if (hasDesign()) return;
@@ -134,14 +178,10 @@
         var btn = target.closest(
           'button[name="add"], button[type="submit"], [name="add"], .product-form__submit, [data-lgs-require-design]',
         );
-        if (!btn || !root.contains(btn)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setStatus("Create and save a design before adding this product to cart.", "warn");
-        if (warn) {
-          warn.hidden = false;
-          warn.focus && warn.focus();
-        }
+        if (!btn) return;
+        var form = btn.form || btn.closest("form");
+        if (!isTargetForm(form)) return;
+        blockMissingDesign(event);
       },
       true,
     );

@@ -1,17 +1,28 @@
 import type { CSSProperties } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
+  const shop = url.searchParams.get("shop") || process.env.DEV_SHOP || "";
+  const isEmbeddedLaunch =
+    url.searchParams.has("host") ||
+    url.searchParams.get("embedded") === "1" ||
+    url.searchParams.has("id_token");
+
+  if (shop && isEmbeddedLaunch) {
+    throw redirect(`/app${url.search}`);
+  }
+
   return {
-    shop: url.searchParams.get("shop") || process.env.DEV_SHOP || "",
+    shop,
+    query: url.search,
     appUrl: process.env.SHOPIFY_APP_URL || url.origin,
   };
 };
 
 export default function Landing() {
-  const { shop, appUrl } = useLoaderData<typeof loader>();
+  const { shop, appUrl, query } = useLoaderData<typeof loader>();
   return (
     <main style={page}>
       <h1 style={{ marginTop: 0 }}>Legends BAGS</h1>
@@ -21,7 +32,7 @@ export default function Landing() {
         to:
       </p>
       <p>
-        <a href={`/app${shop ? `?shop=${encodeURIComponent(shop)}` : ""}`}>
+        <a href={`/app${query || (shop ? `?shop=${encodeURIComponent(shop)}` : "")}`}>
           Merchant dashboard
         </a>
       </p>
