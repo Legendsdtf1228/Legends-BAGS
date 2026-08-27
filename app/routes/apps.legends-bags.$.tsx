@@ -1,9 +1,12 @@
 import type { LoaderFunctionArgs } from "react-router";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildDesignApiResponse,
   parseDesignApiQuery,
   resolveDesignApiShop,
 } from "../lib/design-api.server";
+import { handleBuilderLaunchRequest } from "../lib/builder-launch-handler.server";
 import { createStorefrontSessionResponse } from "../lib/editor-auth.server";
 import { normalizeCustomerKey } from "../domain/security/customer-key";
 import { loadStorefrontConfig } from "../lib/storefront-config.server";
@@ -11,6 +14,17 @@ import {
   parseAppProxyPath,
   verifyAppProxyShop,
 } from "../lib/storefront-access.server";
+
+let launcherScriptCache: string | null = null;
+
+function readLauncherScript(): string {
+  if (launcherScriptCache) return launcherScriptCache;
+  launcherScriptCache = readFileSync(
+    join(process.cwd(), "public", "lgs-launcher.full.js"),
+    "utf8",
+  );
+  return launcherScriptCache;
+}
 
 /**
  * Shopify app proxy — HMAC-verified storefront APIs at /apps/legends-bags/*
@@ -38,6 +52,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       new URL(request.url).searchParams.get("customerKey"),
     );
     return createStorefrontSessionResponse(shop, customerKey);
+  }
+
+  if (route.kind === "builder") {
+    return handleBuilderLaunchRequest(request);
+  }
+
+  if (route.kind === "launcher-script") {
+    return new Response(readLauncherScript(), {
+      headers: {
+        "Content-Type": "application/javascript; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
+      },
+    });
   }
 
   if (route.kind === "design") {

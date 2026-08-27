@@ -13,12 +13,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     topic,
     payload: payload as ShopifyOrderWebhookPayload,
     webhookId,
-    enqueueRender: true,
+    enqueueRender: false,
   });
-
-  if (process.env.RENDER_INLINE_ON_WEBHOOK === "1") {
-    await processNextRenderJob();
-  }
 
   return new Response();
 };

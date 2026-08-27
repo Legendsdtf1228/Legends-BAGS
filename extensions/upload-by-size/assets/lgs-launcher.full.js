@@ -19,6 +19,8 @@
     var shop = root.getAttribute("data-shop") || "";
     var customerId = root.getAttribute("data-customer-id") || "";
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
+    var resolvedEditorOrigin = null;
+    var configLoaded = false;
     var lastFocus = null;
     var scrollY = 0;
     var gangSheetVariants = [];
@@ -125,7 +127,14 @@
       }
     }
 
+    function usesAppProxy() {
+      if (!shop) return false;
+      var host = window.location.hostname;
+      return host === shop || host.endsWith(".myshopify.com");
+    }
+
     function editorOrigin() {
+      if (resolvedEditorOrigin) return resolvedEditorOrigin;
       try {
         return new URL(base || window.location.origin).origin;
       } catch (e) {
@@ -256,11 +265,17 @@
           "_lgs_design_id",
           "_lgs_design_version",
           "_lgs_workflow",
+          "_lgs_builder_type",
           "_lgs_sheet_size",
+          "_lgs_sheet_width",
+          "_lgs_sheet_height",
+          "_lgs_render_status",
           "_lgs_piece_count",
           "_lgs_price_ref",
           "_lgs_design_token",
           "Design",
+          "Builder type",
+          "Sheet size",
         ].forEach(function (key) {
           removeHidden(form, "properties[" + key + "]");
         });
@@ -311,9 +326,17 @@
     }
 
     function loadStorefrontConfig() {
-      if (!shop) return;
+      if (!shop) {
+        configLoaded = true;
+        syncUi();
+        return;
+      }
       var url = storefrontApiUrl("/storefront-config");
-      if (!url) return;
+      if (!url) {
+        configLoaded = true;
+        syncUi();
+        return;
+      }
       url.searchParams.set("shop", shop);
       if (productGid) url.searchParams.set("productGid", productGid);
       fetch(url.toString())
@@ -321,10 +344,19 @@
           return res.ok ? res.json() : null;
         })
         .then(function (json) {
+          if (json && json.editorBaseUrl) {
+            try {
+              resolvedEditorOrigin = new URL(json.editorBaseUrl).origin;
+            } catch (e) {}
+          }
           if (json && json.appearance) applyAppearanceLabels(json.appearance);
           if (json && json.gangSheetVariants) applyGangSheetVariants(json.gangSheetVariants);
         })
-        .catch(function () {});
+        .catch(function () {})
+        .finally(function () {
+          configLoaded = true;
+          syncUi();
+        });
     }
 
     function hydrateDesignFromUrl() {
@@ -384,7 +416,8 @@
     }
 
     function builderUrl(options) {
-      var u = new URL("/builder", base || window.location.origin);
+      var proxyBuilder = storefrontApiUrl("/builder");
+      var u = proxyBuilder || new URL("/builder", base || window.location.origin);
       u.searchParams.set("shop", shop);
       u.searchParams.set("product", productNumericId());
       u.searchParams.set("variant", currentVariantId() || "");
@@ -401,6 +434,10 @@
         );
       }
       return u.toString();
+    }
+
+    function canLaunchEditor() {
+      return Boolean(base || usesAppProxy());
     }
 
     function lockScroll() {
@@ -420,9 +457,10 @@
     }
 
     function openModal(options) {
-      if (!base) {
-        window.alert(
-          "Editor URL is not configured on this block yet. Set Editor base URL in the theme editor.",
+      if (!canLaunchEditor()) {
+        setStatus(
+          "Editor is not configured. Install Legends BAGS or set Editor base URL in theme settings.",
+          "error",
         );
         return;
       }
@@ -444,8 +482,19 @@
         }, 50);
       }
 
+      function openSameTab(sessionToken) {
+        var u = new URL(builderUrl(options));
+        if (sessionToken) u.searchParams.set("lgs_session", sessionToken);
+        window.location.assign(u.toString());
+      }
+
       fetchStorefrontSession().then(function (json) {
-        launchEditor(json && json.sessionToken ? json.sessionToken : null);
+        var token = json && json.sessionToken ? json.sessionToken : null;
+        try {
+          launchEditor(token);
+        } catch (e) {
+          openSameTab(token);
+        }
       });
     }
 
@@ -495,8 +544,20 @@
 
     frame &&
       frame.addEventListener("error", function () {
-        setStatus("Could not load the editor. Check the Editor base URL.", "error");
+        setStatus("Could not load the editor in this window.", "error");
         if (loading) loading.hidden = true;
+        if (
+          window.confirm(
+            "The editor could not load here. Open it in this tab instead?",
+          )
+        ) {
+          closeModal();
+          fetchStorefrontSession().then(function (json) {
+            var u = new URL(builderUrl({ designId: root.dataset.lgsDesignId }));
+            if (json && json.sessionToken) u.searchParams.set("lgs_session", json.sessionToken);
+            window.location.assign(u.toString());
+          });
+        }
       });
 
     document.addEventListener("keydown", function (event) {

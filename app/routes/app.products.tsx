@@ -8,30 +8,62 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { upsertProductBinding } from "../services/design-service";
+import {
+  fetchShopifyCatalog,
+  reconcileProductBindings,
+} from "../services/shopify-product-sync.server";
+import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-links";
 import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const url = new URL(request.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
   const builder = url.searchParams.get("builder") ?? "";
+  const page = Math.max(1, Number(url.searchParams.get("page") || "1") || 1);
+  const pageSize = 25;
+
+  const shopConfig = await prisma.shopConfig.findUnique({ where: { shop: session.shop } });
+
   const bindings = await prisma.productBinding.findMany({
     where: {
       shop: session.shop,
       ...(builder ? { builderType: builder } : {}),
       ...(q
         ? {
-            OR: [{ productGid: { contains: q } }, { variantGid: { contains: q } }],
+            OR: [
+              { productGid: { contains: q } },
+              { variantGid: { contains: q } },
+              { productTitle: { contains: q } },
+              { variantTitle: { contains: q } },
+            ],
           }
         : {}),
     },
     orderBy: { updatedAt: "desc" },
   });
 
+  let catalogPreview: Awaited<ReturnType<typeof fetchShopifyCatalog>> = [];
+  try {
+    catalogPreview = await fetchShopifyCatalog(admin, {
+      query: q ? `title:*${q}*` : undefined,
+      maxPages: 1,
+    });
+  } catch {
+    catalogPreview = [];
+  }
+
+  const boundProductGids = new Set(bindings.map((b) => b.productGid));
+  const importCandidates = catalogPreview.filter((p) => !boundProductGids.has(p.id)).slice(0, 12);
+
+  const paged = bindings.slice((page - 1) * pageSize, page * pageSize);
+
   return {
     q,
     builder,
-    bindings: bindings.map((b) => ({
+    page,
+    pageCount: Math.max(1, Math.ceil(bindings.length / pageSize)),
+    bindings: paged.map((b) => ({
       id: b.id,
       productGid: b.productGid,
       variantGid: b.variantGid,
@@ -41,16 +73,49 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       maxHeightIn: b.maxHeightIn,
       sheetHeightIn: b.sheetHeightIn,
       variantPriceCents: b.variantPriceCents,
+      productTitle: b.productTitle,
+      productStatus: b.productStatus,
+      productImageUrl: b.productImageUrl,
+      variantTitle: b.variantTitle,
+      syncStatus: b.syncStatus,
       updatedAt: b.updatedAt.toISOString(),
     })),
-    appUrl: process.env.SHOPIFY_APP_URL || "",
+    importCandidates: importCandidates.map((p) => ({
+      id: p.id,
+      title: p.title,
+      status: p.status,
+      handle: p.handle,
+      imageUrl: p.imageUrl,
+      variantCount: p.variants.length,
+    })),
+    lastProductSyncAt: shopConfig?.lastProductSyncAt?.toISOString() ?? null,
+    lastProductSyncError: shopConfig?.lastProductSyncError ?? null,
+    shop: session.shop,
+    totalBindings: bindings.length,
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const form = await request.formData();
-  if (String(form.get("intent") || "") !== "bind") return null;
+  const intent = String(form.get("intent") || "");
+
+  if (intent === "sync") {
+    try {
+      const result = await reconcileProductBindings({ shop: session.shop, admin });
+      return { synced: true, ...result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Sync failed";
+      await prisma.shopConfig.upsert({
+        where: { shop: session.shop },
+        create: { shop: session.shop, lastProductSyncError: message },
+        update: { lastProductSyncError: message },
+      });
+      return { error: message };
+    }
+  }
+
+  if (intent !== "bind") return null;
 
   const productGid = String(form.get("productGid") || "").trim();
   const variantGidRaw = String(form.get("variantGid") || "").trim();
@@ -77,6 +142,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const sheetHeightIn = form.get("sheetHeightIn")
     ? Number.parseFloat(String(form.get("sheetHeightIn")))
     : undefined;
+  const productTitle = String(form.get("productTitle") || "").trim() || undefined;
 
   try {
     if (variantGid) {
@@ -89,12 +155,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           data: {
             productGid,
             builderType,
+            productTitle,
             pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : existing.pricePerSqIn,
             sheetHeightIn: Number.isFinite(sheetHeightIn!) ? sheetHeightIn : existing.sheetHeightIn,
             variantPriceCents:
               variantPrice != null && Number.isFinite(variantPrice)
                 ? variantPrice
                 : existing.variantPriceCents,
+            syncStatus: "manual",
           },
         });
       } else {
@@ -104,12 +172,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             productGid,
             variantGid,
             builderType,
+            productTitle,
             pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : null,
             sheetHeightIn: Number.isFinite(sheetHeightIn!) ? sheetHeightIn : null,
             variantPriceCents:
               variantPrice != null && Number.isFinite(variantPrice) ? variantPrice : null,
             sheetWidthIn: 22.5,
             maxHeightIn: sheetHeightIn ?? 360,
+            syncStatus: "manual",
           },
         });
       }
@@ -120,6 +190,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         builderType,
         pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : undefined,
       });
+      if (productTitle) {
+        await prisma.productBinding.updateMany({
+          where: { shop: session.shop, productGid, variantGid: null },
+          data: { productTitle, syncStatus: "manual" },
+        });
+      }
     }
     return { saved: true };
   } catch (err) {
@@ -128,34 +204,65 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function ProductsPage() {
-  const { bindings, appUrl, q, builder } = useLoaderData<typeof loader>();
+  const {
+    bindings,
+    importCandidates,
+    q,
+    builder,
+    page,
+    pageCount,
+    lastProductSyncAt,
+    lastProductSyncError,
+    shop,
+    totalBindings,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
     <>
       <BagsPageHeader
         title="Products"
-        subtitle="Shopify products linked to Legends BAGS builders"
+        subtitle="Import Shopify products and assign Legends BAGS builders"
         actions={
-          <Link to="/app/setup" className="bags-admin-btn primary">
-            Create test products
-          </Link>
+          <>
+            <Form method="post">
+              <input type="hidden" name="intent" value="sync" />
+              <button type="submit" className="bags-admin-btn primary">
+                Sync products
+              </button>
+            </Form>
+            <Link to="/app/setup" className="bags-admin-btn ghost">
+              Create test products
+            </Link>
+          </>
         }
       />
       <div className="bags-admin-content">
         <BagsCard style={{ marginBottom: 16 }}>
-          <Form method="get" className="bags-admin-actions">
-            <input name="q" type="search" placeholder="Search product or variant GID…" defaultValue={q} />
-            <select name="builder" defaultValue={builder}>
-              <option value="">All builders</option>
-              <option value="upload_by_size">Image to Sheet</option>
-              <option value="gang_sheet">Gangsheet Builder</option>
-            </select>
-            <button type="submit" className="bags-admin-btn primary">
-              Filter
-            </button>
-          </Form>
+          <div className="bags-admin-actions" style={{ justifyContent: "space-between" }}>
+            <Form method="get" className="bags-admin-actions">
+              <input name="q" type="search" placeholder="Search title or GID…" defaultValue={q} />
+              <select name="builder" defaultValue={builder}>
+                <option value="">All builders</option>
+                <option value="upload_by_size">Upload by Size</option>
+                <option value="gang_sheet">Gang Sheet Builder</option>
+              </select>
+              <button type="submit" className="bags-admin-btn primary">
+                Filter
+              </button>
+            </Form>
+            <p className="bags-admin-muted" style={{ margin: 0 }}>
+              {totalBindings} binding{totalBindings === 1 ? "" : "s"}
+              {lastProductSyncAt
+                ? ` · Last sync ${new Date(lastProductSyncAt).toLocaleString()}`
+                : " · Not synced yet"}
+            </p>
+          </div>
+          {lastProductSyncError ? (
+            <p style={{ color: "#b42318", margin: "12px 0 0" }}>{lastProductSyncError}</p>
+          ) : null}
         </BagsCard>
+
         {actionData && "error" in actionData && actionData.error ? (
           <BagsCard style={{ marginBottom: 16 }}>
             <p style={{ color: "#b42318", margin: 0 }}>{actionData.error}</p>
@@ -168,8 +275,176 @@ export default function ProductsPage() {
             </p>
           </BagsCard>
         ) : null}
+        {actionData && "synced" in actionData && actionData.synced ? (
+          <BagsCard style={{ marginBottom: 16 }}>
+            <p className="bags-admin-muted" style={{ margin: 0 }}>
+              Synced {actionData.updated} binding{actionData.updated === 1 ? "" : "s"}
+              {actionData.missing ? ` · ${actionData.missing} missing in Shopify` : ""}.
+            </p>
+          </BagsCard>
+        ) : null}
 
-        <BagsCard title="Bind a product or variant">
+        {importCandidates.length > 0 ? (
+          <BagsCard title="Import from Shopify" style={{ marginBottom: 16 }}>
+            <p className="bags-admin-muted">
+              Products from your store that are not assigned to a builder yet.
+            </p>
+            <table className="bags-admin-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Status</th>
+                  <th>Variants</th>
+                  <th>Assign</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importCandidates.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" width={40} height={40} style={{ borderRadius: 6 }} />
+                        ) : null}
+                        <div>
+                          <strong>{p.title}</strong>
+                          <div style={{ fontSize: 11, wordBreak: "break-all" }}>{p.id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <BagsStatusBadge status={p.status.toLowerCase()} />
+                    </td>
+                    <td>{p.variantCount}</td>
+                    <td>
+                      <Form method="post" className="bags-admin-actions">
+                        <input type="hidden" name="intent" value="bind" />
+                        <input type="hidden" name="productGid" value={p.id} />
+                        <input type="hidden" name="productTitle" value={p.title} />
+                        <select name="builderType" defaultValue="upload_by_size">
+                          <option value="upload_by_size">Upload by Size</option>
+                          <option value="gang_sheet">Gang Sheet</option>
+                        </select>
+                        <button type="submit" className="bags-admin-btn primary">
+                          Assign
+                        </button>
+                      </Form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </BagsCard>
+        ) : null}
+
+        <BagsCard title="Assigned products">
+          {bindings.length === 0 ? (
+            <p className="bags-admin-muted">No products assigned yet. Sync or import from Shopify above.</p>
+          ) : (
+            <>
+              <table className="bags-admin-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Builder</th>
+                    <th>Variant</th>
+                    <th>Sheet / price</th>
+                    <th>Sync</th>
+                    <th>Links</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bindings.map((b) => {
+                    const handleGuess = b.productTitle
+                      ?.toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "-")
+                      .replace(/^-|-$/g, "");
+                    return (
+                      <tr key={b.id}>
+                        <td>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                            {b.productImageUrl ? (
+                              <img
+                                src={b.productImageUrl}
+                                alt=""
+                                width={40}
+                                height={40}
+                                style={{ borderRadius: 6 }}
+                              />
+                            ) : null}
+                            <div>
+                              <strong>{b.productTitle || b.productGid}</strong>
+                              <div style={{ fontSize: 11, wordBreak: "break-all" }}>{b.productGid}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <BagsStatusBadge status={b.builderType} />
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          {b.variantTitle || b.variantGid || "All variants"}
+                        </td>
+                        <td>
+                          {b.sheetHeightIn != null ? `${b.sheetHeightIn}″ sheet · ` : ""}
+                          {b.variantPriceCents != null
+                            ? `$${(b.variantPriceCents / 100).toFixed(2)}`
+                            : b.pricePerSqIn != null
+                              ? `$${b.pricePerSqIn.toFixed(3)}/in²`
+                              : "—"}
+                        </td>
+                        <td>
+                          <BagsStatusBadge status={b.syncStatus} />
+                        </td>
+                        <td style={{ fontSize: 12 }}>
+                          <a href={adminProductUrl(shop, b.productGid)} target="_blank" rel="noreferrer">
+                            Admin
+                          </a>
+                          {handleGuess ? (
+                            <>
+                              {" · "}
+                              <a
+                                href={storefrontProductUrl(shop, handleGuess)}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Storefront
+                              </a>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {pageCount > 1 ? (
+                <div className="bags-admin-actions" style={{ marginTop: 12 }}>
+                  {page > 1 ? (
+                    <Link
+                      to={`/app/products?page=${page - 1}&q=${encodeURIComponent(q)}&builder=${builder}`}
+                      className="bags-admin-btn ghost"
+                    >
+                      Previous
+                    </Link>
+                  ) : null}
+                  <span className="bags-admin-muted">
+                    Page {page} of {pageCount}
+                  </span>
+                  {page < pageCount ? (
+                    <Link
+                      to={`/app/products?page=${page + 1}&q=${encodeURIComponent(q)}&builder=${builder}`}
+                      className="bags-admin-btn ghost"
+                    >
+                      Next
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </BagsCard>
+
+        <BagsCard title="Advanced: manual GID binding" style={{ marginTop: 16 }}>
           <Form method="post" className="bags-admin-form" style={{ display: "grid", gap: 10, maxWidth: 520 }}>
             <input type="hidden" name="intent" value="bind" />
             <label>
@@ -177,81 +452,32 @@ export default function ProductsPage() {
               <input name="productGid" type="text" required placeholder="gid://shopify/Product/…" />
             </label>
             <label>
-              Variant GID or numeric ID (optional)
+              Variant GID (optional)
               <input name="variantGid" type="text" placeholder="gid://shopify/ProductVariant/…" />
             </label>
             <label>
               Builder type
               <select name="builderType" defaultValue="upload_by_size">
-                <option value="upload_by_size">Image to Sheet</option>
-                <option value="gang_sheet">Gangsheet Builder</option>
+                <option value="upload_by_size">Upload by Size</option>
+                <option value="gang_sheet">Gang Sheet Builder</option>
               </select>
             </label>
             <label>
-              Price per in² (Upload-by-Size)
+              Price per in²
               <input name="pricePerSqIn" type="number" step="0.001" placeholder="0.049" />
             </label>
             <label>
-              Sheet height in (gang sheet variant)
+              Sheet height in (gang sheet)
               <input name="sheetHeightIn" type="number" step="1" placeholder="24" />
             </label>
             <label>
-              Fixed variant price USD (gang sheet)
+              Fixed variant price USD
               <input name="variantPrice" type="number" step="0.01" placeholder="17.00" />
             </label>
             <button type="submit" className="bags-admin-btn primary">
               Save binding
             </button>
           </Form>
-        </BagsCard>
-
-        <BagsCard title="Product bindings" style={{ marginTop: 16 }}>
-          {bindings.length === 0 ? (
-            <p className="bags-admin-muted">No products bound yet.</p>
-          ) : (
-            <table className="bags-admin-table">
-              <thead>
-                <tr>
-                  <th>Builder</th>
-                  <th>Product</th>
-                  <th>Variant</th>
-                  <th>Height</th>
-                  <th>Pricing</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bindings.map((b) => (
-                  <tr key={b.id}>
-                    <td>
-                      <BagsStatusBadge status={b.builderType} />
-                    </td>
-                    <td style={{ fontSize: 11, wordBreak: "break-all" }}>{b.productGid}</td>
-                    <td style={{ fontSize: 11 }}>{b.variantGid ?? "—"}</td>
-                    <td>{b.sheetHeightIn != null ? `${b.sheetHeightIn}″` : "—"}</td>
-                    <td>
-                      {b.variantPriceCents != null
-                        ? `$${(b.variantPriceCents / 100).toFixed(2)} fixed`
-                        : b.pricePerSqIn != null
-                          ? `$${b.pricePerSqIn.toFixed(3)}/in²`
-                          : "—"}
-                    </td>
-                    <td>{new Date(b.updatedAt).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </BagsCard>
-
-        <BagsCard title="Theme blocks" style={{ marginTop: 16 }}>
-          <p className="bags-admin-muted">
-            Add <strong>LGS Upload by Size</strong> or <strong>LGS Gang Sheet Builder</strong> blocks on each
-            product in the theme editor. Editor base URL:
-          </p>
-          <code style={{ display: "block", marginTop: 8, wordBreak: "break-all", fontSize: 12 }}>
-            {appUrl || "(run shopify app dev)"}
-          </code>
         </BagsCard>
       </div>
     </>
