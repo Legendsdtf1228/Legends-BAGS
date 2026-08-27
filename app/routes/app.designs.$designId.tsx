@@ -64,9 +64,19 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const shop = session.shop;
   const designId = params.designId!;
   const form = await request.formData();
-  if (String(form.get("intent") || "") === "retry") {
+  const intent = String(form.get("intent") || "");
+  if (intent === "retry") {
     await enqueueRenderJob({ shop, designId });
     await processNextRenderJob();
+  }
+  if (intent === "reorder") {
+    const { duplicateDesignForReorder } = await import("../services/design-service");
+    const copy = await duplicateDesignForReorder({
+      shop,
+      sourceDesignId: designId,
+      name: `Reorder from ${designId.slice(0, 8)}`,
+    });
+    return { reorderDesignId: copy.design.id };
   }
   return null;
 };
@@ -103,6 +113,12 @@ export default function DesignDetail() {
           <input type="hidden" name="intent" value="retry" />
           <button type="submit" style={btn}>
             Retry / regenerate
+          </button>
+        </Form>
+        <Form method="post">
+          <input type="hidden" name="intent" value="reorder" />
+          <button type="submit" style={btnSecondary}>
+            Reorder (new copy)
           </button>
         </Form>
       </div>

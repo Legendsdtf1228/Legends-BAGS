@@ -26,6 +26,13 @@ export type DesignItem = {
   yIn?: number;
   /** Layer order; higher paints later / on top. Defaults to item index when omitted. */
   zIndex?: number;
+  /** Text / roster layer metadata for editable reload */
+  kind?: "image" | "text";
+  name?: string;
+  textContent?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  textColor?: string;
 };
 
 export type PricingSnapshot = {

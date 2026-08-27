@@ -12,16 +12,19 @@
   data-builder-type="gang_sheet"
   data-editor-base="{{ block.settings.editor_base_url }}"
 >
-  <button type="button" class="lgs-gs__launch" data-lgs-open>
+  <button type="button" class="lgs-gs__launch" data-lgs-open data-label-open="{{ block.settings.button_label }}" data-label-edit="Edit design">
     {{ block.settings.button_label }}
   </button>
+  <button type="button" class="lgs-gs__edit" data-lgs-edit hidden>Edit design</button>
+  <button type="button" class="lgs-gs__reset" data-lgs-reset hidden>Start over</button>
   <p class="lgs-gs__hint">{{ block.settings.hint_text }}</p>
   <p class="lgs-gs__warn" data-lgs-design-warn role="status" tabindex="-1">
     Design required — open the builder and save before adding this product to cart.
   </p>
   <p class="lgs-gs__attached" data-lgs-design-attached hidden role="status"></p>
   <p class="lgs-gs__status" data-lgs-status hidden aria-live="polite"></p>
-  <div class="lgs-gs__frame-wrap" hidden data-lgs-frame-wrap>
+  <div class="lgs-gs__frame-wrap" hidden data-lgs-frame-wrap aria-hidden="true" role="dialog" aria-modal="true" aria-label="Gang Sheet Builder">
+    <p class="lgs-gs__loading" data-lgs-loading hidden>Loading editor…</p>
     <iframe
       title="Gang Sheet Builder"
       class="lgs-gs__frame"

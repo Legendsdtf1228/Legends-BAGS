@@ -9,7 +9,6 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import {
-  addSavedDesign,
   alignSelected,
   assetPreviewUrl,
   clearDraft,
@@ -23,13 +22,11 @@ import {
   NUDGE_IN,
   NUDGE_SHIFT_IN,
   readDraft,
-  readSavedDesigns,
   reorderLayer,
   round,
   sortByZIndex,
   writeDraft,
   type GangDraftV1,
-  type SavedDesignV1,
 } from "../components/editor/gang-sheet-helpers";
 import {
   FONT_OPTIONS,
@@ -216,11 +213,58 @@ function totalDraftArea(drafts: AutoDraft[]) {
   return drafts.reduce((s, d) => s + d.widthIn * d.heightIn * d.quantity, 0);
 }
 
+type LibraryDesign = {
+  id: string;
+  name: string | null;
+  workflow: string;
+  version: number;
+  pieceCount: number;
+  sheetLabel: string;
+  priceCents: number;
+  updatedAt: string;
+  status: string;
+  archived: boolean;
+};
+
+type RemoteDesignPayload = {
+  designId: string;
+  version: number;
+  name: string | null;
+  state: {
+    workflow: string;
+    sheet: { widthIn: number; maxHeightIn: number; imageMarginIn: number; artboardMarginIn: number };
+    items: Array<{
+      assetId: string;
+      widthIn: number;
+      heightIn: number;
+      xIn?: number;
+      yIn?: number;
+      rotationDeg: 0 | 90;
+      zIndex?: number;
+      kind?: "image" | "text";
+      name?: string;
+      textContent?: string;
+      fontSize?: number;
+      fontFamily?: string;
+      textColor?: string;
+    }>;
+    pricing: { totalCents: number };
+  };
+  assets?: Record<
+    string,
+    { widthPx: number; heightPx: number; dpi?: number | null; contentType: string }
+  >;
+  cartProperties?: Record<string, string>;
+};
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop") || process.env.DEV_SHOP || "";
   const productGid = url.searchParams.get("productGid") ?? "";
   const variantId = url.searchParams.get("variantId") ?? "";
+  const designId = url.searchParams.get("designId") ?? "";
+  const designVersion = url.searchParams.get("designVersion") ?? "";
+  const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
   const token = process.env.TEST_API_TOKEN || "";
   const headers = new Headers();
   if (token && shop) {
@@ -233,7 +277,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
       `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
     );
   }
-  return data({ shop, productGid, variantId, hasDevAuth: Boolean(token && shop) }, { headers });
+  return data(
+    {
+      shop,
+      productGid,
+      variantId,
+      designId,
+      designVersion,
+      parentOrigin,
+      editorOrigin: process.env.SHOPIFY_APP_URL || "",
+      hasDevAuth: Boolean(token && shop),
+    },
+    { headers },
+  );
 }
 
 export default function GangSheetEditor() {
@@ -277,7 +333,15 @@ export default function GangSheetEditor() {
   const [textColor, setTextColor] = useState("#111827");
   const [rosterCsv, setRosterCsv] = useState("");
   const [rosterFontSize, setRosterFontSize] = useState(24);
-  const [savedDesigns, setSavedDesigns] = useState<SavedDesignV1[]>([]);
+  const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [librarySort, setLibrarySort] = useState<"recent" | "name">("recent");
+  const [editingDesignId, setEditingDesignId] = useState<string | null>(page.designId || null);
+  const [editingVersion, setEditingVersion] = useState<number | null>(
+    page.designVersion ? Number(page.designVersion) : null,
+  );
+  const [designName, setDesignName] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [spacePan, setSpacePan] = useState(false);
@@ -333,6 +397,7 @@ export default function GangSheetEditor() {
     setFuture([]);
     setItems(next);
     setSaved(false);
+    setDirty(true);
   }, []);
 
   const pushHistory = useCallback((next: CanvasItem[]) => {
@@ -340,14 +405,30 @@ export default function GangSheetEditor() {
     setFuture([]);
     setItems(next);
     setSaved(false);
+    setDirty(true);
   }, []);
 
   useEffect(() => {
     const draft = readDraft(page.shop);
     setHasStoredDraft(Boolean(draft?.items.length));
-    if (draft?.items.length) setDraftOffer(draft);
-    setSavedDesigns(readSavedDesigns(page.shop));
-  }, [page.shop]);
+    if (draft?.items.length && !page.designId) setDraftOffer(draft);
+    void refreshLibrary();
+  }, [page.shop, page.designId]);
+
+  useEffect(() => {
+    if (!page.designId) return;
+    void loadRemoteDesign(page.designId, page.designVersion ? Number(page.designVersion) : undefined);
+  }, [page.designId, page.designVersion]);
+
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (!dirty || saved) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, saved]);
 
   useEffect(() => {
     if (screen !== "canvas") return;
@@ -1046,60 +1127,111 @@ export default function GangSheetEditor() {
     return list;
   }, [galleryCategory, gallerySearch]);
 
+  async function refreshLibrary() {
+    try {
+      const q = librarySearch.trim();
+      const res = await fetch(
+        `/api/design-library?sort=${librarySort}${q ? `&search=${encodeURIComponent(q)}` : ""}`,
+        { credentials: "include", headers: { "X-LGS-Shop": page.shop } },
+      );
+      const json = (await res.json()) as { designs?: LibraryDesign[] };
+      if (res.ok && json.designs) setSavedDesigns(json.designs);
+    } catch {
+      /* offline */
+    }
+  }
+
+  async function loadRemoteDesign(designId: string, version?: number) {
+    setError("");
+    try {
+      const url = version
+        ? `/api/designs/${encodeURIComponent(designId)}?version=${version}`
+        : `/api/designs/${encodeURIComponent(designId)}`;
+      const res = await fetch(url, {
+        credentials: "include",
+        headers: { "X-LGS-Shop": page.shop },
+      });
+      const json = (await res.json()) as RemoteDesignPayload & { error?: string };
+      if (!res.ok) throw new Error(json.error || "Could not load design");
+
+      const restored: CanvasItem[] = json.state.items.map((d, idx) => {
+        const meta = json.assets?.[d.assetId];
+        const isText = d.kind === "text" || d.textContent;
+        return {
+          assetId: d.assetId,
+          widthPx: meta?.widthPx ?? 400,
+          heightPx: meta?.heightPx ?? 120,
+          dpi: meta?.dpi,
+          contentType: meta?.contentType ?? (isText ? "image/svg+xml" : "image/png"),
+          id: crypto.randomUUID(),
+          name: d.name || (isText ? d.textContent || "Text" : "Artwork"),
+          previewUrl: isText
+            ? textPreviewDataUrl(
+                d.textContent || d.name || "Text",
+                d.fontSize ?? 36,
+                d.fontFamily ?? "Arial",
+                d.textColor ?? "#111827",
+              )
+            : assetPreviewUrl(d.assetId),
+          xIn: d.xIn ?? 0,
+          yIn: d.yIn ?? 0,
+          widthIn: d.widthIn,
+          heightIn: d.heightIn,
+          rotationDeg: d.rotationDeg ?? 0,
+          zIndex: d.zIndex ?? idx + 1,
+          kind: isText ? "text" : "image",
+          textContent: d.textContent,
+          fontSize: d.fontSize,
+          fontFamily: d.fontFamily,
+          textColor: d.textColor,
+        };
+      });
+
+      setSheetWidth(json.state.sheet.widthIn);
+      setSheetHeight(json.state.sheet.maxHeightIn);
+      setGap(json.state.sheet.imageMarginIn);
+      setHistory([]);
+      setFuture([]);
+      setItems(restored);
+      selectItem(null);
+      setEditingDesignId(json.designId);
+      setEditingVersion(json.version);
+      setDesignName(json.name);
+      setScreen("canvas");
+      setSaved(true);
+      setDirty(false);
+      setMessage(
+        json.name
+          ? `Opened "${json.name}" · v${json.version}`
+          : `Opened design · v${json.version}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load design");
+    }
+  }
+
   function saveNamedDesign(name: string) {
-    const payload: GangDraftV1 = {
-      v: 1,
-      sheetWidth,
-      sheetHeight,
-      gap,
-      items: items.map(
-        ({
-          assetId,
-          name: n,
-          widthPx,
-          heightPx,
-          dpi,
-          contentType,
-          widthIn,
-          heightIn,
-          xIn,
-          yIn,
-          rotationDeg,
-          zIndex,
-          kind,
-          textContent,
-          fontSize,
-          fontFamily,
-          textColor,
-          lockAspect,
-          lockPosition,
-        }) => ({
-          assetId,
-          name: n,
-          widthPx,
-          heightPx,
-          dpi,
-          contentType,
-          widthIn,
-          heightIn,
-          xIn,
-          yIn,
-          rotationDeg,
-          zIndex,
-          kind,
-          textContent,
-          fontSize,
-          fontFamily,
-          textColor,
-          lockAspect,
-          lockPosition,
-        }),
-      ),
-      savedAt: Date.now(),
-    };
-    addSavedDesign(page.shop, name, payload);
-    setSavedDesigns(readSavedDesigns(page.shop));
-    setMessage(`Saved "${name}" to your design library.`);
+    void (async () => {
+      if (!editingDesignId) {
+        setError("Save the design to your account first, then name it in the library.");
+        return;
+      }
+      try {
+        const res = await fetch("/api/design-library", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+          body: JSON.stringify({ intent: "save", designId: editingDesignId, name }),
+        });
+        const json = (await res.json()) as { error?: string; name?: string };
+        if (!res.ok) throw new Error(json.error || "Could not save to library");
+        setDesignName(json.name ?? name);
+        void refreshLibrary();
+        setMessage(`Saved "${name}" to your design library.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Library save failed");
+      }
+    })();
   }
 
   async function rasterizeTextItem(item: CanvasItem): Promise<Asset> {
@@ -1282,6 +1414,12 @@ export default function GangSheetEditor() {
         rotationDeg: 0 | 90;
         zIndex: number;
         quantity: number;
+        kind?: "image" | "text";
+        name?: string;
+        textContent?: string;
+        fontSize?: number;
+        fontFamily?: string;
+        textColor?: string;
       }> = [];
       for (const item of sortByZIndex(items)) {
         let assetId = item.assetId;
@@ -1298,49 +1436,71 @@ export default function GangSheetEditor() {
           rotationDeg: item.rotationDeg,
           zIndex: item.zIndex,
           quantity: 1,
+          kind: item.kind,
+          name: item.name,
+          textContent: item.textContent,
+          fontSize: item.fontSize,
+          fontFamily: item.fontFamily,
+          textColor: item.textColor,
         });
       }
-      const res = await fetch("/api/designs", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
-        body: JSON.stringify({
-          productGid: page.productGid,
-          variantGid: page.variantId
-            ? `gid://shopify/ProductVariant/${page.variantId}`
-            : undefined,
-          sheet: {
-            widthIn: sheetWidth,
-            maxHeightIn: sheetHeight,
-            imageMarginIn: gap,
-            artboardMarginIn: 0.1,
-          },
-          items: resolved,
-        }),
-      });
+      const body = {
+        productGid: page.productGid,
+        variantGid: page.variantId
+          ? `gid://shopify/ProductVariant/${page.variantId}`
+          : undefined,
+        sheet: {
+          widthIn: sheetWidth,
+          maxHeightIn: sheetHeight,
+          imageMarginIn: gap,
+          artboardMarginIn: 0.1,
+        },
+        items: resolved,
+        name: designName ?? undefined,
+        saveToLibrary: Boolean(designName),
+      };
+      const res = await fetch(
+        editingDesignId
+          ? `/api/designs/${encodeURIComponent(editingDesignId)}`
+          : "/api/designs",
+        {
+          method: editingDesignId ? "PUT" : "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+          body: JSON.stringify(body),
+        },
+      );
       const json = (await res.json()) as {
         designId?: string;
         version?: number;
+        name?: string | null;
         cartProperties?: Record<string, string>;
         error?: string;
         state?: { pricing: { totalCents: number } };
       };
       if (!res.ok || !json.designId) throw new Error(json.error || "Could not save design");
       setSaved(true);
+      setDirty(false);
+      setEditingDesignId(json.designId);
+      setEditingVersion(json.version ?? editingVersion);
       clearDraft(page.shop);
       setHasStoredDraft(false);
       setMessage(
-        `Design saved · $${((json.state?.pricing.totalCents || 0) / 100).toFixed(2)}`,
+        editingDesignId && (json.version ?? 0) > (editingVersion ?? 0)
+          ? `Saved v${json.version} · $${((json.state?.pricing.totalCents || 0) / 100).toFixed(2)}`
+          : `Design saved · $${((json.state?.pricing.totalCents || 0) / 100).toFixed(2)}`,
       );
       if (window.parent && window.parent !== window) {
+        const target = page.parentOrigin || page.editorOrigin || "*";
         window.parent.postMessage(
           {
             type: "lgs:design-ready",
             designId: json.designId,
             version: json.version,
+            designName: designName || json.name,
             cartProperties: json.cartProperties,
           },
-          "*",
+          target,
         );
       }
     } catch (err) {
@@ -1498,15 +1658,12 @@ export default function GangSheetEditor() {
                   <button
                     type="button"
                     className="welcome-opt"
-                    onClick={() => {
-                      const d = savedDesigns[0];
-                      void restoreDraft(d.draft);
-                    }}
+                    onClick={() => void loadRemoteDesign(savedDesigns[0].id, savedDesigns[0].version)}
                   >
                     <div className="welcome-icon">💾</div>
                     <strong>Open saved design</strong>
                     <span>
-                      {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} on this device.
+                      {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} in your library.
                     </span>
                   </button>
                 ) : (
@@ -1562,25 +1719,74 @@ export default function GangSheetEditor() {
 
               {savedDesigns.length ? (
                 <div className="saved-designs-list">
-                  <h3>Saved designs</h3>
-                  {savedDesigns.slice(0, 5).map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      className="saved-design-row"
-                      onClick={() => void restoreDraft(d.draft)}
+                  <div className="sidebar-tools">
+                    <input
+                      type="search"
+                      placeholder="Search saved designs…"
+                      value={librarySearch}
+                      onChange={(e) => setLibrarySearch(e.target.value)}
+                      onBlur={() => void refreshLibrary()}
+                      aria-label="Search saved designs"
+                    />
+                    <select
+                      value={librarySort}
+                      onChange={(e) => {
+                        setLibrarySort(e.target.value as "recent" | "name");
+                        void refreshLibrary();
+                      }}
+                      aria-label="Sort saved designs"
                     >
-                      <strong>{d.name}</strong>
-                      <small>
-                        {d.draft.items.length} piece{d.draft.items.length === 1 ? "" : "s"} ·{" "}
-                        {new Date(d.savedAt).toLocaleDateString()}
-                      </small>
-                    </button>
+                      <option value="recent">Recent</option>
+                      <option value="name">Name</option>
+                    </select>
+                  </div>
+                  <h3>Saved designs (server)</h3>
+                  {savedDesigns.slice(0, 8).map((d) => (
+                    <div key={d.id} className="saved-design-row-wrap">
+                      <button
+                        type="button"
+                        className="saved-design-row"
+                        onClick={() => void loadRemoteDesign(d.id, d.version)}
+                      >
+                        <strong>{d.name || "Untitled design"}</strong>
+                        <small>
+                          {d.pieceCount} piece{d.pieceCount === 1 ? "" : "s"} · {d.sheetLabel} · v{d.version} ·{" "}
+                          ${(d.priceCents / 100).toFixed(2)} · {new Date(d.updatedAt).toLocaleDateString()}
+                        </small>
+                      </button>
+                      <button
+                        type="button"
+                        className="saved-design-action"
+                        onClick={() =>
+                          void fetch("/api/design-library", {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+                            body: JSON.stringify({
+                              intent: "duplicate",
+                              sourceDesignId: d.id,
+                              sourceVersion: d.version,
+                              productGid: page.productGid,
+                              variantGid: page.variantId
+                                ? `gid://shopify/ProductVariant/${page.variantId}`
+                                : undefined,
+                            }),
+                          }).then(async (res) => {
+                            const json = (await res.json()) as { designId?: string; error?: string };
+                            if (!res.ok || !json.designId) throw new Error(json.error || "Duplicate failed");
+                            void loadRemoteDesign(json.designId!);
+                          })
+                        }
+                      >
+                        Duplicate
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : null}
 
               <p className="welcome-tip">
+                {hasStoredDraft ? <>Local draft on this device is separate from your saved library. </> : null}
                 Tip: Arrow keys nudge selected art by 0.05″ (Shift = 0.25″). Drag the corner handle to
                 resize with aspect lock.
               </p>

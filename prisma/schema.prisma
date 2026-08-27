@@ -82,6 +82,16 @@ model Design {
   productGid      String?
   variantGid      String?
   currentVersion  Int      @default(1)
+  /** Customer-visible name when saved to library */
+  name            String?
+  archived        Boolean  @default(false)
+  /** Shopify customer GID when authenticated; opaque guest key otherwise */
+  customerKey     String?
+  previewKey      String?
+  /** Reorder lineage — original ordered design is never mutated */
+  sourceDesignId     String?
+  sourceDesignVersion Int?
+  sourceOrderId      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   versions        DesignVersion[]
@@ -90,6 +100,9 @@ model Design {
 
   @@index([shop, status])
   @@index([shop, updatedAt])
+  @@index([shop, archived, updatedAt])
+  @@index([shop, name])
+  @@index([sourceDesignId])
 }
 
 model DesignVersion {
