@@ -1,6 +1,17 @@
 import sharp from "sharp";
 import { inchesToPx, OUTPUT_DPI } from "../design/types";
-import type { NestResult } from "../nesting";
+import type { NestPlacement, NestResult } from "../nesting";
+
+/** Ascending zIndex so higher layers composite last (on top). Stable by original index. */
+export function sortPlacementsForPaint(
+  placements: NestPlacement[],
+): NestPlacement[] {
+  if (!placements.some((p) => p.zIndex != null)) return placements;
+  return placements
+    .map((p, index) => ({ p, index }))
+    .sort((a, b) => (a.p.zIndex ?? a.index) - (b.p.zIndex ?? b.index))
+    .map(({ p }) => p);
+}
 
 export type RenderAsset = {
   assetId: string;
@@ -47,13 +58,16 @@ export async function renderSheetPng(input: RenderInput): Promise<RenderOutput> 
     );
   }
 
-  const placementsPx = input.nest.placements.map((p) => ({
+  const orderedPlacements = sortPlacementsForPaint(input.nest.placements);
+  const placementsPx = orderedPlacements.map((p) => ({
     assetId: p.assetId,
     x: inchesToPx(p.xIn),
     y: inchesToPx(p.yIn),
     width: inchesToPx(p.widthIn),
     height: inchesToPx(p.heightIn),
     rotationDeg: p.rotationDeg,
+    flipX: p.flipX,
+    flipY: p.flipY,
   }));
 
   const composites: sharp.OverlayOptions[] = [];
@@ -67,6 +81,8 @@ export async function renderSheetPng(input: RenderInput): Promise<RenderOutput> 
     if (p.rotationDeg === 90) {
       img = img.rotate(90);
     }
+    if (p.flipX) img = img.flop();
+    if (p.flipY) img = img.flip();
 
     const resized = await img
       .resize(p.width, p.height, {

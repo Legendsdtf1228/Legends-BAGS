@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nestRectangles } from "../app/domain/nesting";
+import { nestRectangles, nestRectanglesPartial } from "../app/domain/nesting";
 import { DEFAULT_UPLOAD_BY_SIZE_SHEET } from "../app/domain/design/types";
 
 describe("nesting", () => {
@@ -103,5 +103,81 @@ describe("nesting", () => {
         { allowRotate90: false },
       ),
     ).toThrow(/exceeds printable width/);
+  });
+
+  it("partial nest reports fitted and remaining when copies overflow height", () => {
+    const short = { ...sheet, maxHeightIn: 6 };
+    const partial = nestRectanglesPartial(
+      [
+        {
+          assetId: "tile",
+          widthIn: 10,
+          heightIn: 2,
+          quantity: 10,
+          rotationDeg: 0,
+        },
+      ],
+      short,
+    );
+    expect(partial.fittedCount).toBeGreaterThan(0);
+    expect(partial.remainingCount).toBeGreaterThan(0);
+    expect(partial.fittedCount + partial.remainingCount).toBe(10);
+    expect(partial.placements).toHaveLength(partial.fittedCount);
+    expect(partial.remainingAssetIds).toHaveLength(partial.remainingCount);
+    expect(partial.remainingAssetIds.every((id) => id === "tile")).toBe(true);
+    expect(partial.requiredHeightIn).toBeGreaterThan(short.maxHeightIn);
+    expect(partial.sheetHeightIn).toBeLessThanOrEqual(short.maxHeightIn + 1e-9);
+  });
+
+  it("partial nest is deterministic for identical inputs", () => {
+    const short = { ...sheet, maxHeightIn: 8 };
+    const items = [
+      {
+        assetId: "tile",
+        widthIn: 10,
+        heightIn: 2,
+        quantity: 10,
+        rotationDeg: 0 as const,
+      },
+    ];
+    const a = nestRectanglesPartial(items, short);
+    const b = nestRectanglesPartial(items, short);
+    expect(a).toEqual(b);
+  });
+
+  it("partial nest with all fitting matches hard nest height", () => {
+    const items = [
+      {
+        assetId: "a",
+        widthIn: 4,
+        heightIn: 2,
+        quantity: 2,
+        rotationDeg: 0 as const,
+      },
+    ];
+    const hard = nestRectangles(items, sheet);
+    const soft = nestRectanglesPartial(items, sheet);
+    expect(soft.remainingCount).toBe(0);
+    expect(soft.requiredHeightIn).toBe(soft.sheetHeightIn);
+    expect(soft.sheetHeightIn).toBe(hard.sheetHeightIn);
+    expect(soft.placements).toEqual(hard.placements);
+  });
+
+  it("hard nest throws when height overflows", () => {
+    const short = { ...sheet, maxHeightIn: 6 };
+    expect(() =>
+      nestRectangles(
+        [
+          {
+            assetId: "tile",
+            widthIn: 10,
+            heightIn: 2,
+            quantity: 10,
+            rotationDeg: 0,
+          },
+        ],
+        short,
+      ),
+    ).toThrow(/exceeds max/);
   });
 });

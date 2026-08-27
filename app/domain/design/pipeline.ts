@@ -92,22 +92,37 @@ export function buildNest(
   state: DesignStateV1,
   sheet: DesignStateV1["sheet"],
 ): NestResult {
-  if (
-    state.layout !== "manual" ||
-    state.items.some((item) => item.xIn == null || item.yIn == null)
-  ) {
+  const allHavePositions = state.items.every(
+    (item) => item.xIn != null && item.yIn != null,
+  );
+  // gang_sheet with explicit x/y is manual even if layout was omitted (backward harden).
+  const isManual =
+    state.layout === "manual" ||
+    (state.workflow === "gang_sheet" && allHavePositions);
+
+  if (!isManual || !allHavePositions) {
     return nestRectangles(state.items, sheet, {
       allowRotate90: state.allowRotate90 === true,
     });
   }
 
-  const placements = state.items.map((item) => ({
+  // Paint order: ascending (zIndex ?? index) so higher layers composite last.
+  const ordered = state.items
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (a, b) => (a.item.zIndex ?? a.index) - (b.item.zIndex ?? b.index),
+    );
+
+  const placements = ordered.map(({ item, index }) => ({
     assetId: item.assetId,
     xIn: item.xIn!,
     yIn: item.yIn!,
     widthIn: item.widthIn,
     heightIn: item.heightIn,
     rotationDeg: item.rotationDeg,
+    zIndex: item.zIndex ?? index,
+    flipX: item.flipX,
+    flipY: item.flipY,
   }));
   for (const p of placements) {
     if (
@@ -117,6 +132,7 @@ export function buildNest(
     ) throw new Error(`Item ${p.assetId} is outside the sheet`);
   }
   const usedArea = placements.reduce((sum, p) => sum + p.widthIn * p.heightIn, 0);
+  // Customer-selected sheet length is exact product height for manual layouts.
   return {
     sheetWidthIn: sheet.widthIn,
     sheetHeightIn: sheet.maxHeightIn,

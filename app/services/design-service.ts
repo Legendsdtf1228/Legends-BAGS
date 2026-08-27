@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import type { Prisma } from "@prisma/client";
 import {
   buildUploadBySizeState,
   buildUploadBySizeStateFromLines,
@@ -11,6 +12,9 @@ import { validateUpload } from "../domain/design/upload";
 import { canEnqueue, shouldRequeueStuckProcessing, type JobStatus } from "../domain/jobs";
 import type { SizeInput } from "../domain/pricing";
 import { assetKey, getObjectStore } from "../domain/storage";
+import { assertDesignStateV1 } from "../domain/design/types";
+import { verifyPriceRef } from "../domain/security/design-access";
+import { signDownload } from "../domain/security/signed-urls";
 
 export async function createAssetFromUpload(shop: string, bytes: Buffer) {
   const validated = await validateUpload(bytes);
@@ -278,14 +282,20 @@ export async function createGangSheetDesign(params: {
   if (ownedAssets !== assetIds.length) throw new Error("One or more assets were not found");
 
   const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
-  const normalizedItems = params.items.map((item) => ({
-    ...item,
-    quantity: Math.max(1, Math.floor(item.quantity || 1)),
-    widthIn: Math.round(item.widthIn * 1000) / 1000,
-    heightIn: Math.round(item.heightIn * 1000) / 1000,
-    xIn: Math.round((item.xIn ?? 0) * 1000) / 1000,
-    yIn: Math.round((item.yIn ?? 0) * 1000) / 1000,
-  }));
+  const normalizedItems = params.items.map((item, index) => {
+    if (!Number.isFinite(item.xIn) || !Number.isFinite(item.yIn)) {
+      throw new Error("Every gang sheet item requires finite xIn and yIn");
+    }
+    return {
+      ...item,
+      quantity: Math.max(1, Math.floor(item.quantity || 1)),
+      widthIn: Math.round(item.widthIn * 1000) / 1000,
+      heightIn: Math.round(item.heightIn * 1000) / 1000,
+      xIn: Math.round(item.xIn! * 1000) / 1000,
+      yIn: Math.round(item.yIn! * 1000) / 1000,
+      zIndex: item.zIndex ?? index,
+    };
+  });
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
     workflow: "gang_sheet",
@@ -311,30 +321,599 @@ export async function createGangSheetDesign(params: {
   return { design, state };
 }
 
+export async function getDesignStateAtVersion(
+  shop: string,
+  designId: string,
+  version: number,
+): Promise<{ design: NonNullable<Awaited<ReturnType<typeof prisma.design.findFirst>>>; state: DesignStateV1; versionRow: NonNullable<Awaited<ReturnType<typeof prisma.designVersion.findUnique>>> }> {
+  const design = await prisma.design.findFirst({
+    where: { id: designId, shop },
+  });
+  if (!design) throw new Error("Design not found");
+  const versionRow = await prisma.designVersion.findUnique({
+    where: { designId_version: { designId, version } },
+  });
+  if (!versionRow) throw new Error("Design version not found");
+  const state = assertDesignStateV1(JSON.parse(versionRow.stateJson));
+  return { design, state, versionRow };
+}
+
 export async function getDesignState(
   shop: string,
   designId: string,
+  version?: number,
 ): Promise<{ design: NonNullable<Awaited<ReturnType<typeof prisma.design.findFirst>>>; state: DesignStateV1 }> {
   const design = await prisma.design.findFirst({
     where: { id: designId, shop },
   });
   if (!design) throw new Error("Design not found");
-  const version = await prisma.designVersion.findUnique({
-    where: {
-      designId_version: {
-        designId: design.id,
-        version: design.currentVersion,
+  const v = version ?? design.currentVersion;
+  const versionRow = await prisma.designVersion.findUnique({
+    where: { designId_version: { designId: design.id, version: v } },
+  });
+  if (!versionRow) throw new Error("Design version missing");
+  return { design, state: assertDesignStateV1(JSON.parse(versionRow.stateJson)) };
+}
+
+export async function saveGangSheetNewVersion(params: {
+  shop: string;
+  designId: string;
+  items: DesignStateV1["items"];
+  sheet: DesignStateV1["sheet"];
+  productGid?: string;
+  variantGid?: string;
+  name?: string;
+  saveToLibrary?: boolean;
+}) {
+  const existing = await prisma.design.findFirst({
+    where: { id: params.designId, shop: params.shop },
+  });
+  if (!existing) throw new Error("Design not found");
+  if (existing.status === "ordered") {
+    throw new Error("Ordered designs are immutable — duplicate to reorder");
+  }
+
+  const assetIds = [...new Set(params.items.map((item) => item.assetId))];
+  const ownedAssets = await prisma.asset.count({
+    where: { shop: params.shop, id: { in: assetIds } },
+  });
+  if (ownedAssets !== assetIds.length) throw new Error("One or more assets were not found");
+
+  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
+  const normalizedItems = params.items.map((item, index) => {
+    if (!Number.isFinite(item.xIn) || !Number.isFinite(item.yIn)) {
+      throw new Error("Every gang sheet item requires finite xIn and yIn");
+    }
+    return {
+      ...item,
+      quantity: Math.max(1, Math.floor(item.quantity || 1)),
+      widthIn: Math.round(item.widthIn * 1000) / 1000,
+      heightIn: Math.round(item.heightIn * 1000) / 1000,
+      xIn: Math.round(item.xIn! * 1000) / 1000,
+      yIn: Math.round(item.yIn! * 1000) / 1000,
+      zIndex: item.zIndex ?? index,
+    };
+  });
+
+  const state: DesignStateV1 = {
+    schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
+    workflow: "gang_sheet",
+    sheet: params.sheet,
+    items: normalizedItems,
+    pricing: buildPricingSnapshot(normalizedItems, config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN),
+    allowRotate90: false,
+    layout: "manual",
+  };
+
+  const nextVersion = existing.currentVersion + 1;
+  const design = await prisma.design.update({
+    where: { id: existing.id },
+    data: {
+      currentVersion: nextVersion,
+      status: "draft",
+      productGid: params.productGid ?? existing.productGid,
+      variantGid: params.variantGid ?? existing.variantGid,
+      name: params.saveToLibrary && params.name ? params.name : existing.name,
+      archived: false,
+      updatedAt: new Date(),
+      versions: {
+        create: {
+          version: nextVersion,
+          stateJson: JSON.stringify(state),
+          priceCents: state.pricing.totalCents,
+          areaSqIn: state.pricing.areaSqIn,
+        },
       },
     },
   });
-  if (!version) throw new Error("Design version missing");
-  return { design, state: JSON.parse(version.stateJson) as DesignStateV1 };
+
+  await prisma.auditEvent.create({
+    data: {
+      shop: params.shop,
+      action: "design.version_saved",
+      actorType: "customer",
+      entityType: "design",
+      entityId: design.id,
+      metaJson: JSON.stringify({ version: nextVersion, itemCount: state.items.length }),
+    },
+  });
+
+  return { design, state, version: nextVersion };
+}
+
+export async function saveUploadBySizeNewVersion(params: {
+  shop: string;
+  designId: string;
+  uploads: Array<{ assetId: string; size: SizeInput }>;
+  productGid?: string;
+  variantGid?: string;
+  name?: string;
+  saveToLibrary?: boolean;
+}) {
+  const existing = await prisma.design.findFirst({
+    where: { id: params.designId, shop: params.shop },
+  });
+  if (!existing) throw new Error("Design not found");
+  if (existing.status === "ordered") {
+    throw new Error("Ordered designs are immutable — duplicate to reorder");
+  }
+
+  const assetIds = [...new Set(params.uploads.map((u) => u.assetId))];
+  const assets = await prisma.asset.findMany({
+    where: { shop: params.shop, id: { in: assetIds } },
+  });
+  if (assets.length !== assetIds.length) throw new Error("One or more assets were not found");
+  const assetById = new Map(assets.map((a) => [a.id, a]));
+
+  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
+  const state = buildUploadBySizeStateFromLines(
+    params.uploads.map((upload) => {
+      const asset = assetById.get(upload.assetId)!;
+      return {
+        assetId: asset.id,
+        sourceWidthPx: asset.widthPx,
+        sourceHeightPx: asset.heightPx,
+        size: upload.size,
+      };
+    }),
+    {
+      pricePerSqIn: config?.pricePerSqIn,
+      sheet: config
+        ? {
+            widthIn: config.sheetWidthIn,
+            maxHeightIn: config.maxHeightIn,
+            imageMarginIn: config.imageMarginIn,
+            artboardMarginIn: config.artboardMarginIn,
+          }
+        : undefined,
+    },
+  );
+
+  const nextVersion = existing.currentVersion + 1;
+  const design = await prisma.design.update({
+    where: { id: existing.id },
+    data: {
+      currentVersion: nextVersion,
+      status: "draft",
+      productGid: params.productGid ?? existing.productGid,
+      variantGid: params.variantGid ?? existing.variantGid,
+      name: params.saveToLibrary && params.name ? params.name : existing.name,
+      archived: false,
+      versions: {
+        create: {
+          version: nextVersion,
+          stateJson: JSON.stringify(state),
+          priceCents: state.pricing.totalCents,
+          areaSqIn: state.pricing.areaSqIn,
+        },
+      },
+    },
+  });
+
+  return { design, state, version: nextVersion };
+}
+
+export async function listDesignLibrary(params: {
+  shop: string;
+  search?: string;
+  sort?: "recent" | "name";
+  includeArchived?: boolean;
+  limit?: number;
+}) {
+  const where: Prisma.DesignWhereInput = {
+    shop: params.shop,
+    staffSheet: false,
+    name: params.search?.trim()
+      ? { not: null, contains: params.search.trim() }
+      : { not: null },
+    ...(params.includeArchived ? {} : { archived: false }),
+  };
+
+  const rows = await prisma.design.findMany({
+    where,
+    orderBy: params.sort === "name" ? { name: "asc" } : { updatedAt: "desc" },
+    take: params.limit ?? 50,
+  });
+
+  return Promise.all(
+    rows.map(async (d) => {
+      const v = await prisma.designVersion.findUnique({
+        where: { designId_version: { designId: d.id, version: d.currentVersion } },
+      });
+      let workflow = "upload_by_size";
+      let pieceCount = 0;
+      let sheetLabel = "";
+      if (v) {
+        try {
+          const state = JSON.parse(v.stateJson) as DesignStateV1;
+          workflow = state.workflow;
+          pieceCount = state.items.reduce((n, i) => n + (i.quantity || 1), 0);
+          sheetLabel = `${state.sheet.widthIn}″ × ${state.sheet.maxHeightIn}″`;
+        } catch {
+          /* ignore */
+        }
+      }
+      let previewPath: string | null = null;
+      const previewKey =
+        d.previewKey ??
+        (
+          await prisma.renderJob.findFirst({
+            where: { shop: params.shop, designId: d.id, previewKey: { not: null } },
+            orderBy: { createdAt: "desc" },
+            select: { previewKey: true },
+          })
+        )?.previewKey;
+      if (previewKey) {
+        const { token } = signDownload({ shop: params.shop, objectKey: previewKey });
+        previewPath = `/api/files/download?token=${encodeURIComponent(token)}`;
+      }
+
+      return {
+        id: d.id,
+        name: d.name,
+        workflow,
+        version: d.currentVersion,
+        status: d.status,
+        archived: d.archived,
+        pieceCount,
+        sheetLabel,
+        priceCents: v?.priceCents ?? 0,
+        updatedAt: d.updatedAt.toISOString(),
+        createdAt: d.createdAt.toISOString(),
+        sourceDesignId: d.sourceDesignId,
+        sourceOrderId: d.sourceOrderId,
+        previewPath,
+      };
+    }),
+  );
+}
+
+export async function createStaffSheet(params: {
+  shop: string;
+  name: string;
+  sheetWidthIn?: number;
+  sheetHeightIn?: number;
+}) {
+  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
+  const sheet = {
+    widthIn: params.sheetWidthIn ?? config?.sheetWidthIn ?? 22.5,
+    maxHeightIn: params.sheetHeightIn ?? 24,
+    imageMarginIn: config?.imageMarginIn ?? 0.15,
+    artboardMarginIn: config?.artboardMarginIn ?? 0.1,
+  };
+  const state: DesignStateV1 = {
+    schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
+    workflow: "gang_sheet",
+    sheet,
+    items: [],
+    pricing: {
+      currency: "USD",
+      pricePerSqIn: config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
+      areaSqIn: 0,
+      totalCents: 0,
+    },
+    allowRotate90: false,
+    layout: "manual",
+  };
+  const cleanName = params.name.trim() || "Untitled shop sheet";
+  const design = await prisma.design.create({
+    data: {
+      shop: params.shop,
+      status: "draft",
+      staffSheet: true,
+      name: cleanName,
+      currentVersion: 1,
+      versions: {
+        create: {
+          version: 1,
+          stateJson: JSON.stringify(state),
+          priceCents: 0,
+          areaSqIn: 0,
+        },
+      },
+    },
+  });
+  await prisma.auditEvent.create({
+    data: {
+      shop: params.shop,
+      action: "staff_sheet.created",
+      actorType: "merchant",
+      entityType: "design",
+      entityId: design.id,
+      metaJson: JSON.stringify({ name: cleanName, sheet }),
+    },
+  });
+  return { design, state };
+}
+
+export async function listStaffSheets(shop: string, search?: string) {
+  const designs = await prisma.design.findMany({
+    where: {
+      shop,
+      staffSheet: true,
+      archived: false,
+      ...(search?.trim()
+        ? { OR: [{ name: { contains: search.trim() } }, { id: { contains: search.trim() } }] }
+        : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+
+  const jobs = await prisma.renderJob.findMany({
+    where: { shop, designId: { in: designs.map((d) => d.id) } },
+    orderBy: { createdAt: "desc" },
+  });
+  const jobByDesign = new Map<string, (typeof jobs)[number]>();
+  for (const j of jobs) {
+    if (!jobByDesign.has(j.designId)) jobByDesign.set(j.designId, j);
+  }
+
+  return Promise.all(
+    designs.map(async (d) => {
+      const v = await prisma.designVersion.findUnique({
+        where: { designId_version: { designId: d.id, version: d.currentVersion } },
+      });
+      let pieceCount = 0;
+      let sheetLabel = "";
+      if (v) {
+        try {
+          const state = JSON.parse(v.stateJson) as DesignStateV1;
+          pieceCount = state.items.length;
+          sheetLabel = `${state.sheet.widthIn}″ × ${state.sheet.maxHeightIn}″`;
+        } catch {
+          /* ignore */
+        }
+      }
+      const job = jobByDesign.get(d.id);
+      let previewPath: string | null = null;
+      const previewKey = d.previewKey ?? job?.previewKey ?? null;
+      if (previewKey) {
+        const { token } = signDownload({ shop, objectKey: previewKey });
+        previewPath = `/api/files/download?token=${encodeURIComponent(token)}`;
+      }
+      let downloadPath: string | null = null;
+      if (job?.outputKey) {
+        const { token } = signDownload({ shop, objectKey: job.outputKey });
+        downloadPath = `/api/files/download?token=${encodeURIComponent(token)}`;
+      }
+      return {
+        id: d.id,
+        name: d.name,
+        status: d.status,
+        version: d.currentVersion,
+        pieceCount,
+        sheetLabel,
+        updatedAt: d.updatedAt.toISOString(),
+        jobStatus: job?.status ?? null,
+        previewPath,
+        downloadPath,
+      };
+    }),
+  );
+}
+
+export async function renameStaffSheet(shop: string, designId: string, name: string) {
+  const design = await prisma.design.findFirst({
+    where: { id: designId, shop, staffSheet: true },
+  });
+  if (!design) throw new Error("Staff sheet not found");
+  const cleanName = name.trim();
+  if (!cleanName) throw new Error("Name required");
+  return prisma.design.update({
+    where: { id: design.id },
+    data: { name: cleanName },
+  });
+}
+
+export async function archiveStaffSheet(shop: string, designId: string) {
+  const design = await prisma.design.findFirst({
+    where: { id: designId, shop, staffSheet: true },
+  });
+  if (!design) throw new Error("Staff sheet not found");
+  return prisma.design.update({
+    where: { id: design.id },
+    data: { archived: true },
+  });
+}
+
+export async function duplicateStaffSheet(shop: string, designId: string) {
+  const { design, state } = await getDesignState(shop, designId);
+  if (!design.staffSheet) throw new Error("Not a staff sheet");
+  const copy = await createStaffSheet({
+    shop,
+    name: `${design.name || "Shop sheet"} (copy)`,
+    sheetWidthIn: state.sheet.widthIn,
+    sheetHeightIn: state.sheet.maxHeightIn,
+  });
+  if (state.items.length) {
+    await saveGangSheetNewVersion({
+      shop,
+      designId: copy.design.id,
+      items: state.items,
+      sheet: state.sheet,
+    });
+  }
+  return copy.design;
+}
+
+export async function updateDesignLibraryEntry(params: {
+  shop: string;
+  designId: string;
+  name?: string;
+  archived?: boolean;
+}) {
+  const design = await prisma.design.findFirst({
+    where: { id: params.designId, shop: params.shop },
+  });
+  if (!design) throw new Error("Design not found");
+  return prisma.design.update({
+    where: { id: design.id },
+    data: {
+      ...(params.name !== undefined ? { name: params.name } : {}),
+      ...(params.archived !== undefined ? { archived: params.archived } : {}),
+    },
+  });
+}
+
+export async function duplicateDesignForReorder(params: {
+  shop: string;
+  sourceDesignId: string;
+  sourceVersion?: number;
+  sourceOrderId?: string;
+  name?: string;
+  productGid?: string;
+  variantGid?: string;
+}) {
+  const sourceDesign = await prisma.design.findFirst({
+    where: { id: params.sourceDesignId, shop: params.shop },
+  });
+  if (!sourceDesign) throw new Error("Source design not found");
+
+  const source = await getDesignStateAtVersion(
+    params.shop,
+    params.sourceDesignId,
+    params.sourceVersion ?? sourceDesign.currentVersion,
+  );
+
+  const assetIds = [...new Set(source.state.items.map((i) => i.assetId))];
+  const ownedAssets = await prisma.asset.count({
+    where: { shop: params.shop, id: { in: assetIds } },
+  });
+  if (ownedAssets !== assetIds.length) {
+    throw new Error("Source design assets are missing — cannot reorder");
+  }
+
+  const copyName =
+    params.name?.trim() ||
+    `${source.design.name || "Design"} (reorder ${new Date().toLocaleDateString()})`;
+
+  const design = await prisma.design.create({
+    data: {
+      shop: params.shop,
+      status: "draft",
+      productGid: params.productGid ?? source.design.productGid,
+      variantGid: params.variantGid ?? source.design.variantGid,
+      currentVersion: 1,
+      name: copyName,
+      sourceDesignId: params.sourceDesignId,
+      sourceDesignVersion: source.versionRow.version,
+      sourceOrderId: params.sourceOrderId ?? source.design.sourceOrderId,
+      versions: {
+        create: {
+          version: 1,
+          stateJson: source.versionRow.stateJson,
+          priceCents: source.versionRow.priceCents,
+          areaSqIn: source.versionRow.areaSqIn,
+        },
+      },
+    },
+  });
+
+  await prisma.auditEvent.create({
+    data: {
+      shop: params.shop,
+      action: "design.reorder_copy",
+      actorType: "system",
+      entityType: "design",
+      entityId: design.id,
+      metaJson: JSON.stringify({
+        sourceDesignId: params.sourceDesignId,
+        sourceVersion: source.versionRow.version,
+        sourceOrderId: params.sourceOrderId,
+      }),
+    },
+  });
+
+  return {
+    design,
+    state: source.state,
+    version: 1,
+    sourceDesignId: params.sourceDesignId,
+    sourceVersion: source.versionRow.version,
+  };
+}
+
+export async function validateDesignForCheckout(params: {
+  shop: string;
+  designId: string;
+  designVersion: number;
+  productGid?: string;
+  variantGid?: string;
+  priceRef?: string;
+}) {
+  const { design, state, versionRow } = await getDesignStateAtVersion(
+    params.shop,
+    params.designId,
+    params.designVersion,
+  );
+
+  if (design.archived) throw new Error("Design has been archived");
+  if (design.status === "failed") throw new Error("Design is invalid");
+  if (params.productGid && design.productGid && design.productGid !== params.productGid) {
+    throw new Error("Design does not match this product");
+  }
+  if (params.variantGid && design.variantGid && design.variantGid !== params.variantGid) {
+    throw new Error("Design does not match this variant");
+  }
+
+  if (params.priceRef) {
+    const ref = verifyPriceRef(params.priceRef);
+    if (ref.shop !== params.shop || ref.designId !== params.designId) {
+      throw new Error("Price reference mismatch");
+    }
+    if (ref.version !== params.designVersion) {
+      throw new Error("Price reference version mismatch");
+    }
+    if (ref.priceCents !== versionRow.priceCents) {
+      throw new Error("Price no longer matches saved design");
+    }
+  }
+
+  return { design, state, versionRow };
+}
+
+export async function saveDesignToLibrary(params: {
+  shop: string;
+  designId: string;
+  name: string;
+}) {
+  const design = await prisma.design.findFirst({
+    where: { id: params.designId, shop: params.shop },
+  });
+  if (!design) throw new Error("Design not found");
+  if (!params.name.trim()) throw new Error("Design name is required");
+  return prisma.design.update({
+    where: { id: design.id },
+    data: { name: params.name.trim(), archived: false },
+  });
 }
 
 export async function enqueueRenderJob(params: {
   shop: string;
   designId: string;
   orderLinkId?: string;
+  reprocessWidthIn?: number;
 }) {
   const existing = await prisma.renderJob.findMany({
     where: {
@@ -353,6 +932,7 @@ export async function enqueueRenderJob(params: {
       shop: params.shop,
       designId: params.designId,
       orderLinkId: params.orderLinkId,
+      reprocessWidthIn: params.reprocessWidthIn ?? null,
       status: "queued",
       attempt: 0,
     },
@@ -428,6 +1008,7 @@ export async function processNextRenderJob(): Promise<
       jobId: job.id,
       state,
       store: getObjectStore(),
+      reprocessWidthIn: job.reprocessWidthIn ?? undefined,
     });
 
     await prisma.renderJob.update({
@@ -448,7 +1029,10 @@ export async function processNextRenderJob(): Promise<
 
     await prisma.design.update({
       where: { id: job.designId },
-      data: { status: "completed" },
+      data: {
+        status: "completed",
+        previewKey: result.previewObjectKey,
+      },
     });
 
     await prisma.auditEvent.create({
@@ -489,7 +1073,7 @@ export async function linkOrderToDesigns(params: {
   shop: string;
   orderId: string;
   orderGid?: string;
-  lines: Array<{ lineItemId: string; designId: string; designVersion?: number }>;
+  lines: Array<{ lineItemId: string; designId: string; designVersion?: number; priceRef?: string }>;
   idempotencyKey: string;
   topic: string;
   webhookId?: string;
@@ -520,6 +1104,18 @@ export async function linkOrderToDesigns(params: {
       where: { id: line.designId, shop: params.shop },
     });
     if (!design) continue;
+
+    const version = line.designVersion ?? design.currentVersion;
+    try {
+      await validateDesignForCheckout({
+        shop: params.shop,
+        designId: line.designId,
+        designVersion: version,
+        priceRef: line.priceRef,
+      });
+    } catch {
+      continue;
+    }
 
     const orderLink = await prisma.orderLink.upsert({
       where: {

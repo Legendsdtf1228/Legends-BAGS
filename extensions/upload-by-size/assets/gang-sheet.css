@@ -27,6 +27,42 @@
   font-size: 0.9rem;
 }
 
+.lgs-gs__warn {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #f0c36d;
+  background: #fff8eb;
+  color: #7a4e00;
+  font-size: 0.9rem;
+}
+
+.lgs-gs__attached,
+.lgs-gs__status.lgs-status--ok {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #8fd6a8;
+  background: #edf9f1;
+  color: #17683e;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.lgs-gs__status {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.lgs-gs__status.lgs-status--warn {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #f0c36d;
+  background: #fff8eb;
+  color: #7a4e00;
+}
+
+.lgs-gs.lgs--design-ready .lgs-gs__warn {
+  display: none;
+}
+
 .lgs-gs__frame-wrap:not([hidden]) {
   position: fixed;
   inset: 0;

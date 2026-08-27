@@ -3,8 +3,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { Form, Link, useLoaderData } from "react-router";
-import type { CSSProperties } from "react";
+import { Form, Link, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -14,6 +13,7 @@ import {
   getDesignState,
   processNextRenderJob,
 } from "../services/design-service";
+import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -37,9 +37,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     previewPath = `/api/files/download?token=${encodeURIComponent(token)}`;
   }
 
+  const audits = await prisma.auditEvent.findMany({
+    where: {
+      shop,
+      OR: [
+        { entityType: "design", entityId: designId },
+        { entityType: "render_job", entityId: { in: jobs.map((j) => j.id) } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 40,
+  });
+
   return {
     design: {
       id: design.id,
+      name: design.name,
       status: design.status,
       version: design.currentVersion,
     },
@@ -53,9 +66,20 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       heightPx: j.heightPx,
       sheetWidthIn: j.sheetWidthIn,
       sheetHeightIn: j.sheetHeightIn,
+      reprocessWidthIn: j.reprocessWidthIn,
+      createdAt: j.createdAt.toISOString(),
+    })),
+    audits: audits.map((a) => ({
+      id: a.id,
+      action: a.action,
+      actorType: a.actorType,
+      entityType: a.entityType,
+      createdAt: a.createdAt.toISOString(),
+      metaJson: a.metaJson,
     })),
     downloadPath,
     previewPath,
+    defaultSheetWidth: state.sheet.widthIn,
   };
 };
 
@@ -64,103 +88,151 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const shop = session.shop;
   const designId = params.designId!;
   const form = await request.formData();
-  if (String(form.get("intent") || "") === "retry") {
+  const intent = String(form.get("intent") || "");
+  if (intent === "retry") {
     await enqueueRenderJob({ shop, designId });
     await processNextRenderJob();
+  }
+  if (intent === "reprocess") {
+    const raw = String(form.get("reprocessWidthIn") || "").trim();
+    const reprocessWidthIn = raw ? Number.parseFloat(raw) : undefined;
+    if (reprocessWidthIn !== undefined && (!Number.isFinite(reprocessWidthIn) || reprocessWidthIn <= 0)) {
+      return { error: "Enter a valid sheet width in inches." };
+    }
+    await enqueueRenderJob({ shop, designId, reprocessWidthIn });
+    await processNextRenderJob();
+  }
+  if (intent === "reorder") {
+    const { duplicateDesignForReorder } = await import("../services/design-service");
+    const copy = await duplicateDesignForReorder({
+      shop,
+      sourceDesignId: designId,
+      name: `Reorder from ${designId.slice(0, 8)}`,
+    });
+    return { reorderDesignId: copy.design.id };
   }
   return null;
 };
 
 export default function DesignDetail() {
   const data = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+
   return (
-    <div style={page}>
-      <p>
-        <Link to="/app">← Gang sheets</Link>
-      </p>
-      <h1 style={{ marginTop: 0 }}>Design {data.design.id}</h1>
-      <p>
-        Status: <strong>{data.design.status}</strong> · Version{" "}
-        {data.design.version}
-      </p>
-      <p>
-        Area: {data.state.pricing.areaSqIn} in² · Price: $
-        {(data.state.pricing.totalCents / 100).toFixed(2)}
-      </p>
+    <>
+      <BagsPageHeader
+        title={data.design.name || `Design ${data.design.id.slice(0, 12)}…`}
+        subtitle={`${data.design.status} · v${data.design.version} · ${data.state.workflow}`}
+        actions={
+          <Link to="/app/designs" className="bags-admin-btn ghost">
+            ← All designs
+          </Link>
+        }
+      />
+      <div className="bags-admin-content">
+        {actionData && "error" in actionData && actionData.error ? (
+          <BagsCard style={{ marginBottom: 16 }}>
+            <p style={{ color: "#b42318", margin: 0 }}>{actionData.error}</p>
+          </BagsCard>
+        ) : null}
+        <BagsCard>
+          <p className="bags-admin-muted">
+            Area {data.state.pricing.areaSqIn.toFixed(3)} in² · $
+            {(data.state.pricing.totalCents / 100).toFixed(2)} · {data.state.items.length} piece
+            {data.state.items.length === 1 ? "" : "s"}
+          </p>
+          <div className="bags-admin-actions" style={{ margin: "12px 0 16px" }}>
+            {data.previewPath ? (
+              <a href={data.previewPath} className="bags-admin-btn ghost">
+                Preview
+              </a>
+            ) : null}
+            {data.downloadPath ? (
+              <a href={data.downloadPath} className="bags-admin-btn primary">
+                Download print PNG
+              </a>
+            ) : null}
+            <Form method="post">
+              <input type="hidden" name="intent" value="retry" />
+              <button type="submit" className="bags-admin-btn secondary">
+                Retry / regenerate
+              </button>
+            </Form>
+            <Form method="post">
+              <input type="hidden" name="intent" value="reorder" />
+              <button type="submit" className="bags-admin-btn ghost">
+                Reorder (new copy)
+              </button>
+            </Form>
+          </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        {data.previewPath ? (
-          <a href={data.previewPath} style={btnSecondary}>
-            Preview (signed)
-          </a>
-        ) : null}
-        {data.downloadPath ? (
-          <a href={data.downloadPath} style={btnSecondary}>
-            Download print PNG (signed)
-          </a>
-        ) : null}
-        <Form method="post">
-          <input type="hidden" name="intent" value="retry" />
-          <button type="submit" style={btn}>
-            Retry / regenerate
-          </button>
-        </Form>
+          <Form method="post" className="bags-admin-form" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end", marginBottom: 16 }}>
+            <input type="hidden" name="intent" value="reprocess" />
+            <label>
+              Reprocess at width (in)
+              <input
+                name="reprocessWidthIn"
+                type="number"
+                step="0.1"
+                min="1"
+                defaultValue={data.defaultSheetWidth}
+                style={{ width: 100 }}
+              />
+            </label>
+            <button type="submit" className="bags-admin-btn ghost">
+              Reprocess width
+            </button>
+          </Form>
+
+          {data.previewPath ? (
+            <img
+              src={data.previewPath}
+              alt="Sheet preview"
+              style={{
+                maxWidth: "100%",
+                border: "1px solid #e5e7eb",
+                borderRadius: 8,
+                background:
+                  "linear-gradient(45deg,#eee 25%,transparent 25%),linear-gradient(-45deg,#eee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee 75%),linear-gradient(-45deg,transparent 75%,#eee 75%)",
+                backgroundSize: "20px 20px",
+                backgroundPosition: "0 0,0 10px,10px -10px 0",
+              }}
+            />
+          ) : null}
+        </BagsCard>
+
+        <BagsCard title="Render jobs" style={{ marginTop: 16 }}>
+          <ul className="bags-admin-muted">
+            {data.jobs.map((j) => (
+              <li key={j.id} style={{ marginBottom: 8 }}>
+                <strong>{j.status}</strong> · attempt {j.attempt}
+                {j.reprocessWidthIn ? ` · reprocess ${j.reprocessWidthIn}″` : ""}
+                {j.widthPx ? ` · ${j.widthPx}×${j.heightPx}px` : ""}
+                {j.sheetWidthIn ? ` · ${j.sheetWidthIn}×${j.sheetHeightIn} in` : ""}
+                {j.lastError ? ` · ${j.lastError}` : ""}
+                <div style={{ fontSize: 11 }}>{new Date(j.createdAt).toLocaleString()}</div>
+              </li>
+            ))}
+          </ul>
+        </BagsCard>
+
+        <BagsCard title="Audit history" style={{ marginTop: 16 }}>
+          {data.audits.length === 0 ? (
+            <p className="bags-admin-muted">No audit events yet.</p>
+          ) : (
+            <ul className="bags-admin-muted">
+              {data.audits.map((a) => (
+                <li key={a.id} style={{ marginBottom: 8 }}>
+                  <strong>{a.action}</strong> · {a.actorType} · {a.entityType}
+                  <div style={{ fontSize: 11 }}>{new Date(a.createdAt).toLocaleString()}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </BagsCard>
       </div>
-
-      {data.previewPath ? (
-        <img
-          src={data.previewPath}
-          alt="Sheet preview"
-          style={{
-            maxWidth: "100%",
-            border: "1px solid #d9d1c3",
-            background:
-              "linear-gradient(45deg,#eee 25%,transparent 25%),linear-gradient(-45deg,#eee 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#eee 75%),linear-gradient(-45deg,transparent 75%,#eee 75%)",
-            backgroundSize: "20px 20px",
-            backgroundPosition: "0 0,0 10px,10px -10px,-10px 0",
-          }}
-        />
-      ) : null}
-
-      <h2>Jobs</h2>
-      <ul>
-        {data.jobs.map((j) => (
-          <li key={j.id}>
-            {j.id} — {j.status} (attempt {j.attempt})
-            {j.widthPx ? ` · ${j.widthPx}×${j.heightPx}px` : ""}
-            {j.sheetWidthIn
-              ? ` · ${j.sheetWidthIn}×${j.sheetHeightIn} in`
-              : ""}
-            {j.lastError ? ` · ${j.lastError}` : ""}
-          </li>
-        ))}
-      </ul>
-    </div>
+    </>
   );
 }
 
-const page: CSSProperties = {
-  padding: 24,
-  maxWidth: 900,
-  margin: "0 auto",
-  fontFamily: "system-ui, Segoe UI, sans-serif",
-};
-const btn: CSSProperties = {
-  background: "#0f5c4c",
-  color: "#f4fffb",
-  border: 0,
-  padding: "10px 14px",
-  cursor: "pointer",
-  borderRadius: 6,
-  font: "inherit",
-};
-const btnSecondary: CSSProperties = {
-  ...btn,
-  background: "#1c1915",
-  textDecoration: "none",
-  display: "inline-block",
-};
-
-export const headers: HeadersFunction = (headersArgs) => {
-  return boundary.headers(headersArgs);
-};
+export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);

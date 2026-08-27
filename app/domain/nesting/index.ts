@@ -7,6 +7,10 @@ export type NestPlacement = {
   widthIn: number;
   heightIn: number;
   rotationDeg: 0 | 90;
+  /** Higher paints later / on top when compositing. */
+  zIndex?: number;
+  flipX?: boolean;
+  flipY?: boolean;
 };
 
 export type NestResult = {
@@ -14,6 +18,13 @@ export type NestResult = {
   sheetHeightIn: number;
   placements: NestPlacement[];
   utilization: number;
+};
+
+export type NestPartialResult = NestResult & {
+  fittedCount: number;
+  remainingCount: number;
+  remainingAssetIds: string[];
+  requiredHeightIn: number;
 };
 
 export type NestOptions = {
@@ -70,26 +81,27 @@ function orientations(
   ];
 }
 
-/**
- * Deterministic shelf (row) rectangle packer.
- * Origin is the sheet top-left. Artboard margin insets the printable region.
- * Image margin is the gap between adjacent pieces (not added outside the last piece).
- */
-export function nestRectangles(
-  items: DesignItem[],
-  sheet: SheetConfig,
-  options: NestOptions = {},
-): NestResult {
-  if (items.length === 0) throw new Error("Nothing to nest");
+function roundIn(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
 
-  const allowRotate90 = options.allowRotate90 === true;
+/**
+ * Shared shelf (row) packer.
+ * When `maxHeightIn` is set, pieces that would exceed it are skipped into remaining.
+ */
+function packShelf(
+  pieces: Piece[],
+  sheet: SheetConfig,
+  allowRotate90: boolean,
+  maxHeightIn: number | null,
+): { placements: NestPlacement[]; remaining: Piece[]; sheetHeightIn: number } {
   const gap = sheet.imageMarginIn;
   const pad = sheet.artboardMarginIn;
   const innerWidth = sheet.widthIn - pad * 2;
   if (innerWidth <= 0) throw new Error("Sheet too narrow for artboard margin");
 
-  const pieces = expandAndSort(items);
   const placements: NestPlacement[] = [];
+  const remaining: Piece[] = [];
 
   let rowY = 0;
   let rowX = 0;
@@ -105,45 +117,57 @@ export function nestRectangles(
       );
     }
 
-    // Prefer orientation that fits on the current row; else start a new row.
+    let trialRowY = rowY;
+    let trialRowX = rowX;
+    let trialRowHeight = rowHeight;
+
     let chosen = opts.find((o) => {
-      const need = rowX === 0 ? o.widthIn : rowX + gap + o.widthIn;
+      const need = trialRowX === 0 ? o.widthIn : trialRowX + gap + o.widthIn;
       return need <= innerWidth + 1e-9;
     });
 
     if (!chosen) {
-      rowY = rowY + rowHeight + gap;
-      rowX = 0;
-      rowHeight = 0;
+      trialRowY = rowY + rowHeight + gap;
+      trialRowX = 0;
+      trialRowHeight = 0;
       chosen = opts[0];
     }
 
-    const x = rowX === 0 ? 0 : rowX + gap;
+    const x = trialRowX === 0 ? 0 : trialRowX + gap;
+    const contentBottom = trialRowY + Math.max(trialRowHeight, chosen.heightIn);
+    const projectedHeight = roundIn(pad + contentBottom + pad);
+
+    if (maxHeightIn != null && projectedHeight > maxHeightIn + 1e-9) {
+      remaining.push(piece);
+      continue;
+    }
+
     placements.push({
       assetId: piece.assetId,
       xIn: pad + x,
-      yIn: pad + rowY,
+      yIn: pad + trialRowY,
       widthIn: chosen.widthIn,
       heightIn: chosen.heightIn,
       rotationDeg: chosen.rotationDeg,
     });
 
+    rowY = trialRowY;
     rowX = x + chosen.widthIn;
-    rowHeight = Math.max(rowHeight, chosen.heightIn);
+    rowHeight = Math.max(trialRowHeight, chosen.heightIn);
   }
 
-  const contentBottom = rowY + rowHeight;
-  // Top artboard margin + content + bottom artboard margin
-  const sheetHeightIn =
-    Math.round((pad + contentBottom + pad) * 1000) / 1000;
+  const contentBottom = placements.length === 0 ? 0 : rowY + rowHeight;
+  const sheetHeightIn = roundIn(pad + contentBottom + pad);
 
-  if (sheetHeightIn > sheet.maxHeightIn + 1e-9) {
-    throw new Error(
-      `Nested height ${sheetHeightIn} in exceeds max ${sheet.maxHeightIn} in`,
-    );
-  }
+  return { placements, remaining, sheetHeightIn };
+}
 
-  // Bounds check: every placement must sit inside sheet
+function assertInBounds(
+  placements: NestPlacement[],
+  sheet: SheetConfig,
+  sheetHeightIn: number,
+): void {
+  const pad = sheet.artboardMarginIn;
   for (const p of placements) {
     if (
       p.xIn < pad - 1e-9 ||
@@ -154,14 +178,68 @@ export function nestRectangles(
       throw new Error("Nesting produced out-of-bounds placement");
     }
   }
+}
 
-  const usedArea = placements.reduce((s, p) => s + p.widthIn * p.heightIn, 0);
-  const sheetArea = sheet.widthIn * sheetHeightIn;
+/**
+ * Soft packer: places as many pieces as fit without exceeding maxHeightIn.
+ * Always throws on impossible printable width. Height overflow is reported via remaining*.
+ */
+export function nestRectanglesPartial(
+  items: DesignItem[],
+  sheet: SheetConfig,
+  options: NestOptions = {},
+): NestPartialResult {
+  if (items.length === 0) throw new Error("Nothing to nest");
+
+  const allowRotate90 = options.allowRotate90 === true;
+  const pieces = expandAndSort(items);
+
+  const full = packShelf(pieces, sheet, allowRotate90, null);
+  const requiredHeightIn = full.sheetHeightIn;
+
+  const limited = packShelf(pieces, sheet, allowRotate90, sheet.maxHeightIn);
+  assertInBounds(limited.placements, sheet, limited.sheetHeightIn);
+
+  const usedArea = limited.placements.reduce(
+    (s, p) => s + p.widthIn * p.heightIn,
+    0,
+  );
+  const sheetArea = sheet.widthIn * limited.sheetHeightIn;
 
   return {
     sheetWidthIn: sheet.widthIn,
-    sheetHeightIn,
-    placements,
+    sheetHeightIn: limited.sheetHeightIn,
+    placements: limited.placements,
     utilization: sheetArea > 0 ? usedArea / sheetArea : 0,
+    fittedCount: limited.placements.length,
+    remainingCount: limited.remaining.length,
+    remainingAssetIds: limited.remaining.map((p) => p.assetId),
+    requiredHeightIn:
+      limited.remaining.length === 0 ? limited.sheetHeightIn : requiredHeightIn,
+  };
+}
+
+/**
+ * Deterministic shelf (row) rectangle packer.
+ * Origin is the sheet top-left. Artboard margin insets the printable region.
+ * Image margin is the gap between adjacent pieces (not added outside the last piece).
+ * Hard-fails when any piece cannot fit within maxHeightIn.
+ */
+export function nestRectangles(
+  items: DesignItem[],
+  sheet: SheetConfig,
+  options: NestOptions = {},
+): NestResult {
+  const partial = nestRectanglesPartial(items, sheet, options);
+  if (partial.remainingCount > 0) {
+    throw new Error(
+      `Nested height ${partial.requiredHeightIn} in exceeds max ${sheet.maxHeightIn} in`,
+    );
+  }
+  return {
+    sheetWidthIn: partial.sheetWidthIn,
+    sheetHeightIn: partial.sheetHeightIn,
+    placements: partial.placements,
+    utilization: partial.utilization,
   };
 }

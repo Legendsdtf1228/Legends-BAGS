@@ -14,7 +14,7 @@ type SizeSelection =
 
 type DesignStateV1 = {
   schemaVersion: 1;
-  workflow: "upload_by_size";
+  workflow: "upload_by_size" | "gang_sheet";
   sheet: { widthIn: number; maxHeightIn: number; imageMarginIn: number; artboardMarginIn: number };
   items: Array<{
     assetId: string;
@@ -22,8 +22,14 @@ type DesignStateV1 = {
     heightIn: number;
     quantity: number;
     rotationDeg: 0 | 90; // nesting may rotate 90° when allowed
+    /** Gang sheet manual layout — inches from sheet origin (top-left). */
+    xIn?: number;
+    yIn?: number;
   }>;
   pricing: { currency: "USD"; pricePerSqIn: number; areaSqIn: number; totalCents: number };
+  /** `manual` preserves item xIn/yIn; `auto` (default) runs nesting. */
+  layout?: "auto" | "manual";
+  allowRotate90?: boolean;
 };
 ```
 

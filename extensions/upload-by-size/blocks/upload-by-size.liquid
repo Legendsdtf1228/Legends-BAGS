@@ -12,12 +12,19 @@
   data-builder-type="upload_by_size"
   data-editor-base="{{ block.settings.editor_base_url }}"
 >
-  <button type="button" class="lgs-ubs__launch" data-lgs-open>
+  <button type="button" class="lgs-ubs__launch" data-lgs-open data-label-open="{{ block.settings.button_label }}" data-label-edit="Edit design">
     {{ block.settings.button_label }}
   </button>
+  <button type="button" class="lgs-ubs__edit" data-lgs-edit hidden>Edit design</button>
+  <button type="button" class="lgs-ubs__reset" data-lgs-reset hidden>Start over</button>
   <p class="lgs-ubs__hint">{{ block.settings.hint_text }}</p>
-  <p class="lgs-ubs__status" data-lgs-status hidden></p>
-  <div class="lgs-ubs__frame-wrap" hidden data-lgs-frame-wrap>
+  <p class="lgs-ubs__warn" data-lgs-design-warn role="status" tabindex="-1">
+    Design required — open the editor and save before adding this product to cart.
+  </p>
+  <p class="lgs-ubs__attached" data-lgs-design-attached hidden role="status"></p>
+  <p class="lgs-ubs__status" data-lgs-status hidden aria-live="polite"></p>
+  <div class="lgs-ubs__frame-wrap" hidden data-lgs-frame-wrap aria-hidden="true" role="dialog" aria-modal="true" aria-label="Upload by Size">
+    <p class="lgs-ubs__loading" data-lgs-loading hidden>Loading editor…</p>
     <iframe
       title="Upload by Size"
       class="lgs-ubs__frame"

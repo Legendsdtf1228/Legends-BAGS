@@ -3,17 +3,12 @@ import {
   createGangSheetDesign,
   createMultiUploadBySizeDesign,
   createUploadBySizeDesign,
+  saveDesignToLibrary,
 } from "../services/design-service";
 import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
 import { assertTestAccess } from "../domain/security/test-access";
-
-function cartProperties(designId: string, version: number) {
-  return {
-    _lgs_design_id: designId,
-    _lgs_design_version: String(version),
-  };
-}
+import { buildCartLineProperties } from "../domain/shopify/line-properties";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
@@ -28,7 +23,29 @@ export async function action({ request }: ActionFunctionArgs) {
     uploads?: Array<{ assetId: string; size: SizeInput }>;
     items?: DesignStateV1["items"];
     sheet?: DesignStateV1["sheet"];
+    name?: string;
+    saveToLibrary?: boolean;
   };
+
+  function respond(
+    design: { id: string; currentVersion: number; name: string | null },
+    state: DesignStateV1,
+  ) {
+    return Response.json({
+      designId: design.id,
+      version: design.currentVersion,
+      status: "draft",
+      state,
+      name: design.name,
+      cartProperties: buildCartLineProperties({
+        shop,
+        designId: design.id,
+        version: design.currentVersion,
+        state,
+        designName: design.name,
+      }),
+    });
+  }
 
   if (body.uploads?.length) {
     try {
@@ -38,13 +55,10 @@ export async function action({ request }: ActionFunctionArgs) {
         productGid: body.productGid,
         variantGid: body.variantGid,
       });
-      return Response.json({
-        designId: design.id,
-        version: design.currentVersion,
-        status: design.status,
-        state,
-        cartProperties: cartProperties(design.id, design.currentVersion),
-      });
+      if (body.saveToLibrary && body.name) {
+        await saveDesignToLibrary({ shop, designId: design.id, name: body.name });
+      }
+      return respond(design, state);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Create failed";
       return Response.json({ error: message }, { status: 400 });
@@ -60,13 +74,11 @@ export async function action({ request }: ActionFunctionArgs) {
         productGid: body.productGid,
         variantGid: body.variantGid,
       });
-      return Response.json({
-        designId: design.id,
-        version: design.currentVersion,
-        status: design.status,
-        state,
-        cartProperties: cartProperties(design.id, design.currentVersion),
-      });
+      if (body.saveToLibrary && body.name) {
+        const named = await saveDesignToLibrary({ shop, designId: design.id, name: body.name });
+        return respond({ ...design, name: named.name }, state);
+      }
+      return respond(design, state);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Create failed";
       return Response.json({ error: message }, { status: 400 });
@@ -85,13 +97,11 @@ export async function action({ request }: ActionFunctionArgs) {
       productGid: body.productGid,
       variantGid: body.variantGid,
     });
-    return Response.json({
-      designId: design.id,
-      version: design.currentVersion,
-      status: design.status,
-      state,
-      cartProperties: cartProperties(design.id, design.currentVersion),
-    });
+    if (body.saveToLibrary && body.name) {
+      const named = await saveDesignToLibrary({ shop, designId: design.id, name: body.name });
+      return respond({ ...design, name: named.name }, state);
+    }
+    return respond(design, state);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Create failed";
     return Response.json({ error: message }, { status: 400 });

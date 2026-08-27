@@ -38,6 +38,14 @@ model ShopConfig {
   maxHeightIn     Float    @default(360)
   imageMarginIn   Float    @default(0.15)
   artboardMarginIn Float   @default(0.1)
+  accentColor        String   @default("#f97316")
+  accentColorDark    String   @default("#ea580c")
+  launcherOpenLabel  String   @default("Build your gang sheet")
+  launcherEditLabel  String   @default("Edit design")
+  welcomeTitle       String   @default("Welcome to Legends BAGS")
+  welcomeSubtitle    String   @default("Upload artwork, arrange on the sheet, then save to cart.")
+  podEnabled         Boolean  @default(false)
+  podProviderNotes   String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -53,6 +61,8 @@ model ProductBinding {
   maxHeightIn      Float?
   imageMarginIn    Float?
   artboardMarginIn Float?
+  /** Fixed variant price for gang sheet length products (cents) */
+  variantPriceCents Int?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -82,6 +92,18 @@ model Design {
   productGid      String?
   variantGid      String?
   currentVersion  Int      @default(1)
+  /** Customer-visible name when saved to library */
+  name            String?
+  archived        Boolean  @default(false)
+  /** Shopify customer GID when authenticated; opaque guest key otherwise */
+  customerKey     String?
+  previewKey      String?
+  /** Reorder lineage — original ordered design is never mutated */
+  sourceDesignId     String?
+  sourceDesignVersion Int?
+  sourceOrderId      String?
+  /** Merchant Shop Builder sheet — not a customer cart design */
+  staffSheet         Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   versions        DesignVersion[]
@@ -90,6 +112,59 @@ model Design {
 
   @@index([shop, status])
   @@index([shop, updatedAt])
+  @@index([shop, archived, updatedAt])
+  @@index([shop, name])
+  @@index([shop, staffSheet, updatedAt])
+  @@index([sourceDesignId])
+}
+
+model GalleryCategory {
+  id        String   @id @default(cuid())
+  shop      String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  assets    GalleryAsset[]
+
+  @@unique([shop, name])
+  @@index([shop])
+}
+
+model GalleryAsset {
+  id           String          @id @default(cuid())
+  shop         String
+  categoryId   String
+  category     GalleryCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  assetId      String
+  name         String
+  tags         String          @default("")
+  defaultWidthIn  Float        @default(3)
+  defaultHeightIn Float        @default(3)
+  /** Optional data URL or path when asset preview differs from stored file */
+  thumbUrl     String?
+  sortOrder    Int             @default(0)
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([shop, categoryId])
+  @@index([shop, active])
+}
+
+model DesignAssignment {
+  id            String   @id @default(cuid())
+  shop          String
+  designId      String
+  assigneeName  String
+  assigneeEmail String?
+  notes         String?
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([shop, status])
+  @@index([designId])
 }
 
 model DesignVersion {
@@ -135,6 +210,7 @@ model RenderJob {
   lastError       String?
   outputKey       String?
   previewKey      String?
+  reprocessWidthIn Float?
   sheetWidthIn    Float?
   sheetHeightIn   Float?
   widthPx         Int?
