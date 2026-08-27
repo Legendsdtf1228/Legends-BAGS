@@ -21,7 +21,7 @@ Until production rollout, `/builder` only accepts the shop configured in `DEV_SH
 
 ## Theme extension
 
-Storefront blocks use `lgs-launcher.js`, which opens `/builder` with the current product, selected variant, quantity, and `shop_mode=1`.
+The storefront blocks load a small theme stub (`lgs-launcher.js`, under 10 KB) that fetches the full launcher from `{SHOPIFY_APP_URL}/lgs-launcher.full.js`.
 
 ## Railway variables
 

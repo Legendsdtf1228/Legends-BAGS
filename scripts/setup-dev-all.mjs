@@ -36,3 +36,9 @@ try {
 }
 
 console.log("\nDev bootstrap complete.");
+try {
+  await run("Print /builder URLs", "npm", ["run", "print:builder-urls"]);
+} catch (err) {
+  console.warn("\nCould not print /builder URLs (set LGS_APP_URL and DEV_SHOP).");
+  console.warn(String(err));
+}
