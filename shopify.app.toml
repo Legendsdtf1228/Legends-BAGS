@@ -2,7 +2,7 @@
 
 client_id = "09fe27e7030a957490451dbf826afc47"
 name = "Legends BAGS Dev"
-application_url = "https://example.com"
+application_url = "https://upload-by-size-production.up.railway.app"
 embedded = true
 
 [build]
@@ -33,7 +33,10 @@ api_version = "2026-04"
 scopes = "read_products,write_products,read_orders,read_themes"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://upload-by-size-production.up.railway.app/auth/callback",
+  "https://upload-by-size-production.up.railway.app/auth",
+]
 
 [app_proxy]
 url = "/apps/legends-bags"
