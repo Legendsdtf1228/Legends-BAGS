@@ -98,4 +98,34 @@ export const BAGS_NAV_ICONS: Record<string, () => ReactNode> = {
       <path d="m9 12 2 2 4-4" />
     </Icon>
   ),
+  transactions: () => (
+    <Icon>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v4l2 2" />
+    </Icon>
+  ),
+  fonts: () => (
+    <Icon>
+      <path d="M4 20h16" />
+      <path d="M12 4v16M8 8h8" />
+    </Icon>
+  ),
+  fitcheck: () => (
+    <Icon>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M8 12h8M12 8v8" />
+    </Icon>
+  ),
+  changelog: () => (
+    <Icon>
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </Icon>
+  ),
+  support: () => (
+    <Icon>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9a2.5 2.5 0 1 1 5 0c0 2-2.5 1.5-2.5 4" />
+      <path d="M12 17h.01" />
+    </Icon>
+  ),
 };

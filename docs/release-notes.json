@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0-admin-ops",
+  "releases": [
+    {
+      "date": "2026-08-27",
+      "title": "Admin operations parity sprint",
+      "features": [
+        "Operations dashboard with date ranges and pipeline health",
+        "Build & Assign crash fix with assignment tests",
+        "Gallery CMS persistence without hardcoded SVG seeds",
+        "Fonts manager with system font defaults",
+        "FitCheck template foundation",
+        "Activity/audit transactions page",
+        "Support diagnostics and changelog"
+      ],
+      "fixes": [
+        "DesignAssignment Prisma client/migration alignment",
+        "Theme launcher split below 10 KB Shopify limit"
+      ]
+    },
+    {
+      "date": "2026-08-26",
+      "title": "Storefront design library",
+      "features": [
+        "Customer design library save/reopen",
+        "Upload-by-Size and Gang Sheet editors",
+        "Shopify order webhook pipeline"
+      ],
+      "fixes": []
+    }
+  ]
+}

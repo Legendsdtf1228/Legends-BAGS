@@ -7,7 +7,8 @@ import { Form, Link, useLoaderData, useActionData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { processNextRenderJob, recoverStuckJobs } from "../services/design-service";
-import { ensureShopConfig, getHomeStats, listMerchantDesignRows } from "../lib/merchant-loaders.server";
+import { ensureShopConfig } from "../lib/merchant-loaders.server";
+import { getDashboardPayload, getDashboardStats, type DashboardRange } from "../lib/merchant-dashboard.server";
 import { customerEditorUrls } from "../lib/editor-links.server";
 import {
   BagsPageHeader,
@@ -22,12 +23,23 @@ import {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
+  const url = new URL(request.url);
+  const range = (url.searchParams.get("range") || "30d") as import("../lib/merchant-dashboard.server").DashboardRange;
   const config = await ensureShopConfig(shop);
-  const stats = await getHomeStats(shop);
-  const recent = await listMerchantDesignRows(shop, { limit: 6 });
+
+  let dashboard;
+  let loadError: string | null = null;
+  try {
+    dashboard = await getDashboardPayload(shop, range);
+  } catch (err) {
+    loadError = err instanceof Error ? err.message : "Dashboard data unavailable";
+    dashboard = { stats: await getDashboardStats(shop, "all"), recentDesigns: [], recentOrders: [] };
+  }
 
   return {
     shop,
+    range,
+    loadError,
     appUrl: process.env.SHOPIFY_APP_URL || "",
     editors: customerEditorUrls(shop, process.env.SHOPIFY_APP_URL || ""),
     config: config ?? {
@@ -37,8 +49,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       imageMarginIn: 0.15,
       artboardMarginIn: 0.1,
     },
-    stats,
-    recent,
+    stats: dashboard.stats,
+    recent: dashboard.recentDesigns,
+    recentOrders: dashboard.recentOrders,
   };
 };
 
@@ -54,7 +67,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function MerchantHomePage() {
-  const { shop, appUrl, editors, config, stats, recent } = useLoaderData<typeof loader>();
+  const { shop, appUrl, editors, config, stats, recent, recentOrders, range, loadError } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   const pipelineMax = Math.max(
@@ -69,7 +83,7 @@ export default function MerchantHomePage() {
     <>
       <BagsPageHeader
         title="Home"
-        subtitle={`Legends BAGS merchant dashboard · ${shop}`}
+        subtitle={`Legends BAGS operations dashboard · ${shop}`}
         actions={
           <Link to="/app/setup" className="bags-admin-btn primary">
             Setup & install
@@ -77,15 +91,39 @@ export default function MerchantHomePage() {
         }
       />
       <div className="bags-admin-content">
+        {loadError ? (
+          <BagsCard style={{ marginBottom: 16 }}>
+            <p style={{ color: "#b42318", margin: 0 }}>{loadError}</p>
+          </BagsCard>
+        ) : null}
+
+        <Form method="get" className="bags-admin-actions" style={{ marginBottom: 16 }}>
+          {(["today", "7d", "30d", "90d", "all"] as DashboardRange[]).map((r) => (
+            <button
+              key={r}
+              type="submit"
+              name="range"
+              value={r}
+              className={`bags-admin-btn ${range === r ? "primary" : "ghost"}`}
+            >
+              {r === "today" ? "Today" : r === "all" ? "All time" : `Last ${r.replace("d", " days")}`}
+            </button>
+          ))}
+        </Form>
+
         <div className="bags-admin-grid stats" style={{ marginBottom: 16 }}>
-          <BagsStat label="Active designs" value={stats.designCount} accent="orange" />
-          <BagsStat label="Linked orders" value={stats.orderCount} accent="blue" />
-          <BagsStat label="Queued jobs" value={stats.queuedJobs} accent="purple" />
-          <BagsStat label="Completed renders" value={stats.completedJobs} accent="green" />
-          {stats.failedJobs > 0 ? (
-            <BagsStat label="Failed jobs" value={stats.failedJobs} accent="red" />
+          <BagsStat label="Designs" value={stats.designCount} accent="orange" />
+          <BagsStat label="Ordered sheets" value={stats.orderedDesigns} accent="blue" />
+          <BagsStat label="Linked orders" value={stats.orderLinks} accent="blue" />
+          <BagsStat label="Completed renders" value={stats.completedRenders} accent="green" />
+          {stats.failedRenders > 0 ? (
+            <BagsStat label="Failed renders" value={stats.failedRenders} accent="red" />
           ) : null}
+          <BagsStat label="Revenue (designed)" value={`$${(stats.grossRevenueCents / 100).toFixed(2)}`} accent="purple" />
           <BagsStat label="Product bindings" value={stats.bindings} accent="blue" />
+          {stats.storageBytes ? (
+            <BagsStat label="Storage" value={`${(stats.storageBytes / (1024 * 1024)).toFixed(1)} MB`} />
+          ) : null}
         </div>
 
         <BagsCard title="Quick actions" style={{ marginBottom: 16 }}>
@@ -132,6 +170,16 @@ export default function MerchantHomePage() {
         </BagsCard>
 
         <div className="bags-admin-grid two" style={{ marginBottom: 16 }}>
+          <BagsCard title="Usage by workflow">
+            <ul className="bags-admin-muted" style={{ margin: 0, paddingLeft: 18 }}>
+              <li>Gang Sheet: {stats.workflowCounts.gang_sheet}</li>
+              <li>Upload by Size: {stats.workflowCounts.upload_by_size}</li>
+              <li>Image to Sheet: {stats.workflowCounts.image_to_sheet}</li>
+              <li>Staff-built: {stats.workflowCounts.staff}</li>
+              <li>Reorders: {stats.workflowCounts.reorder}</li>
+            </ul>
+          </BagsCard>
+
           <BagsCard title="Render pipeline">
             <BagsPipeline
               rows={[
@@ -141,13 +189,30 @@ export default function MerchantHomePage() {
                 { label: "Failed", value: stats.failedJobs, max: pipelineMax },
               ]}
             />
+            <ul className="bags-admin-muted" style={{ margin: "12px 0 0", paddingLeft: 18, fontSize: 12 }}>
+              <li>Stuck: {stats.stuckJobs}</li>
+              <li>
+                Last webhook:{" "}
+                {stats.lastWebhookAt
+                  ? `${new Date(stats.lastWebhookAt).toLocaleString()} (${stats.lastWebhookTopic})`
+                  : "—"}
+              </li>
+              <li>
+                Last render:{" "}
+                {stats.lastCompletedRenderAt
+                  ? new Date(stats.lastCompletedRenderAt).toLocaleString()
+                  : "—"}
+              </li>
+            </ul>
             <div className="bags-admin-actions" style={{ marginTop: 14 }}>
               <Link to="/app/designs?status=ordered" className="bags-admin-btn ghost">
                 View ordered designs
               </Link>
             </div>
           </BagsCard>
+        </div>
 
+        <div className="bags-admin-grid two" style={{ marginBottom: 16 }}>
           <BagsCard title="Shop defaults">
             <p className="bags-admin-muted">
               ${config.pricePerSqIn.toFixed(3)}/in² · {config.sheetWidthIn}″ sheet width ·{" "}
@@ -176,8 +241,40 @@ export default function MerchantHomePage() {
           style={{ marginBottom: 16 }}
         />
 
-        <BagsCard title="Recent designs" style={{ marginBottom: 16 }}>
-          {recent.length === 0 ? (
+        <BagsCard title="Recent orders" style={{ marginBottom: 16 }}>
+          {recentOrders.length === 0 ? (
+            <p className="bags-admin-muted">No linked orders in this period.</p>
+          ) : (
+            <table className="bags-admin-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Lines</th>
+                  <th>Render</th>
+                  <th>Date</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentOrders.map((order) => (
+                  <tr key={order.orderId}>
+                    <td>#{order.orderId}</td>
+                    <td>{order.lineCount}</td>
+                    <td>{order.renderStatus}</td>
+                    <td>{new Date(order.createdAt).toLocaleString()}</td>
+                    <td>
+                      <Link to="/app/orders" className="bags-admin-btn ghost">
+                        Open
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </BagsCard>
+
+        <BagsCard title="Recent designs" style={{ marginBottom: 16 }}>          {recent.length === 0 ? (
             <p className="bags-admin-muted">
               No designs yet. Use <Link to="/app/setup">Setup</Link> to create test products, then
               open a storefront editor and place an order.

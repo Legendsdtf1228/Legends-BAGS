@@ -19,8 +19,16 @@ import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const data = await listGalleryAdmin(session.shop);
-  return { ...data };
+  try {
+    const data = await listGalleryAdmin(session.shop);
+    return { ...data, loadError: null as string | null };
+  } catch (err) {
+    return {
+      categories: [] as Awaited<ReturnType<typeof listGalleryAdmin>>["categories"],
+      assets: [] as Awaited<ReturnType<typeof listGalleryAdmin>>["assets"],
+      loadError: err instanceof Error ? err.message : "Gallery is temporarily unavailable.",
+    };
+  }
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -75,7 +83,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function GallerySettingsPage() {
-  const { categories, assets } = useLoaderData<typeof loader>();
+  const { categories, assets, loadError } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -85,6 +93,14 @@ export default function GallerySettingsPage() {
         subtitle="Stock art for the customer gang sheet editor — categories, tags, and uploads"
       />
       <div className="bags-admin-content">
+        {loadError ? (
+          <BagsCard style={{ marginBottom: 16 }}>
+            <p style={{ color: "#b42318", margin: 0 }}>{loadError}</p>
+            <p className="bags-admin-muted" style={{ margin: "8px 0 0" }}>
+              Run <code>npm run setup</code>, then restart <code>shopify app dev</code>.
+            </p>
+          </BagsCard>
+        ) : null}
         {actionData?.message ? (
           <BagsCard style={{ marginBottom: 16 }}>
             <p className="bags-admin-muted" role="status">

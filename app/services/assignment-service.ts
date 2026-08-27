@@ -60,6 +60,27 @@ export async function updateAssignmentStatus(
   });
 }
 
+export async function updateDesignAssignment(
+  shop: string,
+  assignmentId: string,
+  patch: { assigneeName?: string; assigneeEmail?: string | null; notes?: string | null },
+) {
+  const row = await prisma.designAssignment.findFirst({
+    where: { id: assignmentId, shop },
+  });
+  if (!row) throw new Error("Assignment not found");
+  return prisma.designAssignment.update({
+    where: { id: row.id },
+    data: {
+      ...(patch.assigneeName !== undefined ? { assigneeName: patch.assigneeName.trim() } : {}),
+      ...(patch.assigneeEmail !== undefined
+        ? { assigneeEmail: patch.assigneeEmail?.trim() || null }
+        : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes?.trim() || null } : {}),
+    },
+  });
+}
+
 export async function deleteDesignAssignment(shop: string, assignmentId: string) {
   const row = await prisma.designAssignment.findFirst({
     where: { id: assignmentId, shop },

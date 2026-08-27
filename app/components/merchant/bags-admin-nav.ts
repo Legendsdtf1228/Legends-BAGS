@@ -52,6 +52,11 @@ export const BAGS_ADMIN_NAV: BagsNavItem[] = [
   { id: "appearance", label: "Appearance", to: "/app/appearance", icon: "appearance", section: "builders" },
   { id: "gallery", label: "Gallery Settings", to: "/app/gallery", icon: "gallery", section: "builders" },
   { id: "pod", label: "POD", to: "/app/pod", icon: "pod", section: "builders" },
+  { id: "transactions", label: "Activity", to: "/app/transactions", icon: "transactions", section: "main" },
+  { id: "fonts", label: "Fonts", to: "/app/fonts", icon: "fonts", section: "builders" },
+  { id: "fitcheck", label: "FitCheck", to: "/app/fitcheck", icon: "fitcheck", section: "builders" },
+  { id: "changelog", label: "Changelog", to: "/app/changelog", icon: "changelog", section: "settings" },
+  { id: "support", label: "Support", to: "/app/support", icon: "support", section: "settings" },
   { id: "setup", label: "Setup", to: "/app/setup", icon: "setup", section: "settings" },
 ];
 

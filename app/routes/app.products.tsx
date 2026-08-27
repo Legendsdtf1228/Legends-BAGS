@@ -12,12 +12,25 @@ import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchan
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const q = url.searchParams.get("q")?.trim() ?? "";
+  const builder = url.searchParams.get("builder") ?? "";
   const bindings = await prisma.productBinding.findMany({
-    where: { shop: session.shop },
+    where: {
+      shop: session.shop,
+      ...(builder ? { builderType: builder } : {}),
+      ...(q
+        ? {
+            OR: [{ productGid: { contains: q } }, { variantGid: { contains: q } }],
+          }
+        : {}),
+    },
     orderBy: { updatedAt: "desc" },
   });
 
   return {
+    q,
+    builder,
     bindings: bindings.map((b) => ({
       id: b.id,
       productGid: b.productGid,
@@ -115,7 +128,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function ProductsPage() {
-  const { bindings, appUrl } = useLoaderData<typeof loader>();
+  const { bindings, appUrl, q, builder } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -130,6 +143,19 @@ export default function ProductsPage() {
         }
       />
       <div className="bags-admin-content">
+        <BagsCard style={{ marginBottom: 16 }}>
+          <Form method="get" className="bags-admin-actions">
+            <input name="q" type="search" placeholder="Search product or variant GID…" defaultValue={q} />
+            <select name="builder" defaultValue={builder}>
+              <option value="">All builders</option>
+              <option value="upload_by_size">Image to Sheet</option>
+              <option value="gang_sheet">Gangsheet Builder</option>
+            </select>
+            <button type="submit" className="bags-admin-btn primary">
+              Filter
+            </button>
+          </Form>
+        </BagsCard>
         {actionData && "error" in actionData && actionData.error ? (
           <BagsCard style={{ marginBottom: 16 }}>
             <p style={{ color: "#b42318", margin: 0 }}>{actionData.error}</p>
