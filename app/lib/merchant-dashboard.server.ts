@@ -150,6 +150,10 @@ export async function getDashboardStats(shop: string, range: DashboardRange = "3
     storageBytes: storageBytes._sum.byteSize ?? 0,
     workflowCounts,
     statusCounts,
+    // Aliases for dashboard UI components from main branch
+    orderCount: orderLinks,
+    completedJobs: completedRenders,
+    failedJobs: failedRenders,
   };
 }
 

@@ -77,6 +77,8 @@ sessionStorage.setItem('lgs_shop', 'your-dev-shop.myshopify.com')
 | `npm test` | Unit + integration tests (Vitest) |
 | `npm run e2e` | Vertical slice pipeline smoke test |
 | `npm run e2e:full` | Full API E2E (upload, quote, nest, render) |
+| `npm run e2e:checkout` | Design → `linkOrderToDesigns` checkout path smoke test |
+| `npm run setup:dev-all` | Products + gang sheet variants + webhooks bootstrap |
 | `npm run setup:dev-store` | Create dev-store products via Admin API |
 | `npm run worker:tick` | Process one render job manually |
 

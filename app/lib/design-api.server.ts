@@ -1,7 +1,7 @@
 import prisma from "../db.server";
 import { signDesignAccess, verifyDesignAccessToken } from "../domain/security/design-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
-import { getDesignState } from "../services/design-service";
+import { assertDesignCustomerAccess, getDesignState } from "../services/design-service";
 import type { DesignStateV1 } from "../domain/design/types";
 
 function designResponse(
@@ -90,9 +90,13 @@ export async function buildDesignApiResponse(
   shop: string,
   designId: string,
   query: DesignApiQuery,
+  options?: { customerKey?: string | null },
 ): Promise<Response> {
   try {
     const { design, state } = await getDesignState(shop, designId, query.version);
+    if (!query.accessToken && options?.customerKey !== undefined) {
+      assertDesignCustomerAccess(design, options.customerKey);
+    }
     const resolvedVersion = query.version ?? design.currentVersion;
     const payload = designResponse(shop, design, state, resolvedVersion);
 

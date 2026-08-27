@@ -6,6 +6,7 @@ import {
 } from "../app/domain/security/storefront-access";
 import {
   assertCustomerApiAccess,
+  assertCustomerApiContext,
   assertTestAccess,
 } from "../app/domain/security/test-access";
 
@@ -50,13 +51,17 @@ describe("assertCustomerApiAccess", () => {
   it("accepts storefront session cookie", () => {
     process.env.FILE_SIGNING_SECRET = secret;
     delete process.env.TEST_API_TOKEN;
-    const { token } = signStorefrontSession(shop, { secret });
+    const { token } = signStorefrontSession(shop, {
+      secret,
+      customerKey: "guest:test-session",
+    });
     const req = new Request("http://localhost/api/uploads", {
       headers: {
         Cookie: `lgs_storefront_session=${encodeURIComponent(token)}; lgs_shop=${encodeURIComponent(shop)}`,
       },
     });
     expect(assertCustomerApiAccess(req)).toBe(shop);
+    expect(assertCustomerApiContext(req).customerKey).toBe("guest:test-session");
   });
 
   it("falls back to dev test token", () => {

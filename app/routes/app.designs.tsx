@@ -8,7 +8,7 @@ import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { listMerchantDesignRows } from "../lib/merchant-loaders.server";
-import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
+import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
 import prisma from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -171,10 +171,12 @@ export default function DesignsPage() {
                       <Link to={`/app/designs/${row.id}`}>{row.name || row.id.slice(0, 12) + "…"}</Link>
                       {row.archived ? <div className="bags-admin-muted">Archived</div> : null}
                     </td>
-                    <td>{row.workflow}</td>
-                    <td>{row.status}</td>
+                    <td>{row.workflow === "gang_sheet" ? "Gang sheet" : "Upload by Size"}</td>
                     <td>
-                      {row.jobStatus ?? "—"}
+                      <BagsStatusBadge status={row.status} />
+                    </td>
+                    <td>
+                      {row.jobStatus ? <BagsStatusBadge status={row.jobStatus} /> : "—"}
                       {row.lastError ? (
                         <div style={{ color: "#b42318", fontSize: 12 }}>{row.lastError}</div>
                       ) : null}

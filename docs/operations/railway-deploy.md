@@ -120,9 +120,29 @@ Or use **Admin → Legends BAGS → Setup** for the Editor base URL and step-by-
 
 - [ ] `GET https://<domain>/` → `ok`
 - [ ] Admin app loads embedded in Shopify Admin
-- [ ] Theme editor opens upload/gang-sheet builder
+- [ ] Theme editor opens upload/gang-sheet builder via `/builder`
 - [ ] Upload → save design → add to cart (dev store)
 - [ ] Place test order → webhook → render job → download from merchant dashboard
+
+### `/builder` smoke test
+
+After `npm run setup:dev-all` and Railway deploy:
+
+```bash
+LGS_APP_URL=https://<domain> DEV_SHOP=your-dev-store.myshopify.com npm run e2e:builder
+```
+
+Print example launch URLs from local DB:
+
+```bash
+LGS_APP_URL=https://<domain> DEV_SHOP=your-dev-store.myshopify.com npm run print:builder-urls
+```
+
+Example URL shape:
+
+```text
+https://<domain>/builder?shop=your-dev-store.myshopify.com&product=PRODUCT_ID&variant=VARIANT_ID&quantity=1&shop_mode=1
+```
 
 For API smoke tests from your machine:
 

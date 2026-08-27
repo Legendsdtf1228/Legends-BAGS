@@ -5,6 +5,7 @@ import {
   resolveDesignApiShop,
 } from "../lib/design-api.server";
 import { createStorefrontSessionResponse } from "../lib/editor-auth.server";
+import { normalizeCustomerKey } from "../domain/security/customer-key";
 import { loadStorefrontConfig } from "../lib/storefront-config.server";
 import {
   parseAppProxyPath,
@@ -33,7 +34,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   if (route.kind === "session") {
-    return createStorefrontSessionResponse(shop);
+    const customerKey = normalizeCustomerKey(
+      new URL(request.url).searchParams.get("customerKey"),
+    );
+    return createStorefrontSessionResponse(shop, customerKey);
   }
 
   if (route.kind === "design") {

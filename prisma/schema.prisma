@@ -117,6 +117,7 @@ model Design {
   @@index([shop, updatedAt])
   @@index([shop, archived, updatedAt])
   @@index([shop, name])
+  @@index([shop, customerKey, updatedAt])
   @@index([shop, staffSheet, updatedAt])
   @@index([sourceDesignId])
 }

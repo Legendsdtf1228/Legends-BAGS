@@ -8,7 +8,7 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { upsertProductBinding } from "../services/design-service";
-import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
+import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -223,7 +223,9 @@ export default function ProductsPage() {
               <tbody>
                 {bindings.map((b) => (
                   <tr key={b.id}>
-                    <td>{b.builderType === "gang_sheet" ? "Gang sheet" : "Image to Sheet"}</td>
+                    <td>
+                      <BagsStatusBadge status={b.builderType} />
+                    </td>
                     <td style={{ fontSize: 11, wordBreak: "break-all" }}>{b.productGid}</td>
                     <td style={{ fontSize: 11 }}>{b.variantGid ?? "—"}</td>
                     <td>{b.sheetHeightIn != null ? `${b.sheetHeightIn}″` : "—"}</td>
