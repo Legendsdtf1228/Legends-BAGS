@@ -9,8 +9,11 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import {
+  addSavedDesign,
+  alignSelected,
   assetPreviewUrl,
   clearDraft,
+  distributeSelected,
   findOobIds,
   findOverlappingIds,
   fitZoomPercent,
@@ -20,12 +23,24 @@ import {
   NUDGE_IN,
   NUDGE_SHIFT_IN,
   readDraft,
+  readSavedDesigns,
   reorderLayer,
   round,
   sortByZIndex,
   writeDraft,
   type GangDraftV1,
+  type SavedDesignV1,
 } from "../components/editor/gang-sheet-helpers";
+import {
+  FONT_OPTIONS,
+  GALLERY_CATEGORIES,
+  GALLERY_ITEMS,
+  HELP_SHORTCUTS,
+  SHEET_TEMPLATES,
+  TEXT_STYLE_PRESETS,
+  type GalleryItem,
+} from "../components/editor/gang-sheet/editor-data";
+import { snapPoint, type SnapGuide } from "../components/editor/gang-sheet/snap";
 
 type Asset = {
   assetId: string;
@@ -45,6 +60,13 @@ type CanvasItem = Asset & {
   heightIn: number;
   rotationDeg: 0 | 90;
   zIndex: number;
+  kind?: "image" | "text";
+  textContent?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  textColor?: string;
+  lockPosition?: boolean;
+  lockAspect?: boolean;
 };
 
 type Interaction =
@@ -89,14 +111,25 @@ type PoolItem = {
   uploadedAt: number;
 };
 
-type SidebarTab = "uploads" | "gallery" | "text";
+type SidebarTab =
+  | "uploads"
+  | "gallery"
+  | "text"
+  | "names"
+  | "auto"
+  | "layers"
+  | "help";
 
 type Screen = "welcome" | "auto_build" | "canvas";
 
-const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string; soon?: boolean }[] = [
+const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string }[] = [
   { id: "uploads", label: "Uploads", icon: "📁" },
-  { id: "gallery", label: "Gallery", icon: "🖼", soon: true },
-  { id: "text", label: "Text", icon: "T", soon: true },
+  { id: "gallery", label: "Gallery", icon: "🖼" },
+  { id: "text", label: "Text", icon: "T" },
+  { id: "names", label: "Names", icon: "#" },
+  { id: "auto", label: "Auto", icon: "⚡" },
+  { id: "layers", label: "Layers", icon: "☰" },
+  { id: "help", label: "Help", icon: "?" },
 ];
 
 type NestPlacement = {
@@ -210,6 +243,7 @@ export default function GangSheetEditor() {
   const [history, setHistory] = useState<CanvasItem[][]>([]);
   const [future, setFuture] = useState<CanvasItem[][]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sheetWidth, setSheetWidth] = useState(22.5);
   const [sheetHeight, setSheetHeight] = useState(24);
   const [zoom, setZoom] = useState(70);
@@ -233,14 +267,51 @@ export default function GangSheetEditor() {
   const [draftOffer, setDraftOffer] = useState<GangDraftV1 | null>(null);
   const [hasStoredDraft, setHasStoredDraft] = useState(false);
   const [showFirstTip, setShowFirstTip] = useState(true);
+  const [uploadSearch, setUploadSearch] = useState("");
+  const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
+  const [galleryCategory, setGalleryCategory] = useState<string>("All");
+  const [gallerySearch, setGallerySearch] = useState("");
+  const [textContent, setTextContent] = useState("Your text");
+  const [textFontSize, setTextFontSize] = useState(36);
+  const [textFontFamily, setTextFontFamily] = useState("Arial");
+  const [textColor, setTextColor] = useState("#111827");
+  const [rosterCsv, setRosterCsv] = useState("");
+  const [rosterFontSize, setRosterFontSize] = useState(24);
+  const [savedDesigns, setSavedDesigns] = useState<SavedDesignV1[]>([]);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [spacePan, setSpacePan] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const interaction = useRef<Interaction | null>(null);
+  const panRef = useRef<{ sx: number; sy: number; sl: number; st: number } | null>(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const selected = items.find((i) => i.id === selectedId) ?? null;
+
+  function selectItem(id: string | null, additive = false) {
+    if (!id) {
+      setSelectedId(null);
+      setSelectedIds(new Set());
+      return;
+    }
+    if (additive) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        const last = next.size ? id : null;
+        setSelectedId(last);
+        return next;
+      });
+    } else {
+      setSelectedId(id);
+      setSelectedIds(new Set([id]));
+    }
+  }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
 
   const usedArea = useMemo(
@@ -274,6 +345,7 @@ export default function GangSheetEditor() {
     const draft = readDraft(page.shop);
     setHasStoredDraft(Boolean(draft?.items.length));
     if (draft?.items.length) setDraftOffer(draft);
+    setSavedDesigns(readSavedDesigns(page.shop));
   }, [page.shop]);
 
   useEffect(() => {
@@ -330,19 +402,30 @@ export default function GangSheetEditor() {
       const r = c.getBoundingClientRect();
       if (d.mode === "drag") {
         setItems((all) =>
-          all.map((i) =>
-            i.id === d.id
-              ? inside(
-                  {
-                    ...i,
-                    xIn: d.x + ((e.clientX - d.sx) / r.width) * sheetWidth,
-                    yIn: d.y + ((e.clientY - d.sy) / r.height) * sheetHeight,
-                  },
-                  sheetWidth,
-                  sheetHeight,
-                )
-              : i,
-          ),
+          all.map((i) => {
+            if (i.id !== d.id) return i;
+            if (i.lockPosition) return i;
+            let xIn = d.x + ((e.clientX - d.sx) / r.width) * sheetWidth;
+            let yIn = d.y + ((e.clientY - d.sy) / r.height) * sheetHeight;
+            let guides: SnapGuide[] = [];
+            if (snapEnabled) {
+              const others = all.filter((o) => o.id !== d.id);
+              const snapped = snapPoint(
+                xIn,
+                yIn,
+                i.widthIn,
+                i.heightIn,
+                sheetWidth,
+                sheetHeight,
+                others,
+              );
+              xIn = snapped.xIn;
+              yIn = snapped.yIn;
+              guides = snapped.guides;
+            }
+            setSnapGuides(guides);
+            return inside({ ...i, xIn, yIn }, sheetWidth, sheetHeight);
+          }),
         );
         return;
       }
@@ -360,6 +443,7 @@ export default function GangSheetEditor() {
     const up = () => {
       const d = interaction.current;
       if (!d) return;
+      setSnapGuides([]);
       const next = itemsRef.current;
       const before = d.snapshot.find((i) => i.id === d.id);
       const after = next.find((i) => i.id === d.id);
@@ -379,36 +463,7 @@ export default function GangSheetEditor() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [commitFromSnapshot, sheetHeight, sheetWidth]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
-      if (e.key === "Escape" && draftOffer) {
-        setDraftOffer(null);
-        return;
-      }
-      if (!selectedId || screen !== "canvas") return;
-      let dx = 0;
-      let dy = 0;
-      const step = e.shiftKey ? NUDGE_SHIFT_IN : NUDGE_IN;
-      if (e.key === "ArrowLeft") dx = -step;
-      else if (e.key === "ArrowRight") dx = step;
-      else if (e.key === "ArrowUp") dy = -step;
-      else if (e.key === "ArrowDown") dy = step;
-      else return;
-      e.preventDefault();
-      const cur = itemsRef.current;
-      const next = cur.map((i) =>
-        i.id === selectedId
-          ? inside({ ...i, xIn: i.xIn + dx, yIn: i.yIn + dy }, sheetWidth, sheetHeight)
-          : i,
-      );
-      pushHistory(next);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [draftOffer, pushHistory, screen, selectedId, sheetHeight, sheetWidth]);
+  }, [commitFromSnapshot, sheetHeight, sheetWidth, snapEnabled]);
 
   function createPlacedItem(
     asset: Asset,
@@ -483,7 +538,7 @@ export default function GangSheetEditor() {
     setHistory([]);
     setFuture([]);
     setItems(restored);
-    setSelectedId(null);
+    selectItem(null);
     setDraftOffer(null);
     setScreen("canvas");
     setMessage(`Restored draft · ${restored.length} piece${restored.length === 1 ? "" : "s"}.`);
@@ -499,7 +554,7 @@ export default function GangSheetEditor() {
     if (!items.length) return;
     if (!window.confirm("Clear all artwork from this gang sheet?")) return;
     pushHistory([]);
-    setSelectedId(null);
+    selectItem(null);
     clearDraft(page.shop);
     setHasStoredDraft(false);
     setMessage("Sheet cleared.");
@@ -517,7 +572,7 @@ export default function GangSheetEditor() {
     if (!entry) return;
     const placed = createPlacedItem(entry.asset, entry.previewUrl, entry.name, 0, items);
     pushHistory([...items, placed]);
-    setSelectedId(placed.id);
+    selectItem(placed.id);
     setMessage(`Placed "${entry.name}" on the sheet — drag to position.`);
   }
 
@@ -561,7 +616,7 @@ export default function GangSheetEditor() {
         setUploadPool((pool) => [...pool, ...poolAdded]);
         if (placed.length) {
           pushHistory([...items, ...placed]);
-          setSelectedId(placed.at(-1)?.id ?? null);
+          selectItem(placed.at(-1)?.id ?? null);
         }
         setSidebarTab("uploads");
         setMessage(
@@ -652,13 +707,14 @@ export default function GangSheetEditor() {
       sheetHeight,
     );
     pushHistory([...items, copy]);
-    setSelectedId(copy.id);
+    selectItem(copy.id);
   }
 
   function removeSelected() {
-    if (!selectedId) return;
-    pushHistory(items.filter((i) => i.id !== selectedId));
-    setSelectedId(null);
+    const ids = selectedIds.size ? selectedIds : selectedId ? new Set([selectedId]) : new Set<string>();
+    if (!ids.size) return;
+    pushHistory(items.filter((i) => !ids.has(i.id)));
+    selectItem(null);
   }
 
   function rotate() {
@@ -682,7 +738,7 @@ export default function GangSheetEditor() {
       if (copies.length >= 250) break;
     }
     pushHistory([...items.filter((i) => i.id !== selected.id), ...copies]);
-    setSelectedId(copies[0]?.id ?? null);
+    selectItem(copies[0]?.id ?? null);
     setMessage(`Filled sheet with ${copies.length} copies.`);
   }
 
@@ -705,6 +761,332 @@ export default function GangSheetEditor() {
       });
     pushHistory(placed);
     setMessage("Artwork automatically arranged.");
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (e.key === "Escape") {
+        if (draftOffer) setDraftOffer(null);
+        else selectItem(null);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z")
+      ) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicate();
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedId && screen === "canvas") {
+          e.preventDefault();
+          removeSelected();
+        }
+        return;
+      }
+      if (e.code === "Space" && !spacePan) {
+        setSpacePan(true);
+        return;
+      }
+      if (!selectedId || screen !== "canvas") return;
+      let dx = 0;
+      let dy = 0;
+      const step = e.shiftKey ? NUDGE_SHIFT_IN : NUDGE_IN;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dy = -step;
+      else if (e.key === "ArrowDown") dy = step;
+      else return;
+      e.preventDefault();
+      const cur = itemsRef.current;
+      const next = cur.map((i) =>
+        i.id === selectedId && !i.lockPosition
+          ? inside({ ...i, xIn: i.xIn + dx, yIn: i.yIn + dy }, sheetWidth, sheetHeight)
+          : i,
+      );
+      pushHistory(next);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") setSpacePan(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [draftOffer, pushHistory, screen, selectedId, sheetHeight, sheetWidth, spacePan]);
+
+  function textPreviewDataUrl(content: string, fontSize: number, fontFamily: string, color: string) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120"><text x="8" y="${fontSize + 8}" font-size="${fontSize}" font-family="${fontFamily}" fill="${color}">${content.replace(/[<>&"]/g, "")}</text></svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+
+  function addTextToSheet(content?: string) {
+    const label = (content ?? textContent).trim() || "Text";
+    const w = Math.min(8, sheetWidth - 0.4);
+    const h = Math.max(0.5, textFontSize / 72);
+    const item: CanvasItem = {
+      assetId: `text-local-${crypto.randomUUID()}`,
+      widthPx: 400,
+      heightPx: 120,
+      contentType: "image/svg+xml",
+      id: crypto.randomUUID(),
+      name: label.slice(0, 32),
+      previewUrl: textPreviewDataUrl(label, textFontSize, textFontFamily, textColor),
+      xIn: 0.5,
+      yIn: 0.5,
+      widthIn: w,
+      heightIn: h,
+      rotationDeg: 0,
+      zIndex: nextZIndex(items),
+      kind: "text",
+      textContent: label,
+      fontSize: textFontSize,
+      fontFamily: textFontFamily,
+      textColor,
+      lockAspect: false,
+    };
+    pushHistory([...items, item]);
+    selectItem(item.id);
+    setMessage(`Added text "${label}" — drag to position.`);
+  }
+
+  async function rasterizeGalleryItem(g: GalleryItem): Promise<File> {
+    const image = new Image();
+    image.src = g.thumb;
+    await image.decode();
+    const canvasEl = document.createElement("canvas");
+    canvasEl.width = Math.max(1, Math.round(g.widthIn * 300));
+    canvasEl.height = Math.max(1, Math.round(g.heightIn * 300));
+    const context = canvasEl.getContext("2d");
+    if (!context) throw new Error("Could not prepare gallery artwork");
+    context.drawImage(image, 0, 0, canvasEl.width, canvasEl.height);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvasEl.toBlob(
+        (value) => (value ? resolve(value) : reject(new Error("Could not prepare gallery artwork"))),
+        "image/png",
+      ),
+    );
+    return new File([blob], `${g.name}.png`, { type: "image/png" });
+  }
+
+  async function galleryThumbToAsset(g: GalleryItem): Promise<{ asset: Asset; previewUrl: string }> {
+    const file = await rasterizeGalleryItem(g);
+    const asset = await postUpload(file);
+    return { asset, previewUrl: g.thumb };
+  }
+
+  async function placeGalleryItem(g: GalleryItem) {
+    setUploading(true);
+    setError("");
+    try {
+      const { asset, previewUrl } = await galleryThumbToAsset(g);
+      const placed = createPlacedItem(asset, previewUrl, g.name, 0, items);
+      placed.widthIn = g.widthIn;
+      placed.heightIn = g.heightIn;
+      placed.dpi = Math.round(
+        Math.min(asset.widthPx / g.widthIn, asset.heightPx / g.heightIn),
+      );
+      pushHistory([...items, placed]);
+      selectItem(placed.id);
+      setMessage(`Placed "${g.name}" from gallery.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not place gallery item");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function parseRoster(csv: string) {
+    return csv
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const parts = line.split(/[,\t]/).map((p) => p.trim());
+        return { name: parts[0] ?? "", number: parts[1] ?? "" };
+      })
+      .filter((r) => r.name || r.number);
+  }
+
+  function generateRoster() {
+    const rows = parseRoster(rosterCsv);
+    if (!rows.length) {
+      setError("Add roster rows — one name and number per line.");
+      return;
+    }
+    const dupes = rows.filter(
+      (r, i) => rows.findIndex((x) => x.number && x.number === r.number) !== i,
+    );
+    if (dupes.length) {
+      setError(`Duplicate numbers found: ${dupes.map((d) => d.number).join(", ")}`);
+      return;
+    }
+    const next: CanvasItem[] = [...items];
+    let z = nextZIndex(next);
+    rows.forEach((row, idx) => {
+      const label = `${row.name}${row.number ? ` #${row.number}` : ""}`.trim();
+      const w = Math.min(6, sheetWidth - 0.4);
+      const h = Math.max(0.4, rosterFontSize / 72);
+      next.push({
+        assetId: `text-roster-${crypto.randomUUID()}`,
+        widthPx: 400,
+        heightPx: 80,
+        contentType: "image/svg+xml",
+        id: crypto.randomUUID(),
+        name: label,
+        previewUrl: textPreviewDataUrl(label, rosterFontSize, "Impact", "#111827"),
+        xIn: 0.2,
+        yIn: 0.2 + idx * (h + gap),
+        widthIn: w,
+        heightIn: h,
+        rotationDeg: 0,
+        zIndex: z++,
+        kind: "text",
+        textContent: label,
+        fontSize: rosterFontSize,
+        fontFamily: "Impact",
+        textColor: "#111827",
+      });
+    });
+    pushHistory(next);
+    setMessage(`Generated ${rows.length} name/number set${rows.length === 1 ? "" : "s"}.`);
+    setSidebarTab("layers");
+  }
+
+  function renamePoolItem(poolId: string, name: string) {
+    setUploadPool((pool) => pool.map((p) => (p.id === poolId ? { ...p, name } : p)));
+  }
+
+  function deletePoolItem(poolId: string) {
+    setUploadPool((pool) => pool.filter((p) => p.id !== poolId));
+  }
+
+  function handleSidebarTab(tab: SidebarTab) {
+    if (tab === "auto") {
+      setScreen("auto_build");
+      setAutoPhase("setup");
+      setMessage("Auto Build — upload, size, and nest in bulk.");
+      return;
+    }
+    setSidebarTab(tab);
+  }
+
+  const filteredPool = useMemo(() => {
+    let list = [...uploadPool];
+    if (uploadSearch.trim()) {
+      const q = uploadSearch.toLowerCase();
+      list = list.filter((p) => p.name.toLowerCase().includes(q));
+    }
+    list.sort((a, b) =>
+      uploadSort === "name"
+        ? a.name.localeCompare(b.name)
+        : b.uploadedAt - a.uploadedAt,
+    );
+    return list;
+  }, [uploadPool, uploadSearch, uploadSort]);
+
+  const filteredGallery = useMemo(() => {
+    let list = GALLERY_ITEMS;
+    if (galleryCategory !== "All") list = list.filter((g) => g.category === galleryCategory);
+    if (gallerySearch.trim()) {
+      const q = gallerySearch.toLowerCase();
+      list = list.filter(
+        (g) =>
+          g.name.toLowerCase().includes(q) ||
+          g.tags.some((t) => t.toLowerCase().includes(q)),
+      );
+    }
+    return list;
+  }, [galleryCategory, gallerySearch]);
+
+  function saveNamedDesign(name: string) {
+    const payload: GangDraftV1 = {
+      v: 1,
+      sheetWidth,
+      sheetHeight,
+      gap,
+      items: items.map(
+        ({
+          assetId,
+          name: n,
+          widthPx,
+          heightPx,
+          dpi,
+          contentType,
+          widthIn,
+          heightIn,
+          xIn,
+          yIn,
+          rotationDeg,
+          zIndex,
+        }) => ({
+          assetId,
+          name: n,
+          widthPx,
+          heightPx,
+          dpi,
+          contentType,
+          widthIn,
+          heightIn,
+          xIn,
+          yIn,
+          rotationDeg,
+          zIndex,
+        }),
+      ),
+      savedAt: Date.now(),
+    };
+    addSavedDesign(page.shop, name, payload);
+    setSavedDesigns(readSavedDesigns(page.shop));
+    setMessage(`Saved "${name}" to your design library.`);
+  }
+
+  async function rasterizeTextItem(item: CanvasItem): Promise<Asset> {
+    const canvasEl = document.createElement("canvas");
+    const scale = 4;
+    canvasEl.width = 400 * scale;
+    canvasEl.height = 120 * scale;
+    const ctx = canvasEl.getContext("2d");
+    if (!ctx) throw new Error("Could not rasterize text");
+    ctx.scale(scale, scale);
+    ctx.clearRect(0, 0, 400, 120);
+    ctx.font = `${item.fontSize ?? 36}px ${item.fontFamily ?? "Arial"}`;
+    ctx.fillStyle = item.textColor ?? "#111827";
+    ctx.fillText(item.textContent ?? item.name, 8, (item.fontSize ?? 36) + 8);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvasEl.toBlob((b) => (b ? resolve(b) : reject(new Error("Rasterize failed"))), "image/png");
+    });
+    const file = new File([blob], `${item.name}.png`, { type: "image/png" });
+    return postUpload(file);
+  }
+
+  function alignSelection(mode: Parameters<typeof alignSelected>[2]) {
+    const ids = selectedIds.size ? selectedIds : selectedId ? new Set([selectedId]) : new Set<string>();
+    if (!ids.size) return;
+    pushHistory(alignSelected(items, ids, mode, sheetWidth, sheetHeight));
+  }
+
+  function distributeSelection(axis: "horizontal" | "vertical") {
+    const ids = selectedIds.size ? selectedIds : selectedId ? new Set([selectedId]) : new Set<string>();
+    if (ids.size < 3) {
+      setMessage("Select at least 3 items to distribute.");
+      return;
+    }
+    pushHistory(distributeSelected(items, ids, axis, sheetWidth, sheetHeight));
   }
 
   const refreshAutoPreview = useCallback(async (): Promise<AutoNestPreview | null> => {
@@ -844,6 +1226,33 @@ export default function GangSheetEditor() {
     setSaving(true);
     setError("");
     try {
+      const resolved: Array<{
+        assetId: string;
+        widthIn: number;
+        heightIn: number;
+        xIn: number;
+        yIn: number;
+        rotationDeg: 0 | 90;
+        zIndex: number;
+        quantity: number;
+      }> = [];
+      for (const item of sortByZIndex(items)) {
+        let assetId = item.assetId;
+        if (item.kind === "text") {
+          const asset = await rasterizeTextItem(item);
+          assetId = asset.assetId;
+        }
+        resolved.push({
+          assetId,
+          widthIn: item.widthIn,
+          heightIn: item.heightIn,
+          xIn: item.xIn,
+          yIn: item.yIn,
+          rotationDeg: item.rotationDeg,
+          zIndex: item.zIndex,
+          quantity: 1,
+        });
+      }
       const res = await fetch("/api/designs", {
         method: "POST",
         credentials: "include",
@@ -859,16 +1268,7 @@ export default function GangSheetEditor() {
             imageMarginIn: gap,
             artboardMarginIn: 0.1,
           },
-          items: items.map(({ assetId, widthIn, heightIn, xIn, yIn, rotationDeg, zIndex }) => ({
-            assetId,
-            widthIn,
-            heightIn,
-            xIn,
-            yIn,
-            rotationDeg,
-            zIndex,
-            quantity: 1,
-          })),
+          items: resolved,
         }),
       });
       const json = (await res.json()) as {
@@ -951,11 +1351,10 @@ export default function GangSheetEditor() {
               <button
                 key={tab.id}
                 type="button"
-                className={`rail-btn ${tab.soon ? "soon" : ""}`}
+                className="rail-btn"
                 title={tab.label}
                 aria-label={tab.label}
-                disabled={tab.soon}
-                onClick={() => openCanvas({ tab: tab.id })}
+                onClick={() => openCanvas({ tab: tab.id === "auto" ? "uploads" : tab.id })}
               >
                 <span className="rail-icon">{tab.icon}</span>
                 <span className="rail-label">{tab.label}</span>
@@ -1043,11 +1442,33 @@ export default function GangSheetEditor() {
                   <strong>Auto Build</strong>
                   <span>Bulk upload with live nest preview — fastest for many designs.</span>
                 </button>
-                <button type="button" className="welcome-opt disabled" disabled>
-                  <div className="welcome-icon">💾</div>
-                  <strong>Start from saved design</strong>
-                  <span>Coming soon — reopen a previously saved gang sheet.</span>
+                <button type="button" className="welcome-opt" onClick={() => setShowTemplates((v) => !v)}>
+                  <div className="welcome-icon">📋</div>
+                  <strong>Start from a template</strong>
+                  <span>Pick a preset sheet layout and open the editor.</span>
                 </button>
+                {savedDesigns.length ? (
+                  <button
+                    type="button"
+                    className="welcome-opt"
+                    onClick={() => {
+                      const d = savedDesigns[0];
+                      void restoreDraft(d.draft);
+                    }}
+                  >
+                    <div className="welcome-icon">💾</div>
+                    <strong>Open saved design</strong>
+                    <span>
+                      {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} on this device.
+                    </span>
+                  </button>
+                ) : (
+                  <button type="button" className="welcome-opt" disabled>
+                    <div className="welcome-icon">💾</div>
+                    <strong>Open saved design</strong>
+                    <span>Save a design from the editor to build your library.</span>
+                  </button>
+                )}
                 {hasStoredDraft ? (
                   <button
                     type="button"
@@ -1073,15 +1494,54 @@ export default function GangSheetEditor() {
                 </button>
               </div>
 
+              {showTemplates ? (
+                <div className="template-picker">
+                  {SHEET_TEMPLATES.map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      className="template-card"
+                      onClick={() => {
+                        applySheetSize(tpl.widthIn, tpl.heightIn);
+                        openCanvas({ tab: "uploads" });
+                      }}
+                    >
+                      <strong>{tpl.name}</strong>
+                      <span>{tpl.description}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {savedDesigns.length ? (
+                <div className="saved-designs-list">
+                  <h3>Saved designs</h3>
+                  {savedDesigns.slice(0, 5).map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className="saved-design-row"
+                      onClick={() => void restoreDraft(d.draft)}
+                    >
+                      <strong>{d.name}</strong>
+                      <small>
+                        {d.draft.items.length} piece{d.draft.items.length === 1 ? "" : "s"} ·{" "}
+                        {new Date(d.savedAt).toLocaleDateString()}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               <p className="welcome-tip">
                 Tip: Arrow keys nudge selected art by 0.05″ (Shift = 0.25″). Drag the corner handle to
                 resize with aspect lock.
               </p>
 
               <div className="welcome-foot">
-                <span>Selected sheet</span>
+                <span>Selected sheet · est. empty sheet</span>
                 <strong>
-                  {sheetWidth}″ wide · up to {sheetHeight}″ long · $0.049/in²
+                  {sheetWidth}″ × {sheetHeight}″ · ${((sheetWidth * sheetHeight) * 0.049).toFixed(2)} max · $0.049/in² printed
                 </strong>
               </div>
             </div>
@@ -1531,7 +1991,7 @@ export default function GangSheetEditor() {
     <div className="bags lgs-editor">
       <style>{BAGS_BASE_CSS}{CSS}</style>
       {restoreDialog}
-      <header>
+      <header className="editor-header">
         <div className="brand">
           <b>L</b>
           <span>
@@ -1539,43 +1999,59 @@ export default function GangSheetEditor() {
             <small>Gang Sheet Builder</small>
           </span>
         </div>
+        <div className="top-toolbar">
+          <button type="button" onClick={undo} disabled={!history.length} aria-label="Undo">
+            ↶ Undo
+          </button>
+          <button type="button" onClick={redo} disabled={!future.length} aria-label="Redo">
+            ↷ Redo
+          </button>
+          <div className="zoom">
+            <button type="button" aria-label="Zoom out" onClick={() => setZoom((z) => Math.max(20, z - 10))}>
+              −
+            </button>
+            <span>{zoom}%</span>
+            <button type="button" aria-label="Zoom in" onClick={() => setZoom((z) => Math.min(150, z + 10))}>
+              ＋
+            </button>
+            <button type="button" aria-label="Fit sheet to viewport" onClick={fitToViewport}>
+              Fit
+            </button>
+          </div>
+          <label>
+            Sheet
+            <select value={sheetWidth} aria-label="Sheet width" onChange={(e) => applySheetSize(+e.target.value, sheetHeight)}>
+              {SHEET_WIDTHS.map((w) => (
+                <option key={w} value={w}>{w}″</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Length
+            <select value={sheetHeight} aria-label="Sheet length" onChange={(e) => applySheetSize(sheetWidth, +e.target.value)}>
+              {SHEET_HEIGHTS.map((h) => (
+                <option key={h} value={h}>{h}″</option>
+              ))}
+            </select>
+          </label>
+          <span className="price-chip">${estimate.toFixed(2)}</span>
+        </div>
         <nav>
           <button type="button" onClick={() => setScreen("welcome")} aria-label="Go to Home">
             Home
           </button>
-          <button type="button" onClick={undo} disabled={!history.length} aria-label="Undo">
-            Undo
-          </button>
-          <button type="button" onClick={redo} disabled={!future.length} aria-label="Redo">
-            Redo
-          </button>
-          <button
-            type="button"
-            onClick={autoArrange}
-            disabled={!items.length}
-            aria-label="Auto arrange artwork"
-          >
-            Auto arrange
-          </button>
-          <button
-            type="button"
-            onClick={clearSheet}
-            disabled={!items.length}
-            aria-label="Clear sheet"
-          >
-            Clear
+          <button type="button" onClick={autoArrange} disabled={!items.length} aria-label="Auto arrange artwork">
+            Arrange
           </button>
           <label className="btn-upload">
-            {uploading ? "Uploading…" : "＋ Add artwork"}
+            {uploading ? "Uploading…" : "＋ Add"}
             <input
               type="file"
               multiple
               accept="image/png,image/jpeg"
               hidden
               onChange={(e) =>
-                void uploadFiles(Array.from(e.target.files ?? []), "canvas", {
-                  placeOnSheet: true,
-                })
+                void uploadFiles(Array.from(e.target.files ?? []), "canvas", { placeOnSheet: true })
               }
             />
           </label>
@@ -1627,11 +2103,10 @@ export default function GangSheetEditor() {
             <button
               key={tab.id}
               type="button"
-              className={`rail-btn ${sidebarTab === tab.id ? "active" : ""} ${tab.soon ? "soon" : ""}`}
+              className={`rail-btn ${sidebarTab === tab.id ? "active" : ""}`}
               title={tab.label}
               aria-label={tab.label}
-              disabled={tab.soon}
-              onClick={() => !tab.soon && setSidebarTab(tab.id)}
+              onClick={() => handleSidebarTab(tab.id)}
             >
               <span className="rail-icon">{tab.icon}</span>
               <span className="rail-label">{tab.label}</span>
@@ -1660,10 +2135,28 @@ export default function GangSheetEditor() {
                   ↻
                 </button>
               </div>
-              <p className="sidebar-hint">
-                Upload here first, then click a thumbnail to place it on the sheet.
-              </p>
-              <label className="sidebar-upload-btn">
+              <div className="sidebar-tools">
+                <input
+                  type="search"
+                  placeholder="Search uploads…"
+                  value={uploadSearch}
+                  onChange={(e) => setUploadSearch(e.target.value)}
+                  aria-label="Search uploads"
+                />
+                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
+                  <option value="recent">Recent</option>
+                  <option value="name">Name</option>
+                </select>
+              </div>
+              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
+              <label
+                className="sidebar-upload-btn drop-target"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
+                }}
+              >
                 {uploading ? "Uploading…" : "＋ Upload image(s)"}
                 <input
                   ref={sidebarUploadRef}
@@ -1677,147 +2170,174 @@ export default function GangSheetEditor() {
                   }}
                 />
               </label>
-              {!uploadPool.length ? (
-                <label className="drop compact">
+              {!filteredPool.length ? (
+                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
                   <b>⬆</b>
-                  <strong>No uploads yet</strong>
-                  <small>Use Upload image(s) from Home or the button above</small>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg"
-                    hidden
-                    onChange={(e) => {
-                      void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                      e.target.value = "";
-                    }}
-                  />
+                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
+                  <small>Drop PNG/JPEG files here</small>
+                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
                 </label>
               ) : (
                 <div className="pool-grid" key={poolTick}>
-                  {uploadPool.map((p) => {
+                  {filteredPool.map((p) => {
                     const onSheet = sheetCountForAsset(p.asset.assetId);
+                    const lowDpi = p.asset.dpi != null && p.asset.dpi < 200;
                     return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="pool-item"
-                        onClick={() => placeFromPool(p.id)}
-                        title="Click to place on gang sheet"
-                      >
-                        <img src={p.previewUrl} alt="" />
-                        <span>{p.name}</span>
-                        {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
-                      </button>
+                      <div key={p.id} className="pool-item-wrap">
+                        <button type="button" className="pool-item" onClick={() => placeFromPool(p.id)} title="Click to place on gang sheet" draggable onDragStart={(e) => e.dataTransfer.setData("text/pool-id", p.id)}>
+                          <img src={p.previewUrl} alt="" className="checkerboard" />
+                          <span>{p.name}</span>
+                          {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
+                          {lowDpi ? <em className="dpi-warn">Low DPI</em> : null}
+                        </button>
+                        <div className="pool-item-actions">
+                          <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
+                          <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>×</button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               )}
-
-              <div className="on-sheet-list">
-                <h3>On sheet · {items.length}</h3>
-                {items.length ? (
-                  <div className="assets compact">
-                    {items.map((i, n) => (
-                      <button
-                        key={i.id}
-                        type="button"
-                        className={i.id === selectedId ? "active" : ""}
-                        onClick={() => setSelectedId(i.id)}
-                      >
-                        <img src={i.previewUrl} alt="" />
-                        <span>
-                          <strong>{i.name}</strong>
-                          <small>
-                            {i.widthIn.toFixed(2)} × {i.heightIn.toFixed(2)} in
-                          </small>
-                        </span>
-                        <b>{n + 1}</b>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="sidebar-empty">Nothing placed yet — pick an upload above.</p>
-                )}
-              </div>
             </>
           ) : sidebarTab === "gallery" ? (
-            <div className="sidebar-soon">
-              <strong>Gallery</strong>
-              <p>Stock art categories — coming in Phase 2.</p>
-            </div>
-          ) : (
-            <div className="sidebar-soon">
-              <strong>Text</strong>
-              <p>Fonts and text tools — coming in Phase 2.</p>
-            </div>
-          )}
+            <>
+              <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
+              <div className="sidebar-tools">
+                <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
+              </div>
+              <div className="chip-row">
+                {GALLERY_CATEGORIES.map((cat) => (
+                  <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
+                ))}
+              </div>
+              <div className="pool-grid">
+                {filteredGallery.map((g) => (
+                  <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
+                    <img src={g.thumb} alt="" />
+                    <span>{g.name}</span>
+                    <em>{g.widthIn}×{g.heightIn}″</em>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : sidebarTab === "text" ? (
+            <>
+              <div className="heading"><span><strong>Text</strong><small>Add labels &amp; titles</small></span></div>
+              <div className="sidebar-form">
+                <label>Text<textarea rows={3} value={textContent} onChange={(e) => setTextContent(e.target.value)} aria-label="Text content" /></label>
+                <label>Font<select value={textFontFamily} onChange={(e) => setTextFontFamily(e.target.value)}>{FONT_OPTIONS.map((f) => <option key={f.id} value={f.label}>{f.label}</option>)}</select></label>
+                <label>Size (pt)<input type="number" min={8} max={120} value={textFontSize} onChange={(e) => setTextFontSize(+e.target.value)} /></label>
+                <label>Color<input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} aria-label="Text color" /></label>
+                <div className="chip-row">
+                  {TEXT_STYLE_PRESETS.map((p) => (
+                    <button key={p.id} type="button" className="chip" onClick={() => { setTextFontSize(p.fontSize); setTextColor(p.color); }}>{p.label}</button>
+                  ))}
+                </div>
+                <button type="button" className="sidebar-upload-btn" onClick={() => addTextToSheet()}>Add text to sheet</button>
+              </div>
+            </>
+          ) : sidebarTab === "names" ? (
+            <>
+              <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Roster generator</small></span></div>
+              <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+              <div className="sidebar-form">
+                <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
+                <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
+                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
+              </div>
+            </>
+          ) : sidebarTab === "layers" ? (
+            <>
+              <div className="heading"><span><strong>Layers</strong><small>{items.length} on sheet</small></span></div>
+              <div className="layer-list">
+                {[...paintedItems].reverse().map((i) => (
+                  <button key={i.id} type="button" className={`layer-row ${selectedIds.has(i.id) ? "active" : ""}`} onClick={(e) => selectItem(i.id, e.shiftKey)}>
+                    {i.kind === "text" ? <span className="layer-text-thumb">T</span> : <img src={i.previewUrl} alt="" />}
+                    <span><strong>{i.name}</strong><small>{i.widthIn.toFixed(1)}×{i.heightIn.toFixed(1)}″</small></span>
+                  </button>
+                ))}
+                {!items.length ? <p className="sidebar-empty">No layers yet.</p> : null}
+              </div>
+            </>
+          ) : sidebarTab === "help" ? (
+            <>
+              <div className="heading"><span><strong>Help</strong><small>Shortcuts &amp; tips</small></span></div>
+              <ul className="help-list">
+                {HELP_SHORTCUTS.map((h) => (
+                  <li key={h.keys}><kbd>{h.keys}</kbd><span>{h.action}</span></li>
+                ))}
+              </ul>
+              <p className="sidebar-hint">Overlap and out-of-bounds warnings appear above the canvas. Snap is {snapEnabled ? "on" : "off"}.</p>
+              <label className="toggle-row"><input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} /> Snap to grid &amp; edges</label>
+            </>
+          ) : null}
         </aside>
-        <main>
-          <div className="toolbar">
-            <label>
-              Sheet
-              <select
-                value={sheetWidth}
-                aria-label="Sheet width"
-                onChange={(e) => applySheetSize(+e.target.value, sheetHeight)}
-              >
-                {SHEET_WIDTHS.map((w) => (
-                  <option key={w} value={w}>
-                    {w} in wide
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Length
-              <select
-                value={sheetHeight}
-                aria-label="Sheet length"
-                onChange={(e) => applySheetSize(sheetWidth, +e.target.value)}
-              >
-                {SHEET_HEIGHTS.map((h) => (
-                  <option key={h} value={h}>
-                    {h} in
-                  </option>
-                ))}
-              </select>
-            </label>
-            <strong>
-              {sheetWidth} × {sheetHeight} in
-            </strong>
-            <div className="zoom">
-              <button
-                type="button"
-                aria-label="Zoom out"
-                onClick={() => setZoom((z) => Math.max(20, z - 10))}
-              >
-                −
-              </button>
-              <span>{zoom}%</span>
-              <button
-                type="button"
-                aria-label="Zoom in"
-                onClick={() => setZoom((z) => Math.min(150, z + 10))}
-              >
-                ＋
-              </button>
-              <button type="button" aria-label="Fit sheet to viewport" onClick={fitToViewport}>
-                Fit
-              </button>
-            </div>
+        <main className="canvas-main">
+          <div className="canvas-meta">
+            <strong>{sheetWidth} × {sheetHeight} in</strong>
+            <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
+            <label className="toggle-row inline"><input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} /> Snap</label>
           </div>
-          <div className="scroll" ref={scrollRef} onClick={() => setSelectedId(null)}>
+          <div
+            className={`scroll ${spacePan ? "pan-mode" : ""}`}
+            ref={scrollRef}
+            onClick={() => selectItem(null)}
+            onPointerDown={(e) => {
+              if (!spacePan || e.button !== 0) return;
+              const el = scrollRef.current;
+              if (!el) return;
+              panRef.current = { sx: e.clientX, sy: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+            }}
+            onPointerMove={(e) => {
+              const p = panRef.current;
+              const el = scrollRef.current;
+              if (!p || !el) return;
+              el.scrollLeft = p.sl - (e.clientX - p.sx);
+              el.scrollTop = p.st - (e.clientY - p.sy);
+            }}
+            onPointerUp={() => { panRef.current = null; }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const poolId = e.dataTransfer.getData("text/pool-id");
+              if (poolId) placeFromPool(poolId);
+              else void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas", { placeOnSheet: true });
+            }}
+          >
+            <div className="ruler-corner" aria-hidden />
+            <div className="ruler-h" aria-hidden>
+              {Array.from({ length: Math.ceil(sheetWidth) + 1 }, (_, i) => (
+                <span key={i} style={{ left: `${(i / sheetWidth) * 100}%` }}>{i}</span>
+              ))}
+            </div>
+            <div className="ruler-v" aria-hidden>
+              {Array.from({ length: Math.min(Math.ceil(sheetHeight) + 1, 48) }, (_, i) => (
+                <span key={i} style={{ top: `${(i / sheetHeight) * 100}%` }}>{i}</span>
+              ))}
+            </div>
+            <div className="canvas-stage">
             <div
               ref={canvas}
               className="sheet"
               style={{ width: `${zoom}%`, aspectRatio: `${sheetWidth}/${sheetHeight}` }}
             >
               <i />
+              {snapGuides.map((g, idx) => (
+                <div
+                  key={`${g.axis}-${g.valueIn}-${idx}`}
+                  className={`snap-guide ${g.axis}`}
+                  style={
+                    g.axis === "x"
+                      ? { left: `${(g.valueIn / sheetWidth) * 100}%` }
+                      : { top: `${(g.valueIn / sheetHeight) * 100}%` }
+                  }
+                />
+              ))}
               {paintedItems.map((i) => (
                 <div
                   key={i.id}
-                  className={`piece ${i.id === selectedId ? "selected" : ""} ${
+                  className={`piece ${selectedIds.has(i.id) ? "selected" : ""} ${
                     overlappingIds.has(i.id) ? "overlap" : ""
                   } ${oobIds.has(i.id) ? "oob" : ""}`}
                   style={{
@@ -1829,12 +2349,13 @@ export default function GangSheetEditor() {
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedId(i.id);
+                    selectItem(i.id, e.shiftKey);
                   }}
                   onPointerDown={(e: ReactPointerEvent) => {
                     if ((e.target as HTMLElement).closest(".resize-handle")) return;
+                    if (i.lockPosition) return;
                     e.stopPropagation();
-                    setSelectedId(i.id);
+                    selectItem(i.id, e.shiftKey);
                     interaction.current = {
                       mode: "drag",
                       id: i.id,
@@ -1846,14 +2367,29 @@ export default function GangSheetEditor() {
                     };
                   }}
                 >
-                  <img
-                    src={i.previewUrl}
-                    alt={i.name}
-                    style={{ transform: `rotate(${i.rotationDeg}deg)` }}
-                    draggable={false}
-                  />
+                  {i.kind === "text" ? (
+                    <span
+                      className="text-piece"
+                      style={{
+                        fontSize: `${Math.max(8, (i.fontSize ?? 24) * (i.heightIn / Math.max(0.5, (i.fontSize ?? 24) / 72)))}px`,
+                        fontFamily: i.fontFamily ?? "Arial",
+                        color: i.textColor ?? "#111827",
+                        transform: `rotate(${i.rotationDeg}deg)`,
+                      }}
+                    >
+                      {i.textContent ?? i.name}
+                    </span>
+                  ) : (
+                    <img
+                      src={i.previewUrl}
+                      alt={i.name}
+                      className="checkerboard"
+                      style={{ transform: `rotate(${i.rotationDeg}deg)` }}
+                      draggable={false}
+                    />
+                  )}
                   <em>{i.widthIn.toFixed(1)}″</em>
-                  {i.id === selectedId ? (
+                  {selectedIds.has(i.id) && !i.lockPosition ? (
                     <button
                       type="button"
                       className="resize-handle se"
@@ -1861,7 +2397,7 @@ export default function GangSheetEditor() {
                       onPointerDown={(e: ReactPointerEvent) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        setSelectedId(i.id);
+                        selectItem(i.id);
                         interaction.current = {
                           mode: "resize",
                           id: i.id,
@@ -1881,9 +2417,10 @@ export default function GangSheetEditor() {
                 <div className="empty">
                   <b>＋</b>
                   <strong>Your gang sheet starts here</strong>
-                  <small>Add artwork, then position and size it.</small>
+                  <small>Add artwork from Uploads, Gallery, or Text — then drag to position.</small>
                 </div>
               )}
+            </div>
             </div>
           </div>
         </main>
@@ -1897,14 +2434,27 @@ export default function GangSheetEditor() {
           {selected ? (
             <>
               <div className="preview">
-                <img src={selected.previewUrl} alt="" />
+                {selected.kind === "text" ? (
+                  <span className="text-preview">{selected.textContent ?? selected.name}</span>
+                ) : (
+                  <img src={selected.previewUrl} alt="" className="checkerboard" />
+                )}
                 <strong>{selected.name}</strong>
                 <small>
-                  {selected.widthPx} × {selected.heightPx}px ·{" "}
-                  {selected.dpi ? `${selected.dpi} DPI` : "DPI not tagged"}
+                  {selected.kind === "text"
+                    ? `${selected.fontFamily} · ${selected.fontSize}pt`
+                    : `${selected.widthPx} × ${selected.heightPx}px · ${selected.dpi ? `${selected.dpi} DPI` : "DPI not tagged"}`}
                 </small>
               </div>
-              <div className="fields">
+              <div className="fields grid-2">
+                <label>
+                  X (in)
+                  <input type="number" step={0.05} value={round(selected.xIn)} disabled={selected.lockPosition} onChange={(e) => change({ xIn: +e.target.value })} />
+                </label>
+                <label>
+                  Y (in)
+                  <input type="number" step={0.05} value={round(selected.yIn)} disabled={selected.lockPosition} onChange={(e) => change({ yIn: +e.target.value })} />
+                </label>
                 <label>
                   Width (in)
                   <input
@@ -1914,10 +2464,8 @@ export default function GangSheetEditor() {
                     value={round(selected.widthIn)}
                     onChange={(e) => {
                       const w = +e.target.value;
-                      change({
-                        widthIn: w,
-                        heightIn: w / (selected.widthPx / selected.heightPx),
-                      });
+                      if (selected.kind === "text" || selected.lockAspect === false) change({ widthIn: w });
+                      else change({ widthIn: w, heightIn: w / (selected.widthPx / selected.heightPx) });
                     }}
                   />
                 </label>
@@ -1930,71 +2478,53 @@ export default function GangSheetEditor() {
                     value={round(selected.heightIn)}
                     onChange={(e) => {
                       const h = +e.target.value;
-                      change({
-                        heightIn: h,
-                        widthIn: h * (selected.widthPx / selected.heightPx),
-                      });
+                      if (selected.kind === "text" || selected.lockAspect === false) change({ heightIn: h });
+                      else change({ heightIn: h, widthIn: h * (selected.widthPx / selected.heightPx) });
                     }}
                   />
                 </label>
+                <label>
+                  Rotation
+                  <select value={selected.rotationDeg} onChange={(e) => change({ rotationDeg: +e.target.value as 0 | 90 })}>
+                    <option value={0}>0°</option>
+                    <option value={90}>90°</option>
+                  </select>
+                </label>
               </div>
+              <div className="align-row">
+                <span>Align</span>
+                <button type="button" onClick={() => alignSelection("left")} aria-label="Align left">⫷</button>
+                <button type="button" onClick={() => alignSelection("center-h")} aria-label="Align center">⫿</button>
+                <button type="button" onClick={() => alignSelection("right")} aria-label="Align right">⫸</button>
+                <button type="button" onClick={() => alignSelection("top")} aria-label="Align top">⫠</button>
+                <button type="button" onClick={() => alignSelection("center-v")} aria-label="Align middle">⫟</button>
+                <button type="button" onClick={() => alignSelection("bottom")} aria-label="Align bottom">⫡</button>
+              </div>
+              <div className="align-row">
+                <span>Distribute</span>
+                <button type="button" onClick={() => distributeSelection("horizontal")}>Horizontal</button>
+                <button type="button" onClick={() => distributeSelection("vertical")}>Vertical</button>
+              </div>
+              <label className="toggle-row"><input type="checkbox" checked={selected.lockAspect !== false && selected.kind !== "text"} onChange={(e) => change({ lockAspect: e.target.checked })} /> Lock aspect ratio</label>
+              <label className="toggle-row"><input type="checkbox" checked={Boolean(selected.lockPosition)} onChange={(e) => change({ lockPosition: e.target.checked })} /> Lock position</label>
               <div className="actions">
-                <button type="button" onClick={duplicate} aria-label="Duplicate selected">
-                  ⧉ Duplicate
-                </button>
-                <button type="button" onClick={rotate} aria-label="Rotate selected">
-                  ↻ Rotate
-                </button>
-                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">
-                  ▦ Fill sheet
-                </button>
-                <button type="button" onClick={removeSelected} aria-label="Delete selected">
-                  ⌫ Delete
-                </button>
+                <button type="button" onClick={duplicate} aria-label="Duplicate selected">⧉ Duplicate</button>
+                <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
+                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
+                <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
               </div>
               <div className="layer-actions">
                 <span>Layer</span>
-                <button
-                  type="button"
-                  onClick={() => layerAction("forward")}
-                  aria-label="Bring forward"
-                >
-                  Forward
-                </button>
-                <button
-                  type="button"
-                  onClick={() => layerAction("backward")}
-                  aria-label="Send backward"
-                >
-                  Backward
-                </button>
-                <button
-                  type="button"
-                  onClick={() => layerAction("front")}
-                  aria-label="Bring to front"
-                >
-                  To front
-                </button>
-                <button
-                  type="button"
-                  onClick={() => layerAction("back")}
-                  aria-label="Send to back"
-                >
-                  To back
-                </button>
+                <button type="button" onClick={() => layerAction("forward")} aria-label="Bring forward">Forward</button>
+                <button type="button" onClick={() => layerAction("backward")} aria-label="Send backward">Backward</button>
+                <button type="button" onClick={() => layerAction("front")} aria-label="Bring to front">To front</button>
+                <button type="button" onClick={() => layerAction("back")} aria-label="Send to back">To back</button>
               </div>
               <label className="spacing">
                 Spacing <span>{gap.toFixed(2)} in</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={0.5}
-                  step={0.05}
-                  value={gap}
-                  aria-label="Spacing between pieces"
-                  onChange={(e) => setGap(+e.target.value)}
-                />
+                <input type="range" min={0} max={0.5} step={0.05} value={gap} aria-label="Spacing between pieces" onChange={(e) => setGap(+e.target.value)} />
               </label>
+              <button type="button" className="ghost-save-btn" onClick={() => { const name = window.prompt("Design name", `Gang sheet ${new Date().toLocaleDateString()}`); if (name) saveNamedDesign(name); }}>Save to library</button>
             </>
           ) : (
             <div className="none">
@@ -2018,6 +2548,15 @@ export default function GangSheetEditor() {
           </section>
         </aside>
       </div>
+      <nav className="mobile-bar" aria-label="Mobile toolbar">
+        <button type="button" onClick={() => setSidebarTab("uploads")}>Uploads</button>
+        <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
+        <button type="button" onClick={fitToViewport}>Fit</button>
+        <button type="button" onClick={() => setSidebarTab("layers")}>Layers</button>
+        <button type="button" className="save" onClick={() => void save()} disabled={saving || !items.length}>
+          {saving ? "…" : "Save"}
+        </button>
+      </nav>
     </div>
   );
 }
@@ -2213,5 +2752,81 @@ aside{background:#fff;overflow:auto}
 .summary .total strong{font-size:18px;color:#127a4b}
 .message,.error{margin:12px 14px;padding:10px;border-radius:6px;font-size:11px}
 .message{background:#eef7f2;color:#17683e}.error{background:#fff0ee;color:#b42318}
-@media(max-width:900px){.workspace{grid-template-columns:72px 200px minmax(320px,1fr)}.properties{position:fixed;right:0;top:68px;bottom:0;width:270px;z-index:4;box-shadow:-8px 0 24px #34405420}}
+.bags>header.editor-header{flex-wrap:wrap;height:auto;min-height:68px;padding:10px 16px;gap:10px}
+.top-toolbar{display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap;justify-content:center}
+.top-toolbar label{font-size:11px;color:#98a2b3;display:flex;gap:6px;align-items:center}
+.top-toolbar select{padding:6px 8px;border:1px solid #3a4556;border-radius:6px;background:#1a2230;color:#fff}
+.top-toolbar>button{border:0;border-radius:6px;padding:8px 10px;background:#242b36;color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+.top-toolbar>button:disabled{opacity:.45;cursor:not-allowed}
+.price-chip{background:#fff7ed;color:#c2410c;padding:6px 12px;border-radius:999px;font-weight:700;font-size:13px}
+.template-picker,.saved-designs-list{margin:16px 0;padding:12px;border:1px solid #e4e7ec;border-radius:8px;background:#f8fafc}
+.template-picker{display:grid;gap:8px}
+.template-card{text-align:left;border:1px solid #dfe3e8;border-radius:8px;padding:12px;background:#fff;cursor:pointer}
+.template-card:hover{border-color:var(--accent)}
+.template-card strong{display:block;font-size:13px}
+.template-card span{font-size:11px;color:#667085}
+.saved-designs-list h3{margin:0 0 8px;font-size:13px}
+.saved-design-row{width:100%;text-align:left;border:1px solid #dfe3e8;border-radius:8px;padding:10px;background:#fff;margin-bottom:6px;cursor:pointer}
+.saved-design-row strong{display:block;font-size:12px}
+.saved-design-row small{font-size:10px;color:#667085}
+.sidebar-tools{padding:0 14px 10px;display:grid;grid-template-columns:1fr auto;gap:8px}
+.sidebar-tools input,.sidebar-form input,.sidebar-form select,.sidebar-form textarea{width:100%;padding:8px;border:1px solid #ccd2da;border-radius:6px;font:inherit}
+.sidebar-form{padding:0 14px 14px;display:grid;gap:10px}
+.sidebar-form label{font-size:11px;color:#667085;display:grid;gap:4px}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
+.chip{border:1px solid #ccd2da;background:#fff;border-radius:999px;padding:5px 10px;font-size:10px;cursor:pointer}
+.chip.active{background:#fff7ed;border-color:var(--accent);color:#9a3412;font-weight:700}
+.pool-item-wrap{display:grid;gap:4px}
+.pool-item-actions{display:flex;gap:4px;padding:0 2px}
+.pool-item-actions input{flex:1;font-size:10px;padding:4px 6px;border:1px solid #ccd2da;border-radius:4px}
+.pool-item-actions button{width:28px;border:1px solid #ccd2da;background:#fff;border-radius:4px;cursor:pointer}
+.checkerboard{background-color:#fff;background-image:linear-gradient(45deg,#e5e7eb 25%,transparent 25%),linear-gradient(-45deg,#e5e7eb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e5e7eb 75%),linear-gradient(-45deg,transparent 75%,#e5e7eb 75%);background-size:12px 12px;background-position:0 0,0 6px,6px -6px,-6px 0}
+.dpi-warn{color:#b45309;font-size:9px;font-style:normal}
+.layer-list{padding:8px 14px;display:grid;gap:6px}
+.layer-row{display:grid;grid-template-columns:36px 1fr;gap:8px;align-items:center;border:1px solid #dfe3e8;border-radius:8px;padding:8px;background:#fff;text-align:left;cursor:pointer}
+.layer-row.active{border-color:var(--accent);background:#fff7ed}
+.layer-row img,.layer-text-thumb{width:36px;height:36px;border-radius:6px;object-fit:contain;background:#f3f4f6;display:grid;place-items:center;font-weight:800}
+.layer-row strong,.layer-row small{display:block;font-size:11px}
+.layer-row small{color:#667085}
+.help-list{list-style:none;margin:0;padding:8px 14px;display:grid;gap:8px}
+.help-list li{display:grid;grid-template-columns:110px 1fr;gap:8px;font-size:11px;color:#475467}
+.help-list kbd{background:#f3f4f6;border:1px solid #dfe3e8;border-radius:4px;padding:3px 6px;font-size:10px}
+.toggle-row{display:flex;align-items:center;gap:8px;font-size:11px;color:#475467;padding:0 14px 10px;margin:0}
+.toggle-row.inline{padding:0}
+.canvas-main{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#d8dde4}
+.canvas-meta{height:40px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 14px;font-size:12px;color:#667085}
+.canvas-meta strong{color:#111827}
+.scroll{height:calc(100% - 40px);overflow:auto;padding:28px 28px 80px 36px;position:relative}
+.scroll.pan-mode{cursor:grab}
+.scroll.pan-mode:active{cursor:grabbing}
+.ruler-corner{position:sticky;top:0;left:0;width:24px;height:24px;background:#eef1f5;border-right:1px solid #ccd2da;border-bottom:1px solid #ccd2da;z-index:2;float:left}
+.ruler-h{position:sticky;top:0;height:24px;margin-left:24px;background:#eef1f5;border-bottom:1px solid #ccd2da;z-index:2}
+.ruler-v{position:absolute;left:0;top:24px;width:24px;bottom:0;background:#eef1f5;border-right:1px solid #ccd2da;z-index:2}
+.ruler-h span,.ruler-v span{position:absolute;font-size:9px;color:#667085;transform:translate(-50%,-50%)}
+.ruler-v span{left:50%}
+.canvas-stage{margin-left:24px;padding-top:4px}
+.snap-guide{position:absolute;background:#38bdf8;pointer-events:none;z-index:4}
+.snap-guide.x{width:1px;top:0;bottom:0}
+.snap-guide.y{height:1px;left:0;right:0}
+.text-piece{display:flex;align-items:center;justify-content:center;width:100%;height:100%;text-align:center;line-height:1.1;pointer-events:none;word-break:break-word;padding:4px}
+.text-preview{display:grid;place-items:center;min-height:80px;font-size:24px;font-weight:700;background:#f3f4f6;border-radius:7px;padding:12px}
+.fields.grid-2{grid-template-columns:1fr 1fr}
+.align-row{padding:0 14px 8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.align-row>span{width:100%;font-size:11px;color:#667085;font-weight:600}
+.align-row button{border:1px solid #ccd2da;background:#fff;border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer}
+.ghost-save-btn{margin:0 14px 12px;width:calc(100% - 28px);border:1px solid #ccd2da;background:#fff;border-radius:6px;padding:10px;font-weight:600;cursor:pointer}
+.mobile-bar{display:none;position:fixed;left:0;right:0;bottom:0;height:56px;background:#0d1117;border-top:1px solid #243044;padding:6px 8px;gap:6px;z-index:8;justify-content:space-around}
+.mobile-bar button{flex:1;border:0;border-radius:8px;background:#242b36;color:#fff;font-size:11px;font-weight:700;padding:8px 4px;cursor:pointer}
+.mobile-bar button.save{background:#21a366}
+.mobile-bar button:disabled{opacity:.45}
+.workspace{height:calc(100vh - 88px)}
+@media(max-width:900px){
+  .workspace{grid-template-columns:56px minmax(0,1fr);height:calc(100vh - 120px)}
+  .sidebar-panel{position:fixed;left:56px;top:88px;bottom:56px;width:min(280px,78vw);z-index:6;box-shadow:8px 0 24px #34405420}
+  .properties{display:none}
+  .top-toolbar{display:none}
+  .mobile-bar{display:flex}
+  .canvas-meta{font-size:11px;flex-wrap:wrap;height:auto;min-height:40px;padding:6px 10px}
+}
+@media(max-width:900px){.workspace{grid-template-columns:72px 200px minmax(320px,1fr)}.properties{position:fixed;right:0;top:68px;bottom:56px;width:270px;z-index:4;box-shadow:-8px 0 24px #34405420;display:block}}
 `;

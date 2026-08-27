@@ -230,3 +230,115 @@ export function isTypingTarget(el: EventTarget | null): boolean {
 export function assetPreviewUrl(assetId: string) {
   return `/api/assets/${encodeURIComponent(assetId)}`;
 }
+
+export type SavedDesignV1 = {
+  id: string;
+  name: string;
+  draft: GangDraftV1;
+  savedAt: number;
+};
+
+function savedDesignsKey(shop: string) {
+  return `lgs_saved_designs_${shop || "default"}`;
+}
+
+export function readSavedDesigns(shop: string): SavedDesignV1[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(savedDesignsKey(shop));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as SavedDesignV1[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeSavedDesigns(shop: string, designs: SavedDesignV1[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(savedDesignsKey(shop), JSON.stringify(designs.slice(0, 50)));
+  } catch {
+    /* quota */
+  }
+}
+
+export function addSavedDesign(shop: string, name: string, draft: GangDraftV1): SavedDesignV1 {
+  const entry: SavedDesignV1 = {
+    id: crypto.randomUUID(),
+    name,
+    draft,
+    savedAt: Date.now(),
+  };
+  const next = [entry, ...readSavedDesigns(shop).filter((d) => d.name !== name)].slice(0, 50);
+  writeSavedDesigns(shop, next);
+  return entry;
+}
+
+export type AlignMode = "left" | "center-h" | "right" | "top" | "center-v" | "bottom";
+
+export function alignSelected<T extends RectIn>(
+  items: T[],
+  ids: Set<string>,
+  mode: AlignMode,
+  sheetW: number,
+  sheetH: number,
+): T[] {
+  if (!ids.size) return items;
+  const sel = items.filter((i) => ids.has(i.id));
+  if (!sel.length) return items;
+  const minX = Math.min(...sel.map((i) => i.xIn));
+  const maxX = Math.max(...sel.map((i) => i.xIn + i.widthIn));
+  const minY = Math.min(...sel.map((i) => i.yIn));
+  const maxY = Math.max(...sel.map((i) => i.yIn + i.heightIn));
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+  return items.map((i) => {
+    if (!ids.has(i.id)) return i;
+    let x = i.xIn;
+    let y = i.yIn;
+    if (mode === "left") x = minX;
+    else if (mode === "right") x = maxX - i.widthIn;
+    else if (mode === "center-h") x = midX - i.widthIn / 2;
+    else if (mode === "top") y = minY;
+    else if (mode === "bottom") y = maxY - i.heightIn;
+    else if (mode === "center-v") y = midY - i.heightIn / 2;
+    return inside({ ...i, xIn: x, yIn: y }, sheetW, sheetH);
+  });
+}
+
+export function distributeSelected<T extends RectIn>(
+  items: T[],
+  ids: Set<string>,
+  axis: "horizontal" | "vertical",
+  sheetW: number,
+  sheetH: number,
+): T[] {
+  const sel = items.filter((i) => ids.has(i.id));
+  if (sel.length < 3) return items;
+  const sorted =
+    axis === "horizontal"
+      ? [...sel].sort((a, b) => a.xIn - b.xIn)
+      : [...sel].sort((a, b) => a.yIn - b.yIn);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const span =
+    axis === "horizontal"
+      ? last.xIn + last.widthIn - first.xIn
+      : last.yIn + last.heightIn - first.yIn;
+  const totalSize = sorted.reduce(
+    (s, i) => s + (axis === "horizontal" ? i.widthIn : i.heightIn),
+    0,
+  );
+  const gap = (span - totalSize) / (sorted.length - 1);
+  let cursor = axis === "horizontal" ? first.xIn : first.yIn;
+  const pos = new Map<string, { xIn: number; yIn: number }>();
+  for (const i of sorted) {
+    pos.set(i.id, { xIn: axis === "horizontal" ? cursor : i.xIn, yIn: axis === "vertical" ? cursor : i.yIn });
+    cursor += (axis === "horizontal" ? i.widthIn : i.heightIn) + gap;
+  }
+  return items.map((i) => {
+    const p = pos.get(i.id);
+    return p ? inside({ ...i, ...p }, sheetW, sheetH) : i;
+  });
+}
