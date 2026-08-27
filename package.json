@@ -19,6 +19,7 @@
     "e2e": "node ./scripts/e2e-pipeline.mjs",
     "e2e:full": "node ./scripts/e2e-full.mjs",
     "setup:dev-store": "node ./scripts/setup-dev-store.mjs",
+    "setup:gang-sheet-variants": "node ./scripts/setup-gang-sheet-variants.mjs",
     "setup:dev-webhooks": "node --env-file=.env ./scripts/setup-dev-webhooks.mjs",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",

@@ -25,10 +25,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
-  if (String(form.get("intent") || "") !== "price") return null;
+  const intent = String(form.get("intent") || "");
+  if (intent !== "price") return null;
 
   const bindingId = String(form.get("bindingId") || "");
   const cents = Math.round(Number.parseFloat(String(form.get("variantPrice") || "0")) * 100);
+  const sheetHeightIn = form.get("sheetHeightIn")
+    ? Number.parseFloat(String(form.get("sheetHeightIn")))
+    : undefined;
   if (!bindingId || !Number.isFinite(cents) || cents < 0) {
     return { error: "Enter a valid price." };
   }
@@ -40,7 +44,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   await prisma.productBinding.update({
     where: { id: row.id },
-    data: { variantPriceCents: cents },
+    data: {
+      variantPriceCents: cents,
+      ...(sheetHeightIn != null && Number.isFinite(sheetHeightIn)
+        ? { sheetHeightIn, maxHeightIn: sheetHeightIn }
+        : {}),
+    },
   });
   return { saved: true };
 };
@@ -118,6 +127,7 @@ export default function GangsheetBuilderSettingsPage() {
                       <Form method="post" className="bags-admin-form" style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
                         <input type="hidden" name="intent" value="price" />
                         <input type="hidden" name="bindingId" value={b.id} />
+                        <input name="sheetHeightIn" type="number" step="1" min="1" defaultValue={b.sheetHeightIn ?? ""} placeholder="24" style={{ width: 70 }} />
                         <input
                           name="variantPrice"
                           type="number"

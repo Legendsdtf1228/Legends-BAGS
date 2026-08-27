@@ -114,6 +114,26 @@ export function buildPricingSnapshot(
   };
 }
 
+/** Gang sheet products may use a fixed Shopify variant price instead of area pricing. */
+export function buildGangSheetPricingSnapshot(
+  items: DesignItem[],
+  options: {
+    pricePerSqIn?: number;
+    variantPriceCents?: number | null;
+  },
+): PricingSnapshot {
+  const areaSqIn = computePrintedAreaSqIn(items);
+  if (options.variantPriceCents != null && options.variantPriceCents >= 0) {
+    return {
+      currency: "USD",
+      pricePerSqIn: options.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
+      areaSqIn,
+      totalCents: options.variantPriceCents,
+    };
+  }
+  return buildPricingSnapshot(items, options.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN);
+}
+
 /** Server-side verification: recomputed total must match client claim within 0¢ (exact). */
 export function assertPriceMatches(
   items: DesignItem[],

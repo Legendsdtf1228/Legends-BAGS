@@ -29,6 +29,21 @@
       }
     }
 
+    /** App proxy on Shopify storefront; direct app URL when editor base is set (dev). */
+    function storefrontApiUrl(path) {
+      var onStorefront =
+        shop &&
+        (window.location.hostname === shop ||
+          window.location.hostname.endsWith(".myshopify.com"));
+      if (onStorefront) {
+        return new URL("/apps/legends-bags/" + path.replace(/^\//, ""), window.location.origin);
+      }
+      if (base) {
+        return new URL(path, base);
+      }
+      return null;
+    }
+
     function hasDesign() {
       return Boolean(root.dataset.lgsDesignId);
     }
@@ -141,6 +156,7 @@
           "_lgs_sheet_size",
           "_lgs_piece_count",
           "_lgs_price_ref",
+          "_lgs_design_token",
           "Design",
         ].forEach(function (key) {
           removeHidden(form, "properties[" + key + "]");
@@ -148,6 +164,88 @@
       });
       setStatus("Start fresh — create a new design.", "warn");
       syncUi();
+    }
+
+    function selectVariantOnPage(nextVariantId) {
+      if (!nextVariantId) return;
+      variantId = String(nextVariantId);
+      cartForms().forEach(function (form) {
+        var idInput = form.querySelector('[name="id"]');
+        if (idInput) {
+          idInput.value = variantId;
+          idInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      document.querySelectorAll('[name="id"]').forEach(function (input) {
+        if (input.form && isTargetForm(input.form)) {
+          input.value = variantId;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+    }
+
+    function applyAppearanceLabels(appearance) {
+      if (!appearance) return;
+      if (openBtn) {
+        openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build your gang sheet");
+        openBtn.setAttribute("data-label-edit", appearance.launcherEditLabel || "Edit design");
+      }
+      syncUi();
+    }
+
+    function loadStorefrontConfig() {
+      if (!shop) return;
+      var url = storefrontApiUrl("/storefront-config");
+      if (!url) return;
+      url.searchParams.set("shop", shop);
+      if (productGid) url.searchParams.set("productGid", productGid);
+      fetch(url.toString())
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (json) {
+          if (json && json.appearance) applyAppearanceLabels(json.appearance);
+        })
+        .catch(function () {
+          /* optional */
+        });
+    }
+
+    function hydrateDesignFromUrl() {
+      var params = new URLSearchParams(window.location.search);
+      var fromUrl = params.get("lgs_design_id");
+      if (!fromUrl) {
+        syncUi();
+        return;
+      }
+      var version = params.get("lgs_design_version") || "1";
+      var token = params.get("lgs_token");
+      if (token && base) {
+        var apiUrl = new URL("/api/designs/" + encodeURIComponent(fromUrl), base);
+        apiUrl.searchParams.set("version", version);
+        apiUrl.searchParams.set("token", token);
+        fetch(apiUrl.toString())
+          .then(function (res) {
+            return res.ok ? res.json() : null;
+          })
+          .then(function (json) {
+            if (json && json.cartProperties) {
+              attachDesign(
+                json.designId || fromUrl,
+                json.version || version,
+                json.cartProperties,
+                json.designName,
+              );
+            } else {
+              attachDesign(fromUrl, version);
+            }
+          })
+          .catch(function () {
+            attachDesign(fromUrl, version);
+          });
+        return;
+      }
+      attachDesign(fromUrl, version);
     }
 
     function editorPath() {
@@ -269,8 +367,13 @@
     });
 
     window.addEventListener("message", function (event) {
-      if (!event.data || event.data.type !== "lgs:design-ready") return;
+      if (!event.data) return;
       if (event.origin !== editorOrigin()) return;
+      if (event.data.type === "lgs:select-variant") {
+        selectVariantOnPage(event.data.variantId);
+        return;
+      }
+      if (event.data.type !== "lgs:design-ready") return;
       var designId = event.data.designId;
       var version = event.data.version;
       if (!designId) return;
@@ -332,13 +435,8 @@
       }
     });
 
-    var params = new URLSearchParams(window.location.search);
-    var fromUrl = params.get("lgs_design_id");
-    if (fromUrl) {
-      attachDesign(fromUrl, params.get("lgs_design_version") || "1");
-    } else {
-      syncUi();
-    }
+    loadStorefrontConfig();
+    hydrateDesignFromUrl();
   }
 
   document

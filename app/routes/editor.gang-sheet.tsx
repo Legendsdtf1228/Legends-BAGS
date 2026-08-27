@@ -43,6 +43,7 @@ import {
   getShopAppearance,
   type ShopAppearance,
 } from "../lib/shop-appearance.server";
+import { loadEditorPageConfig } from "../lib/editor-config.server";
 
 type Asset = {
   assetId: string;
@@ -287,7 +288,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
     );
   }
-  const appearance = shop ? await getShopAppearance(shop) : DEFAULT_APPEARANCE;
+  const editorConfig = shop
+    ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
+    : null;
+  const appearance = editorConfig?.appearance ?? DEFAULT_APPEARANCE;
   return data(
     {
       shop,
@@ -299,6 +303,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       editorOrigin: process.env.SHOPIFY_APP_URL || "",
       hasDevAuth: Boolean(token && shop),
       appearance,
+      pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
+      variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
+      gangSheetVariants: editorConfig?.gangSheetVariants ?? [],
+      defaultSheet: editorConfig?.sheet ?? {
+        widthIn: 22.5,
+        maxHeightIn: 24,
+        imageMarginIn: 0.15,
+        artboardMarginIn: 0.1,
+      },
     },
     { headers },
   );
@@ -323,8 +336,13 @@ export default function GangSheetEditor() {
   const [future, setFuture] = useState<CanvasItem[][]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [sheetWidth, setSheetWidth] = useState(22.5);
-  const [sheetHeight, setSheetHeight] = useState(24);
+  const [sheetWidth, setSheetWidth] = useState(page.defaultSheet.widthIn);
+  const [sheetHeight, setSheetHeight] = useState(() => {
+    const match = page.gangSheetVariants.find((v) =>
+      v.variantGid?.endsWith(`/${page.variantId}`),
+    );
+    return match?.sheetHeightIn ?? page.defaultSheet.maxHeightIn;
+  });
   const [zoom, setZoom] = useState(70);
   const [gap, setGap] = useState(0.15);
   const [uploading, setUploading] = useState(false);
@@ -415,7 +433,10 @@ export default function GangSheetEditor() {
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
     [items],
   );
-  const estimate = Math.round(usedArea * 4.9) / 100;
+  const estimate =
+    page.variantPriceCents != null
+      ? page.variantPriceCents / 100
+      : Math.round(usedArea * page.pricePerSqIn * 100) / 100;
   const utilization = Math.min(100, Math.round((usedArea / (sheetWidth * sheetHeight)) * 100));
 
   const overlappingIds = useMemo(() => findOverlappingIds(items), [items]);
@@ -451,6 +472,20 @@ export default function GangSheetEditor() {
   useEffect(() => {
     if (sidebarTab === "gallery") void refreshGallery();
   }, [sidebarTab]);
+
+  useEffect(() => {
+    if (!page.gangSheetVariants.length) return;
+    const match = page.gangSheetVariants.find((v) => v.sheetHeightIn === sheetHeight);
+    if (!match?.variantGid) return;
+    const variantId = match.variantGid.replace("gid://shopify/ProductVariant/", "");
+    if (!variantId || variantId === page.variantId) return;
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { type: "lgs:select-variant", variantId },
+        page.parentOrigin || page.editorOrigin || "*",
+      );
+    }
+  }, [sheetHeight, page.gangSheetVariants, page.parentOrigin, page.editorOrigin, page.variantId]);
 
   useEffect(() => {
     if (!page.designId) return;
@@ -2074,7 +2109,10 @@ export default function GangSheetEditor() {
               <div className="welcome-foot">
                 <span>Selected sheet · est. empty sheet</span>
                 <strong>
-                  {sheetWidth}″ × {sheetHeight}″ · ${((sheetWidth * sheetHeight) * 0.049).toFixed(2)} max · $0.049/in² printed
+                  {sheetWidth}″ × {sheetHeight}″ ·{" "}
+                  {page.variantPriceCents != null
+                    ? `$${(page.variantPriceCents / 100).toFixed(2)} sheet price`
+                    : `$${((sheetWidth * sheetHeight) * page.pricePerSqIn).toFixed(2)} max · $${page.pricePerSqIn.toFixed(3)}/in² printed`}
                 </strong>
               </div>
             </div>

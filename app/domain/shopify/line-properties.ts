@@ -3,13 +3,14 @@ import {
   CART_DESIGN_VERSION_PROPERTY,
   type DesignStateV1,
 } from "../design/types";
-import { signPriceRef } from "../security/design-access";
+import { signDesignAccess, signPriceRef } from "../security/design-access";
 
 export const CART_WORKFLOW_PROPERTY = "_lgs_workflow" as const;
 export const CART_SHEET_SIZE_PROPERTY = "_lgs_sheet_size" as const;
 export const CART_PIECE_COUNT_PROPERTY = "_lgs_piece_count" as const;
 export const CART_DESIGN_NAME_PROPERTY = "Design" as const;
 export const CART_PRICE_REF_PROPERTY = "_lgs_price_ref" as const;
+export const CART_DESIGN_TOKEN_PROPERTY = "_lgs_design_token" as const;
 
 export type ShopifyLineItem = {
   id: number | string;
@@ -81,6 +82,7 @@ export function buildCartLineProperties(params: {
     version,
     priceCents: state.pricing.totalCents,
   });
+  const { token: designToken } = signDesignAccess({ shop, designId, version });
   const props: Record<string, string> = {
     [CART_DESIGN_ID_PROPERTY]: designId,
     [CART_DESIGN_VERSION_PROPERTY]: String(version),
@@ -88,6 +90,7 @@ export function buildCartLineProperties(params: {
     [CART_SHEET_SIZE_PROPERTY]: sheetSizeLabel(state),
     [CART_PIECE_COUNT_PROPERTY]: String(pieceCount(state)),
     [CART_PRICE_REF_PROPERTY]: priceRef,
+    [CART_DESIGN_TOKEN_PROPERTY]: designToken,
   };
   if (designName?.trim()) {
     props[CART_DESIGN_NAME_PROPERTY] = designName.trim();

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
+import { loadEditorPageConfig } from "../lib/editor-config.server";
+import { getShopAppearance, DEFAULT_APPEARANCE } from "../lib/shop-appearance.server";
 import type { SizeInput } from "../domain/pricing";
 import { SIZE_PRESETS } from "../domain/design/types";
 import {
@@ -106,6 +108,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     );
   }
 
+  const editorConfig = shop
+    ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
+    : null;
+
   return data(
     {
       productGid,
@@ -114,7 +120,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       designId,
       designVersion,
       parentOrigin,
-      pricePerSqIn: 0.049,
+      pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
+      appearance: editorConfig?.appearance ?? DEFAULT_APPEARANCE,
       presets: Object.entries(SIZE_PRESETS).map(([id, p]) => ({
         id,
         label: p.label,
@@ -198,6 +205,47 @@ export default function UploadBySizeEditor() {
 
   function formatMoney(cents: number) {
     return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  async function upscaleActive() {
+    if (!active) return;
+    setUploading(true);
+    setError("");
+    try {
+      const dims = resolvedDims(active);
+      const res = await fetch(`/api/assets/${encodeURIComponent(active.asset.assetId)}/upscale`, {
+        method: "POST",
+        credentials: "include",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ widthIn: dims.widthIn, heightIn: dims.heightIn }),
+      });
+      const json = (await res.json()) as UploadedAsset & { error?: string };
+      if (!res.ok) throw new Error(json.error || "Upscale failed");
+      const previewUrl = assetPreviewUrl(json.assetId);
+      setQueue((lines) =>
+        lines.map((line) =>
+          line.id === active.id
+            ? {
+                ...line,
+                asset: {
+                  assetId: json.assetId,
+                  widthPx: json.widthPx,
+                  heightPx: json.heightPx,
+                  dpi: json.dpi,
+                  contentType: json.contentType,
+                },
+                previewUrl,
+              }
+            : line,
+        ),
+      );
+      setDirty(true);
+      setSaved(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upscale failed");
+    } finally {
+      setUploading(false);
+    }
   }
 
   const refreshQuote = useCallback(
@@ -671,15 +719,22 @@ export default function UploadBySizeEditor() {
                 </span>
                 {activeQuote?.lowDpi || (activeQuote && activeQuote.effectiveDpi < 200) ? (
                   <span className="warn">
-                    Low resolution for print — upload a higher-resolution file or use a smaller size.
-                    Upscale is coming soon.
+                    Low resolution for print — upload a higher-resolution file, use a smaller size, or
+                    upscale below.
                   </span>
                 ) : null}
               </div>
 
               <div className="tool-row">
-                <span className="tool-toggle">Remove background (soon)</span>
-                <span className="tool-toggle">Upscale to 300 DPI (soon)</span>
+                <button
+                  type="button"
+                  className="tool-toggle"
+                  disabled={busy || !active}
+                  onClick={() => void upscaleActive()}
+                >
+                  Upscale to ~300 DPI
+                </button>
+                <span className="tool-toggle muted">Remove background (soon)</span>
               </div>
 
               <div className="fields">

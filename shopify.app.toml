@@ -34,3 +34,8 @@ scopes = "read_products,write_products,read_orders,read_themes"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
+
+[app_proxy]
+url = "/apps/legends-bags"
+subpath = "legends-bags"
+prefix = "apps"

@@ -1,8 +1,8 @@
 # Known limitations (Phase 1)
 
-- Storefront API auth uses `TEST_API_TOKEN` headers — replace with Shopify app proxy / session tokens before any customer traffic
+- Storefront appearance/config uses Shopify app proxy (`/apps/legends-bags/storefront-config`); editor APIs still use `TEST_API_TOKEN` / design access tokens until full proxy coverage
 - In-process sharp render caps at ~40MP; long sheets need tiled rendering (not yet shipped)
-- SVG upload deferred (PNG/JPEG only)
+- SVG uploads are rasterized at 300 DPI on ingest (vector editing not supported)
 - Cutting-row and true-shape nesting are Phase 2/4
 - Full canvas editor is Phase 2 (early `/editor/gang-sheet` + theme block shipped; welcome screen, gallery, undo still pending)
 - No Dropbox/Drive mirroring yet

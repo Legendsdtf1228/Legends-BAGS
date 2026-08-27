@@ -91,7 +91,8 @@ Rollback: revert migration `20260827180000_design_library` (columns nullable; sa
 
 ## Known limitations
 
-- Cart page “Edit design” — add the **LGS Cart Edit Design** theme block to the cart template (links back to product with design params)
-- Customer Shopify login / App Proxy auth not yet integrated (guest token only)
+- Cart page “Edit design” — add the **LGS Cart Edit Design** theme block to the cart template (links back to product with design params + signed token)
+- Customer Shopify login not yet integrated; storefront config uses app proxy (`/apps/legends-bags/storefront-config`); editor APIs use dev token or signed design tokens
 - Dynamic checkout line pricing requires Shopify Functions or tiered variants (see Pricing section)
-- Upscale / background removal tools are UI placeholders only
+- Background removal tool is still a UI placeholder
+- Multi-variant gang sheet catalog: run `npm run setup:gang-sheet-variants` after dev store setup (13 heights, $17–$195)

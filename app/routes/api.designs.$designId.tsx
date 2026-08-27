@@ -8,6 +8,7 @@ import {
 } from "../services/design-service";
 import prisma from "../db.server";
 import { assertTestAccess } from "../domain/security/test-access";
+import { verifyDesignAccessToken } from "../domain/security/design-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
@@ -48,16 +49,49 @@ function designResponse(
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const shop = assertTestAccess(request);
   const designId = params.designId;
   if (!designId) throw new Response("Not found", { status: 404 });
 
   const url = new URL(request.url);
   const versionParam = url.searchParams.get("version");
   const version = versionParam ? Number(versionParam) : undefined;
+  const accessToken = url.searchParams.get("token");
+  const cartPropsOnly = url.searchParams.get("cartProps") === "1";
+
+  let shop: string;
+  if (accessToken) {
+    const claims = verifyDesignAccessToken(accessToken);
+    if (claims.designId !== designId) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    shop = claims.shop;
+  } else {
+    shop = assertTestAccess(request);
+  }
 
   try {
     const { design, state } = await getDesignState(shop, designId, version);
+    const resolvedVersion = version ?? design.currentVersion;
+    const payload = designResponse(shop, design, state, resolvedVersion);
+
+    if (accessToken) {
+      return Response.json({
+        designId: payload.designId,
+        version: payload.version,
+        designName: payload.name,
+        cartProperties: payload.cartProperties,
+      });
+    }
+
+    if (cartPropsOnly) {
+      return Response.json({
+        designId: payload.designId,
+        version: payload.version,
+        designName: payload.name,
+        cartProperties: payload.cartProperties,
+      });
+    }
+
     const assetIds = [...new Set(state.items.map((i) => i.assetId))];
     const assets = await prisma.asset.findMany({
       where: { shop, id: { in: assetIds } },
