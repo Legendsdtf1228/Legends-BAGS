@@ -23,6 +23,7 @@
     var configLoaded = false;
     var lastFocus = null;
     var scrollY = 0;
+    var editorLoadTimer = null;
     var gangSheetVariants = [];
     var variantPicker = root.querySelector("[data-lgs-variant-picker]");
     var variantSelect = root.querySelector("[data-lgs-variant-select]");
@@ -473,6 +474,15 @@
         if (sessionToken) {
           u.searchParams.set("lgs_session", sessionToken);
         }
+        if (editorLoadTimer) window.clearTimeout(editorLoadTimer);
+        editorLoadTimer = window.setTimeout(function () {
+          if (wrap.hidden) return;
+          setStatus(
+            "The editor is taking too long to load. Try opening in this tab instead.",
+            "error",
+          );
+          if (loading) loading.hidden = true;
+        }, 12000);
         frame.src = u.toString();
         wrap.hidden = false;
         wrap.setAttribute("aria-hidden", "false");
@@ -535,6 +545,10 @@
 
     frame &&
       frame.addEventListener("load", function () {
+        if (editorLoadTimer) {
+          window.clearTimeout(editorLoadTimer);
+          editorLoadTimer = null;
+        }
         if (loading) loading.hidden = true;
         if (frame.src === "about:blank") return;
         try {
