@@ -3,6 +3,16 @@ import {
   STOREFRONT_SESSION_HEADER,
   verifyStorefrontSession,
 } from "./storefront-access";
+import {
+  CUSTOMER_KEY_COOKIE,
+  normalizeCustomerKey,
+} from "./customer-key";
+
+export type CustomerApiContext = {
+  shop: string;
+  customerKey: string | null;
+  isDevToken: boolean;
+};
 
 /** Shared gate for Phase-1 customer/dev APIs. */
 export function assertTestAccess(request: Request): string {
@@ -36,8 +46,15 @@ function readStorefrontSessionToken(request: Request): string | undefined {
   return readCookie(cookie, STOREFRONT_SESSION_COOKIE);
 }
 
+function readCustomerKeyHint(request: Request): string | null {
+  const cookie = request.headers.get("Cookie") || "";
+  const fromCookie = readCookie(cookie, CUSTOMER_KEY_COOKIE);
+  const fromHeader = request.headers.get("X-LGS-Customer-Key");
+  return normalizeCustomerKey(fromHeader ?? fromCookie);
+}
+
 /** Dev test token or signed storefront session from app proxy bootstrap. */
-export function assertCustomerApiAccess(request: Request): string {
+export function assertCustomerApiContext(request: Request): CustomerApiContext {
   const sessionToken = readStorefrontSessionToken(request);
   if (sessionToken) {
     try {
@@ -48,14 +65,25 @@ export function assertCustomerApiAccess(request: Request): string {
       if (hintedShop && hintedShop !== claims.shop) {
         throw new Response("Forbidden", { status: 403 });
       }
-      return claims.shop;
+      const customerKey = normalizeCustomerKey(claims.customerKey ?? readCustomerKeyHint(request));
+      return { shop: claims.shop, customerKey, isDevToken: false };
     } catch (err) {
       if (err instanceof Response) throw err;
       /* fall through to dev gate */
     }
   }
 
-  return assertTestAccess(request);
+  const shop = assertTestAccess(request);
+  return {
+    shop,
+    customerKey: readCustomerKeyHint(request),
+    isDevToken: true,
+  };
+}
+
+/** Dev test token or signed storefront session from app proxy bootstrap. */
+export function assertCustomerApiAccess(request: Request): string {
+  return assertCustomerApiContext(request).shop;
 }
 
 export function readCookie(cookieHeader: string, name: string): string | undefined {

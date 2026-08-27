@@ -97,7 +97,7 @@ Rollback: revert migration `20260827180000_design_library` (columns nullable; sa
 ## Known limitations
 
 - Cart page “Edit design” — add the **LGS Cart Edit Design** theme block to the cart template (links back to product with design params + signed token)
-- Customer Shopify login not yet integrated; storefront uses app proxy session bootstrap + design access tokens for cart return
+- Customer Shopify login: logged-in customers use Shopify customer id; guests get a stable `localStorage` guest key
 - Dynamic checkout line pricing requires Shopify Functions or tiered variants (see Pricing section)
 - Background removal in Upload-by-Size editor with prompt bar + keep-detail / strength sliders (optional `REMOVE_BG_API_KEY` for remove.bg)
 - Multi-variant gang sheet catalog: run `npm run setup:gang-sheet-variants` after dev store setup (13 heights, $17–$195)

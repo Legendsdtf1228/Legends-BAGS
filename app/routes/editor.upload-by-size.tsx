@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { ChangeEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
 import { loadEditorPageConfig } from "../lib/editor-config.server";
 import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
-import { getShopAppearance, DEFAULT_APPEARANCE } from "../lib/shop-appearance.server";
+import { mergeEditorLaunchFromUrl } from "../lib/editor-launch.server";
+import { getShopAppearance, DEFAULT_APPEARANCE, type ShopAppearance } from "../lib/shop-appearance.server";
 import type { SizeInput } from "../domain/pricing";
 import { SIZE_PRESETS } from "../domain/design/types";
 import {
@@ -84,6 +85,15 @@ type RemoteDesignPayload = {
   cartProperties?: Record<string, string>;
 };
 
+type LibraryDesign = {
+  id: string;
+  name: string | null;
+  version: number;
+  sheetLabel: string;
+  priceCents: number;
+  updatedAt: string;
+};
+
 function assetPreviewUrl(assetId: string) {
   return `/api/assets/${encodeURIComponent(assetId)}`;
 }
@@ -98,29 +108,31 @@ function inferPresetId(
   return match?.id ?? "4in";
 }
 
+function appearanceVars(appearance: ShopAppearance): CSSProperties {
+  return {
+    ["--accent" as string]: appearance.accentColor,
+    ["--accent-dark" as string]: appearance.accentColorDark,
+  };
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  const url = new URL(request.url);
-  const shop = url.searchParams.get("shop") || process.env.DEV_SHOP || "";
-  const productGid = url.searchParams.get("productGid") ?? "";
-  const variantId = url.searchParams.get("variantId") ?? "";
-  const designId = url.searchParams.get("designId") ?? "";
-  const designVersion = url.searchParams.get("designVersion") ?? "";
-  const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
+  const launch = mergeEditorLaunchFromUrl(request, process.env.DEV_SHOP || "");
+  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, launch.shop);
 
-  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, shop);
-
-  const editorConfig = shop
-    ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
+  const editorConfig = launch.shop
+    ? await loadEditorPageConfig(launch.shop, launch.productGid || undefined, launch.variantId || undefined)
     : null;
 
   return data(
     {
-      productGid,
-      variantId,
-      shop,
-      designId,
-      designVersion,
-      parentOrigin,
+      productGid: launch.productGid,
+      variantId: launch.variantId,
+      shop: launch.shop,
+      designId: launch.designId,
+      designVersion: launch.designVersion,
+      parentOrigin: launch.parentOrigin,
+      quantity: launch.quantity,
+      shopMode: launch.shopMode,
       pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
       appearance: editorConfig?.appearance ?? DEFAULT_APPEARANCE,
       presets: Object.entries(SIZE_PRESETS).map(([id, p]) => ({
@@ -154,6 +166,10 @@ export default function UploadBySizeEditor() {
   const [dirty, setDirty] = useState(false);
   const [loadingDesign, setLoadingDesign] = useState(Boolean(page.designId));
   const [bgRemove, setBgRemove] = useState<BgRemoveTarget | null>(null);
+  const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
+  const [libraryName, setLibraryName] = useState("");
+  const [librarySaving, setLibrarySaving] = useState(false);
+  const [designName, setDesignName] = useState<string | null>(null);
 
   const active = queue.find((l) => l.id === activeId) ?? queue[0] ?? null;
   const busy = uploading || saving;
@@ -351,6 +367,50 @@ export default function UploadBySizeEditor() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty, saved]);
 
+  useEffect(() => {
+    void refreshLibrary();
+  }, [page.shop]);
+
+  async function refreshLibrary() {
+    try {
+      const res = await fetch("/api/design-library?sort=recent", {
+        credentials: "include",
+        headers: headers(),
+      });
+      const json = (await res.json()) as { designs?: LibraryDesign[] };
+      if (res.ok && json.designs) setSavedDesigns(json.designs);
+    } catch {
+      /* offline */
+    }
+  }
+
+  async function saveToLibrary() {
+    if (!editingDesignId || !libraryName.trim() || librarySaving) return;
+    setLibrarySaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/design-library", {
+        method: "POST",
+        credentials: "include",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          intent: "save",
+          designId: editingDesignId,
+          name: libraryName.trim(),
+        }),
+      });
+      const json = (await res.json()) as { error?: string; name?: string };
+      if (!res.ok) throw new Error(json.error || "Could not save to library");
+      setDesignName(json.name ?? libraryName.trim());
+      setLibraryName("");
+      await refreshLibrary();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save to library");
+    } finally {
+      setLibrarySaving(false);
+    }
+  }
+
   async function loadRemoteDesign(designId: string, version?: number) {
     setLoadingDesign(true);
     setError("");
@@ -392,6 +452,7 @@ export default function UploadBySizeEditor() {
       setActiveId(restored[0]?.id ?? null);
       setEditingDesignId(json.designId);
       setEditingVersion(json.version);
+      setDesignName(json.name);
       setSaved(true);
       setDirty(false);
       setTotalCents(json.state.pricing.totalCents);
@@ -441,7 +502,7 @@ export default function UploadBySizeEditor() {
           widthIn,
           heightIn,
           lockAspect: true,
-          quantity: 1,
+          quantity: Math.max(1, page.quantity ?? 1),
         });
       }
       setQueue((q) => [...q, ...added]);
@@ -580,6 +641,105 @@ export default function UploadBySizeEditor() {
 
   const activeDims = active ? resolvedDims(active) : null;
   const activeCents = lineCents(activeQuote);
+  const showWelcome = emptyQueue && !loadingDesign;
+  const gangHref = `/editor/gang-sheet?shop=${encodeURIComponent(page.shop)}`;
+
+  if (showWelcome) {
+    return (
+      <div className="ubs welcome lgs-editor" style={appearanceVars(page.appearance)}>
+        <style>{BAGS_BASE_CSS}{CSS}</style>
+        {!page.hasDevAuth ? (
+          <p className="banner err" role="alert">
+            Dev auth missing — set DEV_SHOP and TEST_API_TOKEN in <code>.env</code>, then restart{" "}
+            <code>shopify app dev</code>.
+          </p>
+        ) : null}
+        <div className="home-shell">
+          <nav className="icon-rail" aria-label="Builder navigation">
+            <button type="button" className="rail-btn active" title="Home" aria-label="Home">
+              <span className="rail-icon">🏠</span>
+              <span className="rail-label">Home</span>
+            </button>
+            <label className={`rail-btn${busy ? " soon" : ""}`} title="Upload" aria-label="Upload">
+              <span className="rail-icon">📁</span>
+              <span className="rail-label">Upload</span>
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg"
+                hidden
+                disabled={busy}
+                onChange={onFiles}
+              />
+            </label>
+          </nav>
+
+          <div className="home-main">
+            <div className="welcome-card">
+              <div className="brand center">
+                <b>L</b>
+                <span>
+                  <strong>LEGENDS BAGS</strong>
+                  <small>Welcome Center</small>
+                </span>
+              </div>
+              <h1>{page.appearance.welcomeTitle}</h1>
+              <p className="welcome-lead">{page.appearance.welcomeSubtitle}</p>
+
+              <div className="welcome-grid two-col">
+                <label className={`welcome-opt primary featured${busy ? " disabled" : ""}`}>
+                  <div className="welcome-icon">＋</div>
+                  <strong>Upload by Size</strong>
+                  <span>
+                    Choose PNG or JPEG files — size each design with presets or custom dimensions,
+                    then add everything to cart in one order.
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg"
+                    hidden
+                    disabled={busy}
+                    onChange={onFiles}
+                  />
+                </label>
+                <a className="welcome-opt" href={gangHref}>
+                  <div className="welcome-icon">🎨</div>
+                  <strong>Build a Gang Sheet</strong>
+                  <span>Nest multiple designs on a shared sheet with drag-and-drop placement.</span>
+                </a>
+                {savedDesigns.length ? (
+                  <button
+                    type="button"
+                    className="welcome-opt"
+                    onClick={() => void loadRemoteDesign(savedDesigns[0].id, savedDesigns[0].version)}
+                  >
+                    <div className="welcome-icon">💾</div>
+                    <strong>Open saved design</strong>
+                    <span>
+                      {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} in your
+                      library.
+                    </span>
+                  </button>
+                ) : (
+                  <button type="button" className="welcome-opt disabled">
+                    <div className="welcome-icon">💾</div>
+                    <strong>Open saved design</strong>
+                    <span>Save a design from the editor to build your library.</span>
+                  </button>
+                )}
+              </div>
+
+              <p className="welcome-tip">
+                Transparent PNG is recommended for DTF print. After upload you can set size, quantity,
+                upscale, and remove backgrounds before checkout.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="ubs lgs-editor">
@@ -907,6 +1067,44 @@ export default function UploadBySizeEditor() {
         </main>
 
         <aside className="summary">
+          {savedDesigns.length ? (
+            <div className="library-panel">
+              <h3>My saved designs</h3>
+              <ul className="library-list">
+                {savedDesigns.slice(0, 8).map((d) => (
+                  <li key={d.id}>
+                    <button type="button" onClick={() => void loadRemoteDesign(d.id, d.version)}>
+                      <strong>{d.name || "Untitled"}</strong>
+                      <small>
+                        {d.sheetLabel} · v{d.version}
+                      </small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {editingDesignId && saved && !designName ? (
+            <div className="library-save">
+              <label>
+                Save to library
+                <input
+                  type="text"
+                  value={libraryName}
+                  placeholder="Design name"
+                  onChange={(e) => setLibraryName(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn ghost block"
+                disabled={librarySaving || !libraryName.trim()}
+                onClick={() => void saveToLibrary()}
+              >
+                {librarySaving ? "Saving…" : "Save to library"}
+              </button>
+            </div>
+          ) : null}
           <h2>Your design order</h2>
           <p>
             <span>Price</span>
@@ -983,6 +1181,31 @@ export default function UploadBySizeEditor() {
 
 const CSS = `
 .ubs{--blue:var(--accent);--green:var(--green);min-height:100vh;background:#eef1f5;color:#111827;font:14px/1.35 Inter,system-ui,sans-serif}
+.ubs.welcome{min-height:100vh;background:#eef1f5}
+.home-shell{display:grid;grid-template-columns:72px 1fr;min-height:100vh}
+.home-main{display:grid;place-items:center;padding:24px 16px}
+.welcome-card{max-width:860px;width:100%;background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 8px 30px #34405420}
+.welcome-card h1{margin:8px 0 10px;font-size:24px;text-align:center}
+.welcome-lead{margin:0 0 20px;text-align:center;color:#667085;font-size:13px;line-height:1.5;max-width:560px;margin-inline:auto}
+.welcome-grid{display:grid;gap:12px}
+.welcome-grid.two-col{grid-template-columns:repeat(2,minmax(0,1fr))}
+.welcome-opt{display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:start;text-align:left;border:1px solid #dfe3e8;border-radius:10px;padding:16px;background:#fff;cursor:pointer;transition:border-color .15s,background .15s}
+.welcome-opt:hover:not(.disabled){border-color:var(--accent);background:#fffaf5}
+.welcome-opt strong{font-size:15px;grid-column:2}.welcome-opt span{font-size:12px;color:#667085;grid-column:2;line-height:1.45}
+.welcome-opt.featured{border-color:var(--accent);background:#fff7ed}
+.welcome-opt.primary{border-color:var(--accent);background:#fff7ed}
+.welcome-opt.disabled{opacity:.55;cursor:not-allowed}
+.welcome-tip{margin:16px 0 0;padding:10px 12px;background:#f8fafc;border:1px solid #e4e7ec;border-radius:8px;font-size:12px;color:#475467;line-height:1.45;text-align:center}
+a.welcome-opt{text-decoration:none;color:inherit}
+.brand.center{justify-content:center;margin-bottom:8px}
+.icon-rail{background:#0d1117;color:#98a2b3;display:flex;flex-direction:column;align-items:stretch;padding:8px 0;gap:4px;z-index:6}
+.icon-rail .rail-btn{position:relative;border:0;background:transparent;color:inherit;padding:10px 6px;cursor:pointer;display:grid;justify-items:center;gap:4px;font-size:10px}
+.icon-rail label.rail-btn{margin:0}
+.icon-rail .rail-btn:hover:not(.soon){color:#fff;background:#1a2230}
+.icon-rail .rail-btn.active{color:#fff;background:#243044;box-shadow:inset 3px 0 0 var(--accent)}
+.icon-rail .rail-btn.soon{opacity:.45;cursor:not-allowed}
+.icon-rail .rail-icon{font-size:18px;line-height:1}
+.icon-rail .rail-label{font-size:9px;font-weight:600;letter-spacing:.02em}
 .ubs>header{height:68px;background:#0d1117;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:5}
 .brand{display:flex;align-items:center;gap:10px}
 .brand>b{display:grid;place-items:center;width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#ffd45e,#e89119);color:#111;font:900 20px Georgia}
@@ -1042,6 +1265,15 @@ main{padding:20px;display:grid;gap:14px;align-content:start}
 .err{color:#b42318;font-size:12px;margin:0}
 .warn-inline{color:#b45309;font-size:12px;margin:0}
 .ok{color:#17683e;font-size:12px;margin:0}
+.library-panel{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fafbfc}
+.library-panel h3{margin:0 0 8px;font-size:13px}
+.library-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.library-list button{width:100%;text-align:left;border:1px solid #e4e7ec;border-radius:6px;padding:8px;background:#fff;cursor:pointer}
+.library-list strong{display:block;font-size:12px}
+.library-list small{display:block;font-size:11px;color:#667085;margin-top:2px}
+.library-save{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff}
+.library-save label{display:grid;gap:4px;font-size:11px;font-weight:600;color:#667085}
+.library-save input{padding:8px;border:1px solid #ccd2da;border-radius:6px;font:inherit}
 ${BACKGROUND_REMOVAL_MODAL_CSS}
-@media(max-width:960px){.layout{grid-template-columns:1fr}.summary{border-left:0;border-top:1px solid var(--line)}}
+@media(max-width:960px){.layout{grid-template-columns:1fr}.summary{border-left:0;border-top:1px solid var(--line)}.welcome-grid.two-col{grid-template-columns:1fr}}
 `;
