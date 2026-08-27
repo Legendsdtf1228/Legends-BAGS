@@ -51,7 +51,7 @@ Do **not** trust browser-submitted prices.
 
 ## Authorization model
 
-- Dev/storefront APIs: `TEST_API_TOKEN` + `X-LGS-Shop` / HttpOnly cookies (Phase 1)
+- Dev/storefront APIs: signed **storefront session** (via app proxy `/apps/legends-bags/session`) or `TEST_API_TOKEN` + cookies for local dev; design tokens for cart return reads
 - Design access tokens: HMAC signed via `FILE_SIGNING_SECRET` (24h TTL)
 - Shop isolation: all design queries filter by `shop`
 - Never expose raw storage keys; downloads use signed URLs only
@@ -75,6 +75,11 @@ Rollback: revert migration `20260827180000_design_library` (columns nullable; sa
 7. [ ] Reorder creates distinct design ID
 8. [ ] Second designed product in cart is isolated
 
+### Storefront gang sheet variant picker
+- Theme gang sheet block loads `gangSheetVariants` from app proxy `/storefront-config`
+- Sheet height dropdown syncs Shopify variant before editor open and on editor `lgs:select-variant`
+- Changing height clears an attached design (design is variant-specific)
+
 ### Cart edit from cart page
 - `extensions/upload-by-size/blocks/cart-edit-design.liquid` — theme block for cart template; links to product with `lgs_design_id` / `lgs_design_version`
 
@@ -91,7 +96,8 @@ Rollback: revert migration `20260827180000_design_library` (columns nullable; sa
 
 ## Known limitations
 
-- Cart page “Edit design” — add the **LGS Cart Edit Design** theme block to the cart template (links back to product with design params)
-- Customer Shopify login / App Proxy auth not yet integrated (guest token only)
+- Cart page “Edit design” — add the **LGS Cart Edit Design** theme block to the cart template (links back to product with design params + signed token)
+- Customer Shopify login not yet integrated; storefront uses app proxy session bootstrap + design access tokens for cart return
 - Dynamic checkout line pricing requires Shopify Functions or tiered variants (see Pricing section)
-- Upscale / background removal tools are UI placeholders only
+- Background removal in Upload-by-Size editor with prompt bar + keep-detail / strength sliders (optional `REMOVE_BG_API_KEY` for remove.bg)
+- Multi-variant gang sheet catalog: run `npm run setup:gang-sheet-variants` after dev store setup (13 heights, $17–$195)

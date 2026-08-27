@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
+import { loadEditorPageConfig } from "../lib/editor-config.server";
+import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
+import { getShopAppearance, DEFAULT_APPEARANCE } from "../lib/shop-appearance.server";
 import type { SizeInput } from "../domain/pricing";
 import { SIZE_PRESETS } from "../domain/design/types";
 import {
@@ -10,6 +13,11 @@ import {
   PresetSizeChips,
   StepperField,
 } from "../components/editor/bags-ui";
+import {
+  BACKGROUND_REMOVAL_MODAL_CSS,
+  BackgroundRemovalModal,
+  type ProcessedAsset,
+} from "../components/editor/background-removal-modal";
 
 const CHIP_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12, 14, 16] as const;
 
@@ -47,6 +55,12 @@ type QuoteLine = {
 type RemovedSnapshot = {
   line: QueueLine;
   index: number;
+};
+
+type BgRemoveTarget = {
+  lineId: string;
+  sourceAssetId: string;
+  sourcePreviewUrl: string;
 };
 
 type RemoteDesignPayload = {
@@ -92,19 +106,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const designId = url.searchParams.get("designId") ?? "";
   const designVersion = url.searchParams.get("designVersion") ?? "";
   const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
-  const token = process.env.TEST_API_TOKEN || "";
 
-  const headers = new Headers();
-  if (token && shop) {
-    headers.append(
-      "Set-Cookie",
-      `lgs_shop=${encodeURIComponent(shop)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-    headers.append(
-      "Set-Cookie",
-      `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-  }
+  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, shop);
+
+  const editorConfig = shop
+    ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
+    : null;
 
   return data(
     {
@@ -114,13 +121,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       designId,
       designVersion,
       parentOrigin,
-      pricePerSqIn: 0.049,
+      pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
+      appearance: editorConfig?.appearance ?? DEFAULT_APPEARANCE,
       presets: Object.entries(SIZE_PRESETS).map(([id, p]) => ({
         id,
         label: p.label,
         longestSideIn: p.longestSideIn,
       })),
-      hasDevAuth: Boolean(token && shop),
+      hasDevAuth: hasApiAuth,
     },
     { headers },
   );
@@ -145,6 +153,7 @@ export default function UploadBySizeEditor() {
   );
   const [dirty, setDirty] = useState(false);
   const [loadingDesign, setLoadingDesign] = useState(Boolean(page.designId));
+  const [bgRemove, setBgRemove] = useState<BgRemoveTarget | null>(null);
 
   const active = queue.find((l) => l.id === activeId) ?? queue[0] ?? null;
   const busy = uploading || saving;
@@ -198,6 +207,80 @@ export default function UploadBySizeEditor() {
 
   function formatMoney(cents: number) {
     return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  async function upscaleActive() {
+    if (!active) return;
+    setUploading(true);
+    setError("");
+    try {
+      const dims = resolvedDims(active);
+      const res = await fetch(`/api/assets/${encodeURIComponent(active.asset.assetId)}/upscale`, {
+        method: "POST",
+        credentials: "include",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ widthIn: dims.widthIn, heightIn: dims.heightIn }),
+      });
+      const json = (await res.json()) as UploadedAsset & { error?: string };
+      if (!res.ok) throw new Error(json.error || "Upscale failed");
+      const previewUrl = assetPreviewUrl(json.assetId);
+      setQueue((lines) =>
+        lines.map((line) =>
+          line.id === active.id
+            ? {
+                ...line,
+                asset: {
+                  assetId: json.assetId,
+                  widthPx: json.widthPx,
+                  heightPx: json.heightPx,
+                  dpi: json.dpi,
+                  contentType: json.contentType,
+                },
+                previewUrl,
+              }
+            : line,
+        ),
+      );
+      setDirty(true);
+      setSaved(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upscale failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function openBgRemoveModal() {
+    if (!active) return;
+    setBgRemove({
+      lineId: active.id,
+      sourceAssetId: active.asset.assetId,
+      sourcePreviewUrl: active.previewUrl,
+    });
+  }
+
+  function applyBgRemoveResult(asset: ProcessedAsset, previewUrl: string) {
+    if (!bgRemove) return;
+    setQueue((lines) =>
+      lines.map((line) =>
+        line.id === bgRemove.lineId
+          ? {
+              ...line,
+              asset: {
+                assetId: asset.assetId,
+                widthPx: asset.widthPx,
+                heightPx: asset.heightPx,
+                dpi: asset.dpi,
+                contentType: asset.contentType,
+              },
+              previewUrl,
+            }
+          : line,
+      ),
+    );
+    setDirty(true);
+    setSaved(false);
+    setBgRemove(null);
   }
 
   const refreshQuote = useCallback(
@@ -671,15 +754,29 @@ export default function UploadBySizeEditor() {
                 </span>
                 {activeQuote?.lowDpi || (activeQuote && activeQuote.effectiveDpi < 200) ? (
                   <span className="warn">
-                    Low resolution for print — upload a higher-resolution file or use a smaller size.
-                    Upscale is coming soon.
+                    Low resolution for print — upload a higher-resolution file, use a smaller size, or
+                    upscale below.
                   </span>
                 ) : null}
               </div>
 
               <div className="tool-row">
-                <span className="tool-toggle">Remove background (soon)</span>
-                <span className="tool-toggle">Upscale to 300 DPI (soon)</span>
+                <button
+                  type="button"
+                  className="tool-toggle on"
+                  disabled={busy || !active}
+                  onClick={() => void upscaleActive()}
+                >
+                  Upscale to ~300 DPI
+                </button>
+                <button
+                  type="button"
+                  className="tool-toggle on"
+                  disabled={busy || !active}
+                  onClick={openBgRemoveModal}
+                >
+                  Remove background
+                </button>
               </div>
 
               <div className="fields">
@@ -869,6 +966,17 @@ export default function UploadBySizeEditor() {
           </button>
         </aside>
       </div>
+
+      {bgRemove ? (
+        <BackgroundRemovalModal
+          open
+          sourceAssetId={bgRemove.sourceAssetId}
+          sourcePreviewUrl={bgRemove.sourcePreviewUrl}
+          requestHeaders={headers()}
+          onClose={() => setBgRemove(null)}
+          onApply={applyBgRemoveResult}
+        />
+      ) : null}
     </div>
   );
 }
@@ -934,5 +1042,6 @@ main{padding:20px;display:grid;gap:14px;align-content:start}
 .err{color:#b42318;font-size:12px;margin:0}
 .warn-inline{color:#b45309;font-size:12px;margin:0}
 .ok{color:#17683e;font-size:12px;margin:0}
+${BACKGROUND_REMOVAL_MODAL_CSS}
 @media(max-width:960px){.layout{grid-template-columns:1fr}.summary{border-left:0;border-top:1px solid var(--line)}}
 `;

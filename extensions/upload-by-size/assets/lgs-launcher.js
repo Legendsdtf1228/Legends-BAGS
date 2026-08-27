@@ -20,6 +20,91 @@
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
     var lastFocus = null;
     var scrollY = 0;
+    var gangSheetVariants = [];
+    var variantPicker = root.querySelector("[data-lgs-variant-picker]");
+    var variantSelect = root.querySelector("[data-lgs-variant-select]");
+    var variantHint = root.querySelector("[data-lgs-variant-hint]");
+
+    function formatPrice(cents) {
+      if (cents == null || cents === "") return "";
+      var n = Number(cents);
+      if (!isFinite(n)) return "";
+      var dollars = n / 100;
+      return dollars % 1 === 0 ? "$" + dollars.toFixed(0) : "$" + dollars.toFixed(2);
+    }
+
+    function variantLabel(v) {
+      var height = v.sheetHeightIn != null ? v.sheetHeightIn + "″ sheet" : "Sheet";
+      var price = formatPrice(v.priceCents);
+      return price ? height + " · " + price : height;
+    }
+
+    function findVariantById(id) {
+      if (!id) return null;
+      return (
+        gangSheetVariants.find(function (v) {
+          return String(v.variantId) === String(id);
+        }) || null
+      );
+    }
+
+    function syncVariantHint(variant) {
+      if (!variantHint) return;
+      if (!variant || variant.priceCents == null) {
+        variantHint.hidden = true;
+        variantHint.textContent = "";
+        return;
+      }
+      variantHint.hidden = false;
+      variantHint.textContent =
+        "Selected variant price: " + formatPrice(variant.priceCents) + " (before design pricing adjustments).";
+    }
+
+    function renderVariantPicker() {
+      if (builderType !== "gang_sheet" || gangSheetVariants.length <= 1) {
+        if (variantPicker) variantPicker.hidden = true;
+        return;
+      }
+      if (!variantPicker || !variantSelect) return;
+      variantPicker.hidden = false;
+      variantSelect.innerHTML = "";
+      gangSheetVariants.forEach(function (v) {
+        if (!v.variantId) return;
+        var opt = document.createElement("option");
+        opt.value = String(v.variantId);
+        opt.textContent = variantLabel(v);
+        variantSelect.appendChild(opt);
+      });
+      var current = findVariantById(currentVariantId());
+      if (current && current.variantId) {
+        variantSelect.value = String(current.variantId);
+        syncVariantHint(current);
+      } else if (gangSheetVariants[0] && gangSheetVariants[0].variantId) {
+        variantSelect.value = String(gangSheetVariants[0].variantId);
+        selectVariantOnPage(gangSheetVariants[0].variantId);
+        syncVariantHint(gangSheetVariants[0]);
+      }
+    }
+
+    function applyGangSheetVariants(variants) {
+      gangSheetVariants = Array.isArray(variants) ? variants : [];
+      renderVariantPicker();
+    }
+
+    function handleVariantChange(nextVariantId, fromPicker) {
+      if (!nextVariantId) return;
+      var prev = currentVariantId();
+      if (String(nextVariantId) === String(prev)) return;
+      if (hasDesign()) {
+        clearDesign();
+        setStatus("Sheet height changed — save a new design for this variant.", "warn");
+      }
+      selectVariantOnPage(nextVariantId);
+      syncVariantHint(findVariantById(nextVariantId));
+      if (!fromPicker && variantSelect) {
+        variantSelect.value = String(nextVariantId);
+      }
+    }
 
     function editorOrigin() {
       try {
@@ -27,6 +112,21 @@
       } catch (e) {
         return window.location.origin;
       }
+    }
+
+    /** App proxy on Shopify storefront; direct app URL when editor base is set (dev). */
+    function storefrontApiUrl(path) {
+      var onStorefront =
+        shop &&
+        (window.location.hostname === shop ||
+          window.location.hostname.endsWith(".myshopify.com"));
+      if (onStorefront) {
+        return new URL("/apps/legends-bags/" + path.replace(/^\//, ""), window.location.origin);
+      }
+      if (base) {
+        return new URL(path, base);
+      }
+      return null;
     }
 
     function hasDesign() {
@@ -141,6 +241,7 @@
           "_lgs_sheet_size",
           "_lgs_piece_count",
           "_lgs_price_ref",
+          "_lgs_design_token",
           "Design",
         ].forEach(function (key) {
           removeHidden(form, "properties[" + key + "]");
@@ -148,6 +249,108 @@
       });
       setStatus("Start fresh — create a new design.", "warn");
       syncUi();
+    }
+
+    function selectVariantOnPage(nextVariantId) {
+      if (!nextVariantId) return;
+      variantId = String(nextVariantId);
+      cartForms().forEach(function (form) {
+        var idInput = form.querySelector('[name="id"]');
+        if (idInput) {
+          idInput.value = variantId;
+          idInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      document.querySelectorAll('[name="id"]').forEach(function (input) {
+        if (input.form && isTargetForm(input.form)) {
+          input.value = variantId;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+    }
+
+    function applyAppearanceLabels(appearance) {
+      if (!appearance) return;
+      if (openBtn) {
+        openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build your gang sheet");
+        openBtn.setAttribute("data-label-edit", appearance.launcherEditLabel || "Edit design");
+      }
+      syncUi();
+    }
+
+    function fetchStorefrontSession() {
+      var url = storefrontApiUrl("/session");
+      if (!url || !shop) return Promise.resolve(null);
+      url.searchParams.set("shop", shop);
+      return fetch(url.toString())
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .catch(function () {
+          return null;
+        });
+    }
+
+    function loadStorefrontConfig() {
+      if (!shop) return;
+      var url = storefrontApiUrl("/storefront-config");
+      if (!url) return;
+      url.searchParams.set("shop", shop);
+      if (productGid) url.searchParams.set("productGid", productGid);
+      fetch(url.toString())
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (json) {
+          if (json && json.appearance) applyAppearanceLabels(json.appearance);
+          if (json && json.gangSheetVariants) applyGangSheetVariants(json.gangSheetVariants);
+        })
+        .catch(function () {
+          /* optional */
+        });
+    }
+
+    function hydrateDesignFromUrl() {
+      var params = new URLSearchParams(window.location.search);
+      var fromUrl = params.get("lgs_design_id");
+      if (!fromUrl) {
+        syncUi();
+        return;
+      }
+      var version = params.get("lgs_design_version") || "1";
+      var token = params.get("lgs_token");
+      if (token) {
+        var apiUrl = storefrontApiUrl("designs/" + encodeURIComponent(fromUrl));
+        if (!apiUrl && base) {
+          apiUrl = new URL("/api/designs/" + encodeURIComponent(fromUrl), base);
+        }
+        if (apiUrl) {
+          apiUrl.searchParams.set("version", version);
+          apiUrl.searchParams.set("token", token);
+          if (shop) apiUrl.searchParams.set("shop", shop);
+          fetch(apiUrl.toString())
+            .then(function (res) {
+              return res.ok ? res.json() : null;
+            })
+            .then(function (json) {
+              if (json && json.cartProperties) {
+                attachDesign(
+                  json.designId || fromUrl,
+                  json.version || version,
+                  json.cartProperties,
+                  json.designName,
+                );
+              } else {
+                attachDesign(fromUrl, version);
+              }
+            })
+            .catch(function () {
+              attachDesign(fromUrl, version);
+            });
+          return;
+        }
+      }
+      attachDesign(fromUrl, version);
     }
 
     function editorPath() {
@@ -199,13 +402,24 @@
       lastFocus = document.activeElement;
       if (loading) loading.hidden = false;
       setStatus("Loading editor…", null);
-      frame.src = editorUrl(options);
-      wrap.hidden = false;
-      wrap.setAttribute("aria-hidden", "false");
-      lockScroll();
-      window.setTimeout(function () {
-        if (closeBtn) closeBtn.focus();
-      }, 50);
+
+      function launchEditor(sessionToken) {
+        var u = editorUrl(options);
+        if (sessionToken) {
+          u.searchParams.set("lgs_session", sessionToken);
+        }
+        frame.src = u.toString();
+        wrap.hidden = false;
+        wrap.setAttribute("aria-hidden", "false");
+        lockScroll();
+        window.setTimeout(function () {
+          if (closeBtn) closeBtn.focus();
+        }, 50);
+      }
+
+      fetchStorefrontSession().then(function (json) {
+        launchEditor(json && json.sessionToken ? json.sessionToken : null);
+      });
     }
 
     function closeModal() {
@@ -269,8 +483,13 @@
     });
 
     window.addEventListener("message", function (event) {
-      if (!event.data || event.data.type !== "lgs:design-ready") return;
+      if (!event.data) return;
       if (event.origin !== editorOrigin()) return;
+      if (event.data.type === "lgs:select-variant") {
+        handleVariantChange(event.data.variantId, false);
+        return;
+      }
+      if (event.data.type !== "lgs:design-ready") return;
       var designId = event.data.designId;
       var version = event.data.version;
       if (!designId) return;
@@ -326,19 +545,16 @@
       if (!target || target.name !== "id") return;
       var form = target.form;
       if (!isTargetForm(form)) return;
-      variantId = target.value;
-      if (hasDesign()) {
-        setStatus("Variant changed — reopen the editor if sizing depends on variant.", "warn");
-      }
+      handleVariantChange(target.value, false);
     });
 
-    var params = new URLSearchParams(window.location.search);
-    var fromUrl = params.get("lgs_design_id");
-    if (fromUrl) {
-      attachDesign(fromUrl, params.get("lgs_design_version") || "1");
-    } else {
-      syncUi();
-    }
+    variantSelect &&
+      variantSelect.addEventListener("change", function () {
+        handleVariantChange(variantSelect.value, true);
+      });
+
+    loadStorefrontConfig();
+    hydrateDesignFromUrl();
   }
 
   document

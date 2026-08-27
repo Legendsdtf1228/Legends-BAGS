@@ -24,7 +24,7 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial
 - [ ] End-to-end Shopify checkout on a **dev** store
 - [ ] RIP import validation of generated PNG
 - [ ] Mobile interaction QA on real devices
-- [ ] App proxy auth replacing TEST_API_TOKEN for storefront
+- [x] App proxy auth replacing TEST_API_TOKEN for storefront (session + design hydration; dev token still supported locally)
 - [ ] PostgreSQL + S3 for non-local environments
 - [ ] Security review sign-off
 - [ ] Explicit approval before production install / traffic

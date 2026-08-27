@@ -27,6 +27,32 @@
   font-size: 0.9rem;
 }
 
+.lgs-gs__variant-picker {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.lgs-gs__variant-label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.lgs-gs__variant-label select {
+  font: inherit;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.lgs-gs__variant-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  opacity: 0.75;
+}
+
 .lgs-gs__warn {
   margin: 0;
   padding: 0.65rem 0.75rem;

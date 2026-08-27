@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertPriceMatches,
+  buildGangSheetPricingSnapshot,
   buildPricingSnapshot,
   resolvePhysicalSize,
 } from "../app/domain/pricing";
@@ -59,5 +60,14 @@ describe("pricing", () => {
     expect(snap.totalCents).toBe(118);
     expect(() => assertPriceMatches(items, 118, 0.049)).not.toThrow();
     expect(() => assertPriceMatches(items, 100, 0.049)).toThrow(/Price mismatch/);
+  });
+
+  it("uses fixed variant price for gang sheet when configured", () => {
+    const items = [
+      { assetId: "a", widthIn: 4, heightIn: 2, quantity: 1, rotationDeg: 0 as const },
+    ];
+    const snap = buildGangSheetPricingSnapshot(items, { variantPriceCents: 1700 });
+    expect(snap.totalCents).toBe(1700);
+    expect(snap.areaSqIn).toBe(8);
   });
 });

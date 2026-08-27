@@ -95,3 +95,51 @@ export function BagsPlaceholder(props: {
     </BagsCard>
   );
 }
+
+/** Links to customer editors where upload + canvas live (not in merchant settings pages). */
+export function EditorTryCard(props: {
+  uploadBySizeUrl: string;
+  gangSheetUrl: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <BagsCard title="Try customer editors (upload & canvas)" style={props.style}>
+      <p className="bags-admin-muted">
+        Image upload and the gang sheet canvas are in the <strong>customer editors</strong>, not in
+        this admin sidebar. Open one in a new tab to test uploads, placement, background removal, and
+        save flow.
+      </p>
+      <ol className="bags-admin-muted" style={{ margin: "12px 0", paddingLeft: 20 }}>
+        <li>
+          <strong>Upload by Size</strong> — header button <strong>＋ Choose images</strong>
+        </li>
+        <li>
+          <strong>Gang sheet</strong> — Welcome → <strong>Build a Gang Sheet</strong> → left sidebar{" "}
+          <strong>＋ Upload image(s)</strong>
+        </li>
+        <li>
+          Or use test products on the storefront after adding theme blocks in{" "}
+          <a href="/app/setup">Setup</a>.
+        </li>
+      </ol>
+      <div className="bags-admin-actions">
+        <a
+          href={props.uploadBySizeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bags-admin-btn primary"
+        >
+          Open Upload by Size
+        </a>
+        <a
+          href={props.gangSheetUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bags-admin-btn secondary"
+        >
+          Open Gang Sheet builder
+        </a>
+      </div>
+    </BagsCard>
+  );
+}

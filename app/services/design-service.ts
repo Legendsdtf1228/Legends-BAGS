@@ -7,7 +7,7 @@ import {
 } from "../domain/design/pipeline";
 import type { DesignStateV1 } from "../domain/design/types";
 import { DEFAULT_PRICE_PER_SQ_IN, DESIGN_STATE_SCHEMA_VERSION } from "../domain/design/types";
-import { buildPricingSnapshot } from "../domain/pricing";
+import { buildGangSheetPricingSnapshot, buildPricingSnapshot } from "../domain/pricing";
 import { validateUpload } from "../domain/design/upload";
 import { canEnqueue, shouldRequeueStuckProcessing, type JobStatus } from "../domain/jobs";
 import type { SizeInput } from "../domain/pricing";
@@ -15,6 +15,9 @@ import { assetKey, getObjectStore } from "../domain/storage";
 import { assertDesignStateV1 } from "../domain/design/types";
 import { verifyPriceRef } from "../domain/security/design-access";
 import { signDownload } from "../domain/security/signed-urls";
+import { removeBackgroundFromBytes, type BackgroundRemovalTuning } from "../domain/image/background-removal";
+import { resolveProductBinding } from "../lib/editor-config.server";
+import sharp from "sharp";
 
 export async function createAssetFromUpload(shop: string, bytes: Buffer) {
   const validated = await validateUpload(bytes);
@@ -38,6 +41,73 @@ export async function createAssetFromUpload(shop: string, bytes: Buffer) {
     where: { id: asset.id },
     data: { storageKey: key },
   });
+}
+
+async function gangSheetPricingForDesign(
+  shop: string,
+  items: DesignStateV1["items"],
+  productGid?: string,
+  variantGid?: string,
+) {
+  const config = await prisma.shopConfig.findUnique({ where: { shop } });
+  const binding = await resolveProductBinding(shop, productGid, variantGid);
+  return buildGangSheetPricingSnapshot(items, {
+    pricePerSqIn: binding?.pricePerSqIn ?? config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
+    variantPriceCents: binding?.variantPriceCents ?? null,
+  });
+}
+
+/** Upscale artwork toward 300 DPI effective at the given print size (max 4×). */
+export async function upscaleAssetForPrint(params: {
+  shop: string;
+  assetId: string;
+  widthIn: number;
+  heightIn: number;
+}) {
+  const asset = await prisma.asset.findFirst({
+    where: { id: params.assetId, shop: params.shop },
+  });
+  if (!asset) throw new Error("Asset not found");
+  if (params.widthIn <= 0 || params.heightIn <= 0) {
+    throw new Error("Print size must be positive");
+  }
+
+  const targetWidthPx = Math.round(params.widthIn * 300);
+  const targetHeightPx = Math.round(params.heightIn * 300);
+  const scale = Math.min(
+    targetWidthPx / asset.widthPx,
+    targetHeightPx / asset.heightPx,
+    4,
+  );
+  if (scale <= 1.05) {
+    throw new Error("Image already meets ~300 DPI at this size");
+  }
+
+  const bytes = await getObjectStore().get(asset.storageKey);
+  const upscaled = await sharp(bytes)
+    .resize(Math.round(asset.widthPx * scale), Math.round(asset.heightPx * scale), {
+      kernel: sharp.kernel.lanczos3,
+    })
+    .png()
+    .toBuffer();
+
+  return createAssetFromUpload(params.shop, upscaled);
+}
+
+/** Remove image background; returns a new PNG asset with alpha. */
+export async function removeBackgroundFromAsset(params: {
+  shop: string;
+  assetId: string;
+  tuning?: BackgroundRemovalTuning;
+}) {
+  const asset = await prisma.asset.findFirst({
+    where: { id: params.assetId, shop: params.shop },
+  });
+  if (!asset) throw new Error("Asset not found");
+
+  const bytes = await getObjectStore().get(asset.storageKey);
+  const cutout = await removeBackgroundFromBytes(bytes, params.tuning ?? {});
+  return createAssetFromUpload(params.shop, cutout);
 }
 
 export async function createUploadBySizeDesign(params: {
@@ -212,7 +282,17 @@ export async function quoteUploadBySize(params: {
         size: upload.size,
       };
     }),
-    { pricePerSqIn: config?.pricePerSqIn },
+    {
+      pricePerSqIn: config?.pricePerSqIn,
+      sheet: config
+        ? {
+            widthIn: config.sheetWidthIn,
+            maxHeightIn: config.maxHeightIn,
+            imageMarginIn: config.imageMarginIn,
+            artboardMarginIn: config.artboardMarginIn,
+          }
+        : undefined,
+    },
   );
 
   const lines = state.items.map((item) => {
@@ -243,10 +323,15 @@ export async function upsertProductBinding(params: {
   pricePerSqIn?: number;
   sheetWidthIn?: number;
   maxHeightIn?: number;
+  sheetHeightIn?: number;
+  variantPriceCents?: number;
 }) {
+  if (!params.variantGid) {
+    throw new Error("variantGid is required for product bindings");
+  }
   return prisma.productBinding.upsert({
     where: {
-      shop_productGid: { shop: params.shop, productGid: params.productGid },
+      shop_variantGid: { shop: params.shop, variantGid: params.variantGid },
     },
     create: {
       shop: params.shop,
@@ -256,6 +341,8 @@ export async function upsertProductBinding(params: {
       pricePerSqIn: params.pricePerSqIn,
       sheetWidthIn: params.sheetWidthIn,
       maxHeightIn: params.maxHeightIn,
+      sheetHeightIn: params.sheetHeightIn,
+      variantPriceCents: params.variantPriceCents,
     },
     update: {
       variantGid: params.variantGid,
@@ -263,6 +350,8 @@ export async function upsertProductBinding(params: {
       pricePerSqIn: params.pricePerSqIn,
       sheetWidthIn: params.sheetWidthIn,
       maxHeightIn: params.maxHeightIn,
+      sheetHeightIn: params.sheetHeightIn,
+      variantPriceCents: params.variantPriceCents,
     },
   });
 }
@@ -281,7 +370,6 @@ export async function createGangSheetDesign(params: {
   });
   if (ownedAssets !== assetIds.length) throw new Error("One or more assets were not found");
 
-  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
   const normalizedItems = params.items.map((item, index) => {
     if (!Number.isFinite(item.xIn) || !Number.isFinite(item.yIn)) {
       throw new Error("Every gang sheet item requires finite xIn and yIn");
@@ -296,12 +384,18 @@ export async function createGangSheetDesign(params: {
       zIndex: item.zIndex ?? index,
     };
   });
+  const pricing = await gangSheetPricingForDesign(
+    params.shop,
+    normalizedItems,
+    params.productGid,
+    params.variantGid,
+  );
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
     workflow: "gang_sheet",
     sheet: params.sheet,
     items: normalizedItems,
-    pricing: buildPricingSnapshot(normalizedItems, config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN),
+    pricing,
     allowRotate90: false,
     layout: "manual",
   };
@@ -379,7 +473,6 @@ export async function saveGangSheetNewVersion(params: {
   });
   if (ownedAssets !== assetIds.length) throw new Error("One or more assets were not found");
 
-  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
   const normalizedItems = params.items.map((item, index) => {
     if (!Number.isFinite(item.xIn) || !Number.isFinite(item.yIn)) {
       throw new Error("Every gang sheet item requires finite xIn and yIn");
@@ -394,13 +487,19 @@ export async function saveGangSheetNewVersion(params: {
       zIndex: item.zIndex ?? index,
     };
   });
+  const pricing = await gangSheetPricingForDesign(
+    params.shop,
+    normalizedItems,
+    params.productGid ?? existing.productGid ?? undefined,
+    params.variantGid ?? existing.variantGid ?? undefined,
+  );
 
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
     workflow: "gang_sheet",
     sheet: params.sheet,
     items: normalizedItems,
-    pricing: buildPricingSnapshot(normalizedItems, config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN),
+    pricing,
     allowRotate90: false,
     layout: "manual",
   };

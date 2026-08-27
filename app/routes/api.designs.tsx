@@ -7,14 +7,14 @@ import {
 } from "../services/design-service";
 import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
-import { assertTestAccess } from "../domain/security/test-access";
+import { assertCustomerApiAccess } from "../domain/security/test-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const shop = assertTestAccess(request);
+  const shop = assertCustomerApiAccess(request);
   const body = (await request.json()) as {
     assetId?: string;
     size?: SizeInput;

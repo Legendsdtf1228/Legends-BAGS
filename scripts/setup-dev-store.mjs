@@ -120,7 +120,7 @@ async function main() {
   for (const spec of PRODUCTS) {
     const p = await ensureProduct(session.accessToken, spec);
     await prisma.productBinding.upsert({
-      where: { shop_productGid: { shop, productGid: p.id } },
+      where: { shop_variantGid: { shop, variantGid: p.variantId } },
       create: {
         shop,
         productGid: p.id,
@@ -128,12 +128,16 @@ async function main() {
         builderType: spec.builderType,
         pricePerSqIn: spec.builderType === "upload_by_size" ? 0.049 : null,
         sheetWidthIn: 22.5,
-        maxHeightIn: 360,
+        maxHeightIn: spec.builderType === "gang_sheet" ? 24 : 360,
+        sheetHeightIn: spec.builderType === "gang_sheet" ? 24 : null,
+        variantPriceCents: spec.builderType === "gang_sheet" ? 1700 : null,
       },
       update: {
         variantGid: p.variantId,
         builderType: spec.builderType,
         pricePerSqIn: spec.builderType === "upload_by_size" ? 0.049 : null,
+        sheetHeightIn: spec.builderType === "gang_sheet" ? 24 : null,
+        variantPriceCents: spec.builderType === "gang_sheet" ? 1700 : null,
       },
     });
     created.push({

@@ -41,6 +41,8 @@ Upload → design state → cart line properties → order webhook → nest → 
 4. `npm test`
 5. `npm run dev` (Shopify CLI; requires Partner auth)
 
+For a persistent public URL (staging), see [Railway deployment](docs/operations/railway-deploy.md).
+
 ### Theme blocks
 
 Extension: `extensions/upload-by-size`
@@ -83,6 +85,7 @@ sessionStorage.setItem('lgs_shop', 'your-dev-shop.myshopify.com')
 - [Architecture](docs/architecture/README.md)
 - [API contracts](docs/architecture/api-contracts.md)
 - [Setup & parallel testing](docs/operations/setup-and-parallel-testing.md)
+- [Railway deployment](docs/operations/railway-deploy.md) — public staging URL for Shopify dev-store testing
 - [Production readiness](docs/operations/production-readiness.md)
 - [Known limitations](docs/operations/known-limitations.md)
 - [ADRs](docs/adr/)

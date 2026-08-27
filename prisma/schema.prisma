@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:dev.sqlite"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -63,11 +63,14 @@ model ProductBinding {
   artboardMarginIn Float?
   /** Fixed variant price for gang sheet length products (cents) */
   variantPriceCents Int?
+  /** Sheet height in inches for this variant (gang sheet catalog) */
+  sheetHeightIn       Float?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  @@unique([shop, productGid])
+  @@unique([shop, variantGid])
   @@index([shop])
+  @@index([shop, productGid])
 }
 
 model Asset {

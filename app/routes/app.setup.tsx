@@ -7,7 +7,8 @@ import { Form, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { upsertProductBinding } from "../services/design-service";
-import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
+import { customerEditorUrls } from "../lib/editor-links.server";
+import { BagsPageHeader, BagsCard, EditorTryCard } from "../components/merchant/bags-admin-ui";
 
 const UBS_TITLE = "[LGS DEV] Upload by Size — Test Gang Sheet";
 const UBS_HANDLE = "lgs-dev-upload-by-size-test";
@@ -113,6 +114,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     shop: session.shop,
     appUrl: process.env.SHOPIFY_APP_URL || "",
+    editors: customerEditorUrls(session.shop, process.env.SHOPIFY_APP_URL || ""),
     testApiConfigured: Boolean(process.env.TEST_API_TOKEN),
   };
 };
@@ -248,6 +250,31 @@ export default function SetupPage() {
             TEST_API_TOKEN configured: {data.testApiConfigured ? "yes" : "no"}
           </p>
         </BagsCard>
+
+        <BagsCard title="4. Gang sheet variants" style={{ marginTop: 16 }}>
+          <p className="bags-admin-muted">
+            After creating the gang sheet product, run{" "}
+            <code>npm run setup:gang-sheet-variants</code> locally to bind 13 sheet-height variants
+            ($17–$195). The storefront block shows a sheet-height picker when multiple variants are bound.
+          </p>
+        </BagsCard>
+
+        <BagsCard title="5. Railway staging" style={{ marginTop: 16 }}>
+          <p className="bags-admin-muted">
+            Deploy the web app to Railway for a stable public URL (SQLite + volume at{" "}
+            <code>/data</code>). Follow <code>docs/operations/railway-deploy.md</code> in the repo for
+            env vars, volume mount, and Shopify Partner URL updates.
+          </p>
+          <p className="bags-admin-muted" style={{ marginTop: 8 }}>
+            Current app URL: {data.appUrl || "(set SHOPIFY_APP_URL or deploy to Railway)"}
+          </p>
+        </BagsCard>
+
+        <EditorTryCard
+          uploadBySizeUrl={data.editors.uploadBySize}
+          gangSheetUrl={data.editors.gangSheet}
+          style={{ marginTop: 16 }}
+        />
 
         {result ? (
           <BagsCard title="Result" style={{ marginTop: 16 }}>

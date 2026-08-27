@@ -1,21 +1,34 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
-  getDesignState,
-  getDesignStateAtVersion,
+  buildDesignApiResponse,
+  parseDesignApiQuery,
+  resolveDesignApiShop,
+} from "../lib/design-api.server";
+import { assertCustomerApiAccess } from "../domain/security/test-access";
+import {
   saveGangSheetNewVersion,
   saveUploadBySizeNewVersion,
   validateDesignForCheckout,
 } from "../services/design-service";
-import prisma from "../db.server";
-import { assertTestAccess } from "../domain/security/test-access";
+import { signDesignAccess } from "../domain/security/design-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
-import { signDesignAccess } from "../domain/security/design-access";
 
 function designResponse(
   shop: string,
-  design: { id: string; currentVersion: number; name: string | null; status: string; productGid: string | null; variantGid: string | null; sourceDesignId: string | null; sourceDesignVersion: number | null; sourceOrderId: string | null; archived: boolean },
+  design: {
+    id: string;
+    currentVersion: number;
+    name: string | null;
+    status: string;
+    productGid: string | null;
+    variantGid: string | null;
+    sourceDesignId: string | null;
+    sourceDesignVersion: number | null;
+    sourceOrderId: string | null;
+    archived: boolean;
+  },
   state: DesignStateV1,
   version: number,
 ) {
@@ -48,57 +61,25 @@ function designResponse(
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const shop = assertTestAccess(request);
   const designId = params.designId;
   if (!designId) throw new Response("Not found", { status: 404 });
 
-  const url = new URL(request.url);
-  const versionParam = url.searchParams.get("version");
-  const version = versionParam ? Number(versionParam) : undefined;
-
-  try {
-    const { design, state } = await getDesignState(shop, designId, version);
-    const assetIds = [...new Set(state.items.map((i) => i.assetId))];
-    const assets = await prisma.asset.findMany({
-      where: { shop, id: { in: assetIds } },
-    });
-    const assetMap = Object.fromEntries(
-      assets.map((a) => [
-        a.id,
-        {
-          widthPx: a.widthPx,
-          heightPx: a.heightPx,
-          dpi: a.dpi,
-          contentType: a.contentType,
-        },
-      ]),
-    );
-    const jobs = await prisma.renderJob.findMany({
-      where: { shop, designId },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    });
-    return Response.json({
-      ...designResponse(shop, design, state, version ?? design.currentVersion),
-      assets: assetMap,
-      jobs: jobs.map((j) => ({
-        id: j.id,
-        status: j.status,
-        widthPx: j.widthPx,
-        heightPx: j.heightPx,
-        lastError: j.lastError,
-      })),
-    });
-  } catch {
-    return Response.json({ error: "Not found" }, { status: 404 });
+  const query = parseDesignApiQuery(request);
+  let shop: string;
+  if (query.accessToken) {
+    shop = resolveDesignApiShop(designId, query);
+  } else {
+    shop = assertCustomerApiAccess(request);
   }
+
+  return buildDesignApiResponse(shop, designId, query);
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "PUT" && request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const shop = assertTestAccess(request);
+  const shop = assertCustomerApiAccess(request);
   const designId = params.designId;
   if (!designId) return Response.json({ error: "Not found" }, { status: 404 });
 

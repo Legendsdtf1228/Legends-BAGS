@@ -9,6 +9,11 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import {
+  BACKGROUND_REMOVAL_MODAL_CSS,
+  BackgroundRemovalModal,
+  type ProcessedAsset,
+} from "../components/editor/background-removal-modal";
+import {
   alignSelected,
   assetPreviewUrl,
   clearDraft,
@@ -43,6 +48,8 @@ import {
   getShopAppearance,
   type ShopAppearance,
 } from "../lib/shop-appearance.server";
+import { loadEditorPageConfig } from "../lib/editor-config.server";
+import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
 
 type Asset = {
   assetId: string;
@@ -106,6 +113,11 @@ type AutoDraft = {
 };
 
 type AutoPhase = "setup" | "review";
+
+type BgRemoveTarget = {
+  sourceAssetId: string;
+  sourcePreviewUrl: string;
+};
 
 type PoolItem = {
   id: string;
@@ -275,19 +287,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const designId = url.searchParams.get("designId") ?? "";
   const designVersion = url.searchParams.get("designVersion") ?? "";
   const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
-  const token = process.env.TEST_API_TOKEN || "";
-  const headers = new Headers();
-  if (token && shop) {
-    headers.append(
-      "Set-Cookie",
-      `lgs_shop=${encodeURIComponent(shop)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-    headers.append(
-      "Set-Cookie",
-      `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
-    );
-  }
-  const appearance = shop ? await getShopAppearance(shop) : DEFAULT_APPEARANCE;
+  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, shop);
+  const editorConfig = shop
+    ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
+    : null;
+  const appearance = editorConfig?.appearance ?? DEFAULT_APPEARANCE;
   return data(
     {
       shop,
@@ -297,8 +301,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
       designVersion,
       parentOrigin,
       editorOrigin: process.env.SHOPIFY_APP_URL || "",
-      hasDevAuth: Boolean(token && shop),
+      hasDevAuth: hasApiAuth,
       appearance,
+      pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
+      variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
+      gangSheetVariants: editorConfig?.gangSheetVariants ?? [],
+      defaultSheet: editorConfig?.sheet ?? {
+        widthIn: 22.5,
+        maxHeightIn: 24,
+        imageMarginIn: 0.15,
+        artboardMarginIn: 0.1,
+      },
     },
     { headers },
   );
@@ -323,8 +336,13 @@ export default function GangSheetEditor() {
   const [future, setFuture] = useState<CanvasItem[][]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [sheetWidth, setSheetWidth] = useState(22.5);
-  const [sheetHeight, setSheetHeight] = useState(24);
+  const [sheetWidth, setSheetWidth] = useState(page.defaultSheet.widthIn);
+  const [sheetHeight, setSheetHeight] = useState(() => {
+    const match = page.gangSheetVariants.find((v) =>
+      v.variantGid?.endsWith(`/${page.variantId}`),
+    );
+    return match?.sheetHeightIn ?? page.defaultSheet.maxHeightIn;
+  });
   const [zoom, setZoom] = useState(70);
   const [gap, setGap] = useState(0.15);
   const [uploading, setUploading] = useState(false);
@@ -367,6 +385,7 @@ export default function GangSheetEditor() {
   const [libraryRenameValue, setLibraryRenameValue] = useState("");
   const [showLibrarySave, setShowLibrarySave] = useState(false);
   const [libraryName, setLibraryName] = useState("");
+  const [bgRemove, setBgRemove] = useState<BgRemoveTarget | null>(null);
   const [librarySaving, setLibrarySaving] = useState(false);
   const [editingDesignId, setEditingDesignId] = useState<string | null>(page.designId || null);
   const [editingVersion, setEditingVersion] = useState<number | null>(
@@ -415,7 +434,10 @@ export default function GangSheetEditor() {
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
     [items],
   );
-  const estimate = Math.round(usedArea * 4.9) / 100;
+  const estimate =
+    page.variantPriceCents != null
+      ? page.variantPriceCents / 100
+      : Math.round(usedArea * page.pricePerSqIn * 100) / 100;
   const utilization = Math.min(100, Math.round((usedArea / (sheetWidth * sheetHeight)) * 100));
 
   const overlappingIds = useMemo(() => findOverlappingIds(items), [items]);
@@ -451,6 +473,20 @@ export default function GangSheetEditor() {
   useEffect(() => {
     if (sidebarTab === "gallery") void refreshGallery();
   }, [sidebarTab]);
+
+  useEffect(() => {
+    if (!page.gangSheetVariants.length) return;
+    const match = page.gangSheetVariants.find((v) => v.sheetHeightIn === sheetHeight);
+    if (!match?.variantGid) return;
+    const variantId = match.variantGid.replace("gid://shopify/ProductVariant/", "");
+    if (!variantId || variantId === page.variantId) return;
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { type: "lgs:select-variant", variantId },
+        page.parentOrigin || page.editorOrigin || "*",
+      );
+    }
+  }, [sheetHeight, page.gangSheetVariants, page.parentOrigin, page.editorOrigin, page.variantId]);
 
   useEffect(() => {
     if (!page.designId) return;
@@ -1185,6 +1221,42 @@ export default function GangSheetEditor() {
     setUploadPool((pool) => pool.filter((p) => p.id !== poolId));
   }
 
+  function openBgRemoveForAsset(assetId: string, previewUrl: string) {
+    setBgRemove({ sourceAssetId: assetId, sourcePreviewUrl: previewUrl });
+  }
+
+  function replaceAssetEverywhere(oldAssetId: string, asset: Asset, previewUrl: string) {
+    setUploadPool((pool) =>
+      pool.map((p) =>
+        p.asset.assetId === oldAssetId ? { ...p, asset, previewUrl } : p,
+      ),
+    );
+    setAutoDrafts((drafts) =>
+      drafts.map((d) =>
+        d.asset.assetId === oldAssetId ? { ...d, asset, previewUrl } : d,
+      ),
+    );
+    pushHistory(
+      itemsRef.current.map((i) =>
+        i.assetId === oldAssetId
+          ? {
+              ...i,
+              ...asset,
+              previewUrl,
+            }
+          : i,
+      ),
+    );
+    setSaved(false);
+    setMessage("Background removed — artwork updated.");
+  }
+
+  function applyBgRemoveResult(processed: ProcessedAsset, previewUrl: string) {
+    if (!bgRemove) return;
+    replaceAssetEverywhere(bgRemove.sourceAssetId, processed, previewUrl);
+    setBgRemove(null);
+  }
+
   function handleSidebarTab(tab: SidebarTab) {
     if (tab === "auto") {
       setScreen("auto_build");
@@ -1755,7 +1827,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{CSS}</style>
+        <style>{BAGS_BASE_CSS}{CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -1823,6 +1895,12 @@ export default function GangSheetEditor() {
                   </select>
                 </label>
               </div>
+
+              <p className="welcome-tip">
+                Upload is inside the canvas: choose <strong>Build a Gang Sheet</strong> below, then use{" "}
+                <strong>＋ Upload image(s)</strong> in the left sidebar (or drag PNG/JPEG onto the drop
+                zone).
+              </p>
 
               <div className="welcome-grid two-col">
                 <button
@@ -2074,7 +2152,10 @@ export default function GangSheetEditor() {
               <div className="welcome-foot">
                 <span>Selected sheet · est. empty sheet</span>
                 <strong>
-                  {sheetWidth}″ × {sheetHeight}″ · ${((sheetWidth * sheetHeight) * 0.049).toFixed(2)} max · $0.049/in² printed
+                  {sheetWidth}″ × {sheetHeight}″ ·{" "}
+                  {page.variantPriceCents != null
+                    ? `$${(page.variantPriceCents / 100).toFixed(2)} sheet price`
+                    : `$${((sheetWidth * sheetHeight) * page.pricePerSqIn).toFixed(2)} max · $${page.pricePerSqIn.toFixed(3)}/in² printed`}
                 </strong>
               </div>
             </div>
@@ -2094,7 +2175,7 @@ export default function GangSheetEditor() {
 
     return (
       <div className="bags auto-mode lgs-editor" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{CSS}</style>
+        <style>{BAGS_BASE_CSS}{CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         <header>
           <div className="brand">
             <b>L</b>
@@ -2579,7 +2660,7 @@ export default function GangSheetEditor() {
 
   return (
     <div className="bags lgs-editor" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{CSS}</style>
+      <style>{BAGS_BASE_CSS}{CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <header className="editor-header">
@@ -2791,6 +2872,7 @@ export default function GangSheetEditor() {
                         </button>
                         <div className="pool-item-actions">
                           <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
+                          <button type="button" aria-label="Remove background" title="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>✂</button>
                           <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>×</button>
                         </div>
                       </div>
@@ -3119,6 +3201,15 @@ export default function GangSheetEditor() {
                 <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
                 <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
                 <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
+                {selected.kind !== "text" && !selected.assetId.startsWith("text-") ? (
+                  <button
+                    type="button"
+                    onClick={() => openBgRemoveForAsset(selected.assetId, selected.previewUrl)}
+                    aria-label="Remove background"
+                  >
+                    ✂ Remove BG
+                  </button>
+                ) : null}
                 <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
                 <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
               </div>
@@ -3176,6 +3267,17 @@ export default function GangSheetEditor() {
           {saving ? "…" : "Save"}
         </button>
       </nav>
+
+      {bgRemove ? (
+        <BackgroundRemovalModal
+          open
+          sourceAssetId={bgRemove.sourceAssetId}
+          sourcePreviewUrl={bgRemove.sourcePreviewUrl}
+          requestHeaders={{ "X-LGS-Shop": page.shop }}
+          onClose={() => setBgRemove(null)}
+          onApply={applyBgRemoveResult}
+        />
+      ) : null}
     </div>
   );
 }
