@@ -17,11 +17,23 @@ import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const [assignments, staffSheets] = await Promise.all([
-    listDesignAssignments(session.shop),
-    listStaffSheets(session.shop),
-  ]);
-  return { assignments, staffSheets };
+  let assignments: Awaited<ReturnType<typeof listDesignAssignments>> = [];
+  let staffSheets: Awaited<ReturnType<typeof listStaffSheets>> = [];
+  let loadError: string | null = null;
+
+  try {
+    [assignments, staffSheets] = await Promise.all([
+      listDesignAssignments(session.shop),
+      listStaffSheets(session.shop),
+    ]);
+  } catch (err) {
+    loadError =
+      err instanceof Error
+        ? err.message
+        : "Build & Assign is temporarily unavailable. Run database migrations and restart the app.";
+  }
+
+  return { assignments, staffSheets, loadError };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -59,7 +71,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function BuildAssignPage() {
-  const { assignments, staffSheets } = useLoaderData<typeof loader>();
+  const { assignments, staffSheets, loadError } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
   return (
@@ -69,6 +81,14 @@ export default function BuildAssignPage() {
         subtitle="Assign staff-built or customer designs to a person or order follow-up"
       />
       <div className="bags-admin-content">
+        {loadError ? (
+          <BagsCard style={{ marginBottom: 16 }}>
+            <p style={{ color: "#b42318", margin: 0 }}>{loadError}</p>
+            <p className="bags-admin-muted" style={{ margin: "8px 0 0" }}>
+              Run <code>npm run setup</code> to apply migrations, then restart the dev server.
+            </p>
+          </BagsCard>
+        ) : null}
         {actionData?.message ? (
           <BagsCard style={{ marginBottom: 16 }}>
             <p className="bags-admin-muted">{actionData.message}</p>
