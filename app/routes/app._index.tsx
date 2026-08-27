@@ -9,7 +9,15 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { processNextRenderJob, recoverStuckJobs } from "../services/design-service";
 import { ensureShopConfig, getHomeStats, listMerchantDesignRows } from "../lib/merchant-loaders.server";
 import { customerEditorUrls } from "../lib/editor-links.server";
-import { BagsPageHeader, BagsCard, BagsStat, EditorTryCard } from "../components/merchant/bags-admin-ui";
+import {
+  BagsPageHeader,
+  BagsCard,
+  BagsStat,
+  BagsQuickActions,
+  BagsPipeline,
+  BagsStatusBadge,
+  EditorTryCard,
+} from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -49,55 +57,114 @@ export default function MerchantHomePage() {
   const { shop, appUrl, editors, config, stats, recent } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
+  const pipelineMax = Math.max(
+    stats.queuedJobs,
+    stats.processingJobs,
+    stats.completedJobs,
+    stats.failedJobs,
+    1,
+  );
+
   return (
     <>
       <BagsPageHeader
         title="Home"
-        subtitle={`Welcome back · ${shop}`}
+        subtitle={`Legends BAGS merchant dashboard · ${shop}`}
         actions={
-          <>
-            <Link to="/app/setup" className="bags-admin-btn ghost">
-              Setup
-            </Link>
-            <Form method="post">
-              <input type="hidden" name="intent" value="process_jobs" />
-              <button type="submit" className="bags-admin-btn primary">
-                Process next render job
-              </button>
-            </Form>
-          </>
+          <Link to="/app/setup" className="bags-admin-btn primary">
+            Setup & install
+          </Link>
         }
       />
       <div className="bags-admin-content">
         <div className="bags-admin-grid stats" style={{ marginBottom: 16 }}>
-          <BagsStat label="Active designs" value={stats.designCount} />
-          <BagsStat label="Linked orders" value={stats.orderCount} />
-          <BagsStat label="Queued jobs" value={stats.queuedJobs} />
-          <BagsStat label="Completed renders" value={stats.completedJobs} />
-          <BagsStat label="Product bindings" value={stats.bindings} />
+          <BagsStat label="Active designs" value={stats.designCount} accent="orange" />
+          <BagsStat label="Linked orders" value={stats.orderCount} accent="blue" />
+          <BagsStat label="Queued jobs" value={stats.queuedJobs} accent="purple" />
+          <BagsStat label="Completed renders" value={stats.completedJobs} accent="green" />
+          {stats.failedJobs > 0 ? (
+            <BagsStat label="Failed jobs" value={stats.failedJobs} accent="red" />
+          ) : null}
+          <BagsStat label="Product bindings" value={stats.bindings} accent="blue" />
         </div>
 
-        <div className="bags-admin-grid" style={{ gridTemplateColumns: "1.2fr 1fr", marginBottom: 16 }}>
-          <BagsCard title="Shop defaults">
-            <p className="bags-admin-muted">
-              ${config.pricePerSqIn.toFixed(3)}/in² · {config.sheetWidthIn}″ width · {config.maxHeightIn}″ max
-              height · {config.imageMarginIn}″ image margin
-            </p>
-            <div className="bags-admin-actions" style={{ marginTop: 12 }}>
-              <Link to="/app/general" className="bags-admin-btn ghost">
-                Edit general settings
-              </Link>
-              <Link to="/app/image-to-sheet" className="bags-admin-btn ghost">
-                Image to Sheet
-              </Link>
-              <Link to="/app/gangsheet-builder" className="bags-admin-btn ghost">
-                Gangsheet Builder
+        <BagsCard title="Quick actions" style={{ marginBottom: 16 }}>
+          <BagsQuickActions
+            items={[
+              {
+                to: "/app/products",
+                icon: "products",
+                title: "Products",
+                subtitle: "Bind builder products and variants",
+              },
+              {
+                to: "/app/designs",
+                icon: "designs",
+                title: "Designs",
+                subtitle: "Preview, download, and manage customer art",
+              },
+              {
+                to: "/app/orders",
+                icon: "orders",
+                title: "Orders",
+                subtitle: "View linked Shopify orders",
+              },
+              {
+                to: "/app/gangsheet-builder",
+                icon: "gangsheet-builder",
+                title: "Gangsheet Builder",
+                subtitle: "Sheet sizes, margins, and builder defaults",
+              },
+              {
+                to: "/app/image-to-sheet",
+                icon: "image-to-sheet",
+                title: "Upload by Size",
+                subtitle: "Presets, pricing, and size limits",
+              },
+              {
+                to: "/app/appearance",
+                icon: "appearance",
+                title: "Appearance",
+                subtitle: "Welcome text and accent colors",
+              },
+            ]}
+          />
+        </BagsCard>
+
+        <div className="bags-admin-grid two" style={{ marginBottom: 16 }}>
+          <BagsCard title="Render pipeline">
+            <BagsPipeline
+              rows={[
+                { label: "Queued", value: stats.queuedJobs, max: pipelineMax },
+                { label: "Processing", value: stats.processingJobs, max: pipelineMax },
+                { label: "Completed", value: stats.completedJobs, max: pipelineMax },
+                { label: "Failed", value: stats.failedJobs, max: pipelineMax },
+              ]}
+            />
+            <div className="bags-admin-actions" style={{ marginTop: 14 }}>
+              <Link to="/app/designs?status=ordered" className="bags-admin-btn ghost">
+                View ordered designs
               </Link>
             </div>
           </BagsCard>
-          <BagsCard title="Editor base URL">
-            <p className="bags-admin-muted">Paste into theme block settings on each builder product.</p>
-            <code style={{ display: "block", marginTop: 8, wordBreak: "break-all", fontSize: 12 }}>
+
+          <BagsCard title="Shop defaults">
+            <p className="bags-admin-muted">
+              ${config.pricePerSqIn.toFixed(3)}/in² · {config.sheetWidthIn}″ sheet width ·{" "}
+              {config.maxHeightIn}″ max height · {config.imageMarginIn}″ image margin
+            </p>
+            <div className="bags-admin-actions" style={{ marginTop: 12 }}>
+              <Link to="/app/general" className="bags-admin-btn ghost">
+                General settings
+              </Link>
+              <Link to="/app/build-assign" className="bags-admin-btn ghost">
+                Build & Assign
+              </Link>
+            </div>
+            <p className="bags-admin-muted" style={{ marginTop: 14 }}>
+              Editor base URL for theme blocks:
+            </p>
+            <code style={{ display: "block", marginTop: 6, wordBreak: "break-all", fontSize: 12 }}>
               {appUrl || "(Set SHOPIFY_APP_URL — run shopify app dev)"}
             </code>
           </BagsCard>
@@ -109,19 +176,11 @@ export default function MerchantHomePage() {
           style={{ marginBottom: 16 }}
         />
 
-        {actionData ? (
-          <BagsCard title="Job processor" style={{ marginBottom: 16 }}>
-            <pre style={{ margin: 0, fontSize: 12, overflow: "auto" }}>
-              {JSON.stringify(actionData, null, 2)}
-            </pre>
-          </BagsCard>
-        ) : null}
-
-        <BagsCard title="Recent designs">
+        <BagsCard title="Recent designs" style={{ marginBottom: 16 }}>
           {recent.length === 0 ? (
             <p className="bags-admin-muted">
-              No designs yet. Use <Link to="/app/setup">Setup</Link> to create test products, then place a
-              storefront order.
+              No designs yet. Use <Link to="/app/setup">Setup</Link> to create test products, then
+              open a storefront editor and place an order.
             </p>
           ) : (
             <>
@@ -139,11 +198,19 @@ export default function MerchantHomePage() {
                   {recent.map((row) => (
                     <tr key={row.id}>
                       <td>
-                        <Link to={`/app/designs/${row.id}`}>{row.name || row.id.slice(0, 12) + "…"}</Link>
+                        <Link to={`/app/designs/${row.id}`}>
+                          {row.name || row.id.slice(0, 12) + "…"}
+                        </Link>
                       </td>
-                      <td>{row.workflow}</td>
-                      <td>{row.status}</td>
-                      <td>{row.jobStatus ?? "—"}</td>
+                      <td>
+                        {row.workflow === "gang_sheet" ? "Gang sheet" : "Upload by Size"}
+                      </td>
+                      <td>
+                        <BagsStatusBadge status={row.status} />
+                      </td>
+                      <td>
+                        {row.jobStatus ? <BagsStatusBadge status={row.jobStatus} /> : "—"}
+                      </td>
                       <td>{new Date(row.updatedAt).toLocaleString()}</td>
                     </tr>
                   ))}
@@ -156,6 +223,23 @@ export default function MerchantHomePage() {
               </div>
             </>
           )}
+        </BagsCard>
+
+        <BagsCard title="Developer tools">
+          <p className="bags-admin-muted">
+            Manually drain the render queue when testing without a background worker.
+          </p>
+          <Form method="post" className="bags-admin-actions" style={{ marginTop: 12 }}>
+            <input type="hidden" name="intent" value="process_jobs" />
+            <button type="submit" className="bags-admin-btn ghost">
+              Process next render job
+            </button>
+          </Form>
+          {actionData ? (
+            <pre style={{ margin: "12px 0 0", fontSize: 12, overflow: "auto" }}>
+              {JSON.stringify(actionData, null, 2)}
+            </pre>
+          ) : null}
         </BagsCard>
       </div>
     </>
