@@ -19,6 +19,21 @@ import { removeBackgroundFromBytes, type BackgroundRemovalTuning } from "../doma
 import { resolveProductBinding } from "../lib/editor-config.server";
 import sharp from "sharp";
 
+/** Storefront library ownership — unassigned drafts remain editable in-session. */
+export function assertDesignCustomerAccess(
+  design: { customerKey: string | null },
+  customerKey: string | null,
+) {
+  if (!design.customerKey) return;
+  if (!customerKey || design.customerKey !== customerKey) {
+    throw new Error("Design not found");
+  }
+}
+
+function assignCustomerKeyOnCreate(customerKey?: string | null) {
+  return customerKey ? { customerKey } : {};
+}
+
 export async function createAssetFromUpload(shop: string, bytes: Buffer) {
   const validated = await validateUpload(bytes);
   const store = getObjectStore();
@@ -116,6 +131,7 @@ export async function createUploadBySizeDesign(params: {
   size: SizeInput;
   productGid?: string;
   variantGid?: string;
+  customerKey?: string | null;
 }) {
   const asset = await prisma.asset.findFirst({
     where: { id: params.assetId, shop: params.shop },
@@ -149,6 +165,7 @@ export async function createUploadBySizeDesign(params: {
       productGid: params.productGid,
       variantGid: params.variantGid,
       currentVersion: 1,
+      ...assignCustomerKeyOnCreate(params.customerKey),
       versions: {
         create: {
           version: 1,
@@ -182,6 +199,7 @@ export async function createMultiUploadBySizeDesign(params: {
   uploads: Array<{ assetId: string; size: SizeInput }>;
   productGid?: string;
   variantGid?: string;
+  customerKey?: string | null;
 }) {
   if (!params.uploads.length) throw new Error("Add at least one artwork upload");
 
@@ -226,6 +244,7 @@ export async function createMultiUploadBySizeDesign(params: {
       productGid: params.productGid,
       variantGid: params.variantGid,
       currentVersion: 1,
+      ...assignCustomerKeyOnCreate(params.customerKey),
       versions: {
         create: {
           version: 1,
@@ -362,6 +381,7 @@ export async function createGangSheetDesign(params: {
   sheet: DesignStateV1["sheet"];
   productGid?: string;
   variantGid?: string;
+  customerKey?: string | null;
 }) {
   if (!params.items.length) throw new Error("Add at least one artwork item");
   const assetIds = [...new Set(params.items.map((item) => item.assetId))];
@@ -406,6 +426,7 @@ export async function createGangSheetDesign(params: {
       productGid: params.productGid,
       variantGid: params.variantGid,
       currentVersion: 1,
+      ...assignCustomerKeyOnCreate(params.customerKey),
       versions: { create: { version: 1, stateJson: JSON.stringify(state), priceCents: state.pricing.totalCents, areaSqIn: state.pricing.areaSqIn } },
     },
   });
@@ -458,11 +479,13 @@ export async function saveGangSheetNewVersion(params: {
   variantGid?: string;
   name?: string;
   saveToLibrary?: boolean;
+  customerKey?: string | null;
 }) {
   const existing = await prisma.design.findFirst({
     where: { id: params.designId, shop: params.shop },
   });
   if (!existing) throw new Error("Design not found");
+  assertDesignCustomerAccess(existing, params.customerKey ?? null);
   if (existing.status === "ordered") {
     throw new Error("Ordered designs are immutable — duplicate to reorder");
   }
@@ -548,11 +571,13 @@ export async function saveUploadBySizeNewVersion(params: {
   variantGid?: string;
   name?: string;
   saveToLibrary?: boolean;
+  customerKey?: string | null;
 }) {
   const existing = await prisma.design.findFirst({
     where: { id: params.designId, shop: params.shop },
   });
   if (!existing) throw new Error("Design not found");
+  assertDesignCustomerAccess(existing, params.customerKey ?? null);
   if (existing.status === "ordered") {
     throw new Error("Ordered designs are immutable — duplicate to reorder");
   }
@@ -614,6 +639,7 @@ export async function saveUploadBySizeNewVersion(params: {
 
 export async function listDesignLibrary(params: {
   shop: string;
+  customerKey?: string | null;
   search?: string;
   sort?: "recent" | "name";
   includeArchived?: boolean;
@@ -626,6 +652,7 @@ export async function listDesignLibrary(params: {
       ? { not: null, contains: params.search.trim() }
       : { not: null },
     ...(params.includeArchived ? {} : { archived: false }),
+    ...(params.customerKey ? { customerKey: params.customerKey } : {}),
   };
 
   const rows = await prisma.design.findMany({
@@ -861,11 +888,13 @@ export async function updateDesignLibraryEntry(params: {
   designId: string;
   name?: string;
   archived?: boolean;
+  customerKey?: string | null;
 }) {
   const design = await prisma.design.findFirst({
     where: { id: params.designId, shop: params.shop },
   });
   if (!design) throw new Error("Design not found");
+  assertDesignCustomerAccess(design, params.customerKey ?? null);
   return prisma.design.update({
     where: { id: design.id },
     data: {
@@ -883,11 +912,13 @@ export async function duplicateDesignForReorder(params: {
   name?: string;
   productGid?: string;
   variantGid?: string;
+  customerKey?: string | null;
 }) {
   const sourceDesign = await prisma.design.findFirst({
     where: { id: params.sourceDesignId, shop: params.shop },
   });
   if (!sourceDesign) throw new Error("Source design not found");
+  assertDesignCustomerAccess(sourceDesign, params.customerKey ?? null);
 
   const source = await getDesignStateAtVersion(
     params.shop,
@@ -915,6 +946,7 @@ export async function duplicateDesignForReorder(params: {
       variantGid: params.variantGid ?? source.design.variantGid,
       currentVersion: 1,
       name: copyName,
+      customerKey: params.customerKey ?? sourceDesign.customerKey,
       sourceDesignId: params.sourceDesignId,
       sourceDesignVersion: source.versionRow.version,
       sourceOrderId: params.sourceOrderId ?? source.design.sourceOrderId,
@@ -996,15 +1028,21 @@ export async function saveDesignToLibrary(params: {
   shop: string;
   designId: string;
   name: string;
+  customerKey?: string | null;
 }) {
   const design = await prisma.design.findFirst({
     where: { id: params.designId, shop: params.shop },
   });
   if (!design) throw new Error("Design not found");
+  assertDesignCustomerAccess(design, params.customerKey ?? null);
   if (!params.name.trim()) throw new Error("Design name is required");
   return prisma.design.update({
     where: { id: design.id },
-    data: { name: params.name.trim(), archived: false },
+    data: {
+      name: params.name.trim(),
+      archived: false,
+      ...(params.customerKey && !design.customerKey ? { customerKey: params.customerKey } : {}),
+    },
   });
 }
 

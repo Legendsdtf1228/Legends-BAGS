@@ -7,14 +7,16 @@ import {
 } from "../services/design-service";
 import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
-import { assertCustomerApiAccess } from "../domain/security/test-access";
+import { assertCustomerApiContext } from "../domain/security/test-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const shop = assertCustomerApiAccess(request);
+  const ctx = assertCustomerApiContext(request);
+  const shop = ctx.shop;
+  const customerKey = ctx.customerKey;
   const body = (await request.json()) as {
     assetId?: string;
     size?: SizeInput;
@@ -54,9 +56,10 @@ export async function action({ request }: ActionFunctionArgs) {
         uploads: body.uploads,
         productGid: body.productGid,
         variantGid: body.variantGid,
+        customerKey,
       });
       if (body.saveToLibrary && body.name) {
-        await saveDesignToLibrary({ shop, designId: design.id, name: body.name });
+        await saveDesignToLibrary({ shop, designId: design.id, name: body.name, customerKey });
       }
       return respond(design, state);
     } catch (err) {
@@ -73,9 +76,15 @@ export async function action({ request }: ActionFunctionArgs) {
         sheet: body.sheet,
         productGid: body.productGid,
         variantGid: body.variantGid,
+        customerKey,
       });
       if (body.saveToLibrary && body.name) {
-        const named = await saveDesignToLibrary({ shop, designId: design.id, name: body.name });
+        const named = await saveDesignToLibrary({
+          shop,
+          designId: design.id,
+          name: body.name,
+          customerKey,
+        });
         return respond({ ...design, name: named.name }, state);
       }
       return respond(design, state);
@@ -96,9 +105,15 @@ export async function action({ request }: ActionFunctionArgs) {
       size: body.size,
       productGid: body.productGid,
       variantGid: body.variantGid,
+      customerKey,
     });
     if (body.saveToLibrary && body.name) {
-      const named = await saveDesignToLibrary({ shop, designId: design.id, name: body.name });
+      const named = await saveDesignToLibrary({
+        shop,
+        designId: design.id,
+        name: body.name,
+        customerKey,
+      });
       return respond({ ...design, name: named.name }, state);
     }
     return respond(design, state);

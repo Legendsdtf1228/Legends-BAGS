@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { BAGS_ADMIN_NAV, isNavActive } from "./bags-admin-nav";
+import { BAGS_NAV_ICONS } from "./bags-admin-icons";
 import { bagsAdminStyles } from "./bags-admin-ui";
 
 const SECTION_LABELS: Record<string, string> = {
@@ -18,10 +19,15 @@ export function BagsAdminShell(props: { shop?: string; children: ReactNode }) {
       <style>{bagsAdminStyles}</style>
       <aside className="bags-admin-sidebar" aria-label="Legends BAGS navigation">
         <div className="bags-admin-brand">
-          <strong>LEGENDS DTF PRINTS</strong>
-          <span>
-            <em>Legends</em> BAGS
-          </span>
+          <div className="bags-admin-logo" aria-hidden>
+            L
+          </div>
+          <div className="bags-admin-brand-text">
+            <strong>LEGENDS DTF PRINTS</strong>
+            <span>
+              <em>Legends</em> BAGS
+            </span>
+          </div>
         </div>
         <nav className="bags-admin-nav">
           {sections.map((section) => {
@@ -30,24 +36,30 @@ export function BagsAdminShell(props: { shop?: string; children: ReactNode }) {
             return (
               <div key={section} className="bags-admin-nav-group">
                 <div className="bags-admin-nav-label">{SECTION_LABELS[section]}</div>
-                {items.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={item.to}
-                    className={`bags-admin-nav-link${isNavActive(pathname, item) ? " active" : ""}`}
-                  >
-                    <span className="bags-admin-nav-icon" aria-hidden>
-                      {item.icon}
-                    </span>
-                    {item.label}
-                  </Link>
-                ))}
+                {items.map((item) => {
+                  const Icon = BAGS_NAV_ICONS[item.icon];
+                  return (
+                    <Link
+                      key={item.id}
+                      to={item.to}
+                      className={`bags-admin-nav-link${isNavActive(pathname, item) ? " active" : ""}`}
+                    >
+                      <span className="bags-admin-nav-icon" aria-hidden>
+                        {Icon ? Icon() : null}
+                      </span>
+                      {item.label}
+                    </Link>
+                  );
+                })}
               </div>
             );
           })}
         </nav>
         {props.shop ? (
-          <div style={{ padding: "12px 16px 16px", fontSize: 11, color: "#6b7280" }}>{props.shop}</div>
+          <div className="bags-admin-sidebar-foot">
+            <div>{props.shop}</div>
+            <div style={{ marginTop: 4, opacity: 0.85 }}>Merchant admin</div>
+          </div>
         ) : null}
       </aside>
       <div className="bags-admin-main">{props.children}</div>

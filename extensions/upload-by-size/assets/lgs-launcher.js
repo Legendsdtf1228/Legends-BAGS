@@ -17,6 +17,7 @@
     var productGid = root.getAttribute("data-product-gid") || "";
     var variantId = root.getAttribute("data-variant-id") || "";
     var shop = root.getAttribute("data-shop") || "";
+    var customerId = root.getAttribute("data-customer-id") || "";
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
     var lastFocus = null;
     var scrollY = 0;
@@ -24,6 +25,24 @@
     var variantPicker = root.querySelector("[data-lgs-variant-picker]");
     var variantSelect = root.querySelector("[data-lgs-variant-select]");
     var variantHint = root.querySelector("[data-lgs-variant-hint]");
+
+    function resolveCustomerKey() {
+      if (customerId) {
+        return "gid://shopify/Customer/" + String(customerId).replace(/\D/g, "");
+      }
+      try {
+        var guest = localStorage.getItem("lgs_guest_key");
+        if (!guest) {
+          guest = "g_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+          localStorage.setItem("lgs_guest_key", guest);
+        }
+        return "guest:" + guest;
+      } catch (e) {
+        return "guest:anonymous";
+      }
+    }
+
+    var customerKey = resolveCustomerKey();
 
     function formatPrice(cents) {
       if (cents == null || cents === "") return "";
@@ -282,6 +301,7 @@
       var url = storefrontApiUrl("/session");
       if (!url || !shop) return Promise.resolve(null);
       url.searchParams.set("shop", shop);
+      if (customerKey) url.searchParams.set("customerKey", customerKey);
       return fetch(url.toString())
         .then(function (res) {
           return res.ok ? res.json() : null;
@@ -353,6 +373,39 @@
       attachDesign(fromUrl, version);
     }
 
+    function productNumericId() {
+      var match = productGid.match(/(\d+)$/);
+      return match ? match[1] : "";
+    }
+
+    function currentQuantity() {
+      var form = cartForms()[0];
+      var q = form && form.querySelector('[name="quantity"]');
+      var value = q && q.value;
+      if (value && Number(value) >= 1) return String(Math.floor(Number(value)));
+      return "1";
+    }
+
+    function builderUrl(options) {
+      var u = new URL("/builder", base || window.location.origin);
+      u.searchParams.set("shop", shop);
+      u.searchParams.set("product", productNumericId());
+      u.searchParams.set("variant", currentVariantId() || "");
+      u.searchParams.set("quantity", currentQuantity());
+      u.searchParams.set("shop_mode", "1");
+      u.searchParams.set("embedded", "1");
+      u.searchParams.set("parentOrigin", window.location.origin);
+      if (customerKey) u.searchParams.set("lgs_customer_key", customerKey);
+      if (options && options.designId) {
+        u.searchParams.set("designId", options.designId);
+        u.searchParams.set(
+          "designVersion",
+          options.designVersion || root.dataset.lgsDesignVersion || "1",
+        );
+      }
+      return u.toString();
+    }
+
     function editorPath() {
       return builderType === "gang_sheet"
         ? "/editor/gang-sheet"
@@ -366,6 +419,7 @@
       u.searchParams.set("shop", shop);
       u.searchParams.set("embedded", "1");
       u.searchParams.set("parentOrigin", window.location.origin);
+      if (customerKey) u.searchParams.set("lgs_customer_key", customerKey);
       if (options && options.designId) {
         u.searchParams.set("designId", options.designId);
         u.searchParams.set(
@@ -404,7 +458,7 @@
       setStatus("Loading editor…", null);
 
       function launchEditor(sessionToken) {
-        var u = editorUrl(options);
+        var u = new URL(builderUrl(options));
         if (sessionToken) {
           u.searchParams.set("lgs_session", sessionToken);
         }

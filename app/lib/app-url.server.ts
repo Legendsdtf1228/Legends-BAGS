@@ -1,14 +1,29 @@
 /** Resolve public app URL from SHOPIFY_APP_URL or Railway-injected domain. */
+export function normalizeAppUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  try {
+    const withProtocol = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+    const url = new URL(withProtocol);
+    url.pathname = url.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "");
+    return `${url.origin}${url.pathname}`.replace(/\/$/, "") || url.origin;
+  } catch {
+    return trimmed.replace(/\/+$/, "");
+  }
+}
+
+/** Resolve public app URL from SHOPIFY_APP_URL or Railway-injected domain. */
 export function resolveAppUrl(): string {
   const explicit = process.env.SHOPIFY_APP_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
+  if (explicit) return normalizeAppUrl(explicit);
 
   const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
   if (railwayDomain) {
     const url = railwayDomain.startsWith("http")
       ? railwayDomain
       : `https://${railwayDomain}`;
-    return url.replace(/\/$/, "");
+    return normalizeAppUrl(url);
   }
 
   return "";

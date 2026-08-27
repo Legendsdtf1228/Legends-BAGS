@@ -9,6 +9,7 @@
   data-product-gid="gid://shopify/Product/{{ product.id }}"
   data-variant-id="{{ product.selected_or_first_available_variant.id }}"
   data-shop="{{ shop.permanent_domain }}"
+  data-customer-id="{% if customer %}{{ customer.id }}{% endif %}"
   data-builder-type="gang_sheet"
   data-editor-base="{{ block.settings.editor_base_url }}"
 >

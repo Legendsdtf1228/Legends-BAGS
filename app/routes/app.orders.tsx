@@ -3,7 +3,7 @@ import { Link, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
-import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
+import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -67,7 +67,9 @@ export default function OrdersPage() {
                       </Link>
                     </td>
                     <td>v{row.designVersion}</td>
-                    <td>{row.designStatus ?? "—"}</td>
+                    <td>
+                      {row.designStatus ? <BagsStatusBadge status={row.designStatus} /> : "—"}
+                    </td>
                     <td>{new Date(row.createdAt).toLocaleString()}</td>
                   </tr>
                 ))}

@@ -5,22 +5,30 @@ import {
   saveDesignToLibrary,
   updateDesignLibraryEntry,
 } from "../services/design-service";
-import { assertCustomerApiAccess } from "../domain/security/test-access";
+import { assertCustomerApiContext } from "../domain/security/test-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 import { getDesignState } from "../services/design-service";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const shop = assertCustomerApiAccess(request);
+  const ctx = assertCustomerApiContext(request);
   const url = new URL(request.url);
   const search = url.searchParams.get("search") ?? undefined;
   const sort = (url.searchParams.get("sort") as "recent" | "name") || "recent";
   const includeArchived = url.searchParams.get("archived") === "1";
-  const rows = await listDesignLibrary({ shop, search, sort, includeArchived });
+  const rows = await listDesignLibrary({
+    shop: ctx.shop,
+    customerKey: ctx.customerKey,
+    search,
+    sort,
+    includeArchived,
+  });
   return Response.json({ designs: rows });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const shop = assertCustomerApiAccess(request);
+  const ctx = assertCustomerApiContext(request);
+  const shop = ctx.shop;
+  const customerKey = ctx.customerKey;
   const body = (await request.json()) as {
     intent?: string;
     designId?: string;
@@ -42,6 +50,7 @@ export async function action({ request }: ActionFunctionArgs) {
         shop,
         designId: body.designId,
         name: body.name,
+        customerKey,
       });
       const { state } = await getDesignState(shop, design.id);
       return Response.json({
@@ -66,6 +75,7 @@ export async function action({ request }: ActionFunctionArgs) {
         shop,
         designId: body.designId,
         name: body.name,
+        customerKey,
       });
       return Response.json({ designId: design.id, name: design.name });
     }
@@ -78,6 +88,7 @@ export async function action({ request }: ActionFunctionArgs) {
         shop,
         designId: body.designId,
         archived: body.archived ?? true,
+        customerKey,
       });
       return Response.json({ designId: design.id, archived: design.archived });
     }
@@ -94,6 +105,7 @@ export async function action({ request }: ActionFunctionArgs) {
         name: body.name,
         productGid: body.productGid,
         variantGid: body.variantGid,
+        customerKey,
       });
       return Response.json({
         designId: result.design.id,

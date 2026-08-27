@@ -50,6 +50,7 @@ import {
 } from "../lib/shop-appearance.server";
 import { loadEditorPageConfig } from "../lib/editor-config.server";
 import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
+import { mergeEditorLaunchFromUrl } from "../lib/editor-launch.server";
 
 type Asset = {
   assetId: string;
@@ -280,26 +281,22 @@ type RemoteDesignPayload = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const url = new URL(request.url);
-  const shop = url.searchParams.get("shop") || process.env.DEV_SHOP || "";
-  const productGid = url.searchParams.get("productGid") ?? "";
-  const variantId = url.searchParams.get("variantId") ?? "";
-  const designId = url.searchParams.get("designId") ?? "";
-  const designVersion = url.searchParams.get("designVersion") ?? "";
-  const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
-  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, shop);
-  const editorConfig = shop
-    ? await loadEditorPageConfig(shop, productGid || undefined, variantId || undefined)
+  const launch = mergeEditorLaunchFromUrl(request, process.env.DEV_SHOP || "");
+  const { headers, hasApiAuth } = buildEditorAuthHeaders(request, launch.shop);
+  const editorConfig = launch.shop
+    ? await loadEditorPageConfig(launch.shop, launch.productGid || undefined, launch.variantId || undefined)
     : null;
   const appearance = editorConfig?.appearance ?? DEFAULT_APPEARANCE;
   return data(
     {
-      shop,
-      productGid,
-      variantId,
-      designId,
-      designVersion,
-      parentOrigin,
+      shop: launch.shop,
+      productGid: launch.productGid,
+      variantId: launch.variantId,
+      designId: launch.designId,
+      designVersion: launch.designVersion,
+      parentOrigin: launch.parentOrigin,
+      quantity: launch.quantity,
+      shopMode: launch.shopMode,
       editorOrigin: process.env.SHOPIFY_APP_URL || "",
       hasDevAuth: hasApiAuth,
       appearance,

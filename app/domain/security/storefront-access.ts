@@ -5,6 +5,7 @@ const DEFAULT_SESSION_TTL_SECONDS = 60 * 60; // 1h editor session
 export type StorefrontSessionClaims = {
   shop: string;
   exp: number;
+  customerKey?: string | null;
 };
 
 export const STOREFRONT_SESSION_COOKIE = "lgs_storefront_session";
@@ -19,17 +20,21 @@ function requireSecret(secret?: string): string {
 }
 
 function sessionPayload(claims: StorefrontSessionClaims): string {
-  return `${claims.shop}\n${claims.exp}`;
+  return `${claims.shop}\n${claims.exp}\n${claims.customerKey ?? ""}`;
 }
 
 /** Issue a short-lived HMAC session for storefront editor API calls. */
 export function signStorefrontSession(
   shop: string,
-  options?: { ttlSeconds?: number; secret?: string },
+  options?: { ttlSeconds?: number; secret?: string; customerKey?: string | null },
 ): { token: string; exp: number } {
   const exp =
     Math.floor(Date.now() / 1000) + (options?.ttlSeconds ?? DEFAULT_SESSION_TTL_SECONDS);
-  const claims: StorefrontSessionClaims = { shop, exp };
+  const claims: StorefrontSessionClaims = {
+    shop,
+    exp,
+    customerKey: options?.customerKey ?? null,
+  };
   const sig = createHmac("sha256", requireSecret(options?.secret))
     .update(sessionPayload(claims))
     .digest("base64url");
@@ -59,7 +64,13 @@ export function verifyStorefrontSession(
   }
 
   const expected = createHmac("sha256", requireSecret(secret))
-    .update(sessionPayload({ shop: parsed.shop, exp: parsed.exp }))
+    .update(
+      sessionPayload({
+        shop: parsed.shop,
+        exp: parsed.exp,
+        customerKey: parsed.customerKey ?? null,
+      }),
+    )
     .digest("base64url");
   const a = Buffer.from(expected);
   const b = Buffer.from(parsed.sig);
@@ -67,7 +78,11 @@ export function verifyStorefrontSession(
     throw new Error("Invalid storefront session");
   }
 
-  return { shop: parsed.shop, exp: parsed.exp };
+  return {
+    shop: parsed.shop,
+    exp: parsed.exp,
+    customerKey: parsed.customerKey ?? null,
+  };
 }
 
 export type AppProxyRoute =

@@ -4,7 +4,7 @@ import {
   parseDesignApiQuery,
   resolveDesignApiShop,
 } from "../lib/design-api.server";
-import { assertCustomerApiAccess } from "../domain/security/test-access";
+import { assertCustomerApiContext } from "../domain/security/test-access";
 import {
   saveGangSheetNewVersion,
   saveUploadBySizeNewVersion,
@@ -66,20 +66,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const query = parseDesignApiQuery(request);
   let shop: string;
+  let customerKey: string | null = null;
   if (query.accessToken) {
     shop = resolveDesignApiShop(designId, query);
   } else {
-    shop = assertCustomerApiAccess(request);
+    const ctx = assertCustomerApiContext(request);
+    shop = ctx.shop;
+    customerKey = ctx.customerKey;
   }
 
-  return buildDesignApiResponse(shop, designId, query);
+  return buildDesignApiResponse(shop, designId, query, { customerKey });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
   if (request.method !== "PUT" && request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
-  const shop = assertCustomerApiAccess(request);
+  const ctx = assertCustomerApiContext(request);
+  const shop = ctx.shop;
+  const customerKey = ctx.customerKey;
   const designId = params.designId;
   if (!designId) return Response.json({ error: "Not found" }, { status: 404 });
 
@@ -133,6 +138,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         variantGid: body.variantGid,
         name: body.name,
         saveToLibrary: body.saveToLibrary,
+        customerKey,
       });
       return Response.json(designResponse(shop, design, state, version));
     }
@@ -146,6 +152,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         variantGid: body.variantGid,
         name: body.name,
         saveToLibrary: body.saveToLibrary,
+        customerKey,
       });
       return Response.json(designResponse(shop, design, state, version));
     }

@@ -11,13 +11,14 @@ export async function ensureShopConfig(shop: string) {
 }
 
 export async function getHomeStats(shop: string) {
-  const [designCount, orderCount, queuedJobs, processingJobs, completedJobs, bindings] =
+  const [designCount, orderCount, queuedJobs, processingJobs, completedJobs, failedJobs, bindings] =
     await Promise.all([
       prisma.design.count({ where: { shop, archived: false } }),
       prisma.orderLink.count({ where: { shop } }),
       prisma.renderJob.count({ where: { shop, status: "queued" } }),
       prisma.renderJob.count({ where: { shop, status: "processing" } }),
       prisma.renderJob.count({ where: { shop, status: "completed" } }),
+      prisma.renderJob.count({ where: { shop, status: "failed" } }),
       prisma.productBinding.count({ where: { shop } }),
     ]);
 
@@ -27,6 +28,7 @@ export async function getHomeStats(shop: string) {
     queuedJobs,
     processingJobs,
     completedJobs,
+    failedJobs,
     bindings,
   };
 }
