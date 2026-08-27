@@ -3,11 +3,11 @@ export type BagsNavItem = {
   label: string;
   to: string;
   icon: string;
-  section?: "main" | "builders" | "settings";
+  section?: "main" | "settings" | "support";
   matchPrefix?: string;
 };
 
-/** BAGS-style merchant sidebar — mirrors live app section names. */
+/** BAGS-style merchant sidebar — mirrors live app section names and order. */
 export const BAGS_ADMIN_NAV: BagsNavItem[] = [
   { id: "home", label: "Home", to: "/app", icon: "home", section: "main" },
   { id: "products", label: "Products", to: "/app/products", icon: "products", section: "main" },
@@ -34,30 +34,36 @@ export const BAGS_ADMIN_NAV: BagsNavItem[] = [
     icon: "shop-builder",
     section: "main",
   },
-  { id: "general", label: "General", to: "/app/general", icon: "general", section: "builders" },
+  {
+    id: "transactions",
+    label: "Activity",
+    to: "/app/transactions",
+    icon: "transactions",
+    section: "main",
+  },
+  { id: "general", label: "General", to: "/app/general", icon: "general", section: "settings" },
   {
     id: "gangsheet-builder",
-    label: "Gangsheet Builder",
+    label: "Gang Sheet Builder",
     to: "/app/gangsheet-builder",
     icon: "gangsheet-builder",
-    section: "builders",
+    section: "settings",
   },
   {
     id: "image-to-sheet",
     label: "Upload by Size",
     to: "/app/image-to-sheet",
     icon: "image-to-sheet",
-    section: "builders",
+    section: "settings",
   },
-  { id: "appearance", label: "Appearance", to: "/app/appearance", icon: "appearance", section: "builders" },
-  { id: "gallery", label: "Gallery Settings", to: "/app/gallery", icon: "gallery", section: "builders" },
-  { id: "pod", label: "POD", to: "/app/pod", icon: "pod", section: "builders" },
-  { id: "transactions", label: "Activity", to: "/app/transactions", icon: "transactions", section: "main" },
-  { id: "fonts", label: "Fonts", to: "/app/fonts", icon: "fonts", section: "builders" },
-  { id: "fitcheck", label: "FitCheck", to: "/app/fitcheck", icon: "fitcheck", section: "builders" },
-  { id: "changelog", label: "Changelog", to: "/app/changelog", icon: "changelog", section: "settings" },
-  { id: "support", label: "Support", to: "/app/support", icon: "support", section: "settings" },
-  { id: "setup", label: "Setup", to: "/app/setup", icon: "setup", section: "settings" },
+  { id: "appearance", label: "Appearance", to: "/app/appearance", icon: "appearance", section: "settings" },
+  { id: "gallery", label: "Gallery Images", to: "/app/gallery", icon: "gallery", section: "settings" },
+  { id: "pod", label: "POD", to: "/app/pod", icon: "pod", section: "settings" },
+  { id: "fonts", label: "Fonts", to: "/app/fonts", icon: "fonts", section: "settings" },
+  { id: "fitcheck", label: "FitCheck Templates", to: "/app/fitcheck", icon: "fitcheck", section: "settings" },
+  { id: "changelog", label: "Changelog", to: "/app/changelog", icon: "changelog", section: "support" },
+  { id: "support", label: "Support", to: "/app/support", icon: "support", section: "support" },
+  { id: "setup", label: "Setup", to: "/app/setup", icon: "setup", section: "support" },
 ];
 
 export function isNavActive(pathname: string, item: BagsNavItem): boolean {

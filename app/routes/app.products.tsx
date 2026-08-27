@@ -13,7 +13,7 @@ import {
   reconcileProductBindings,
 } from "../services/shopify-product-sync.server";
 import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-links";
-import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
+import { BagsPageHeader, BagsCard, BagsStatusBadge, BagsPageBody } from "../components/merchant/bags-admin-ui";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
@@ -238,6 +238,7 @@ export default function ProductsPage() {
         }
       />
       <div className="bags-admin-content">
+        <BagsPageBody>
         <BagsCard style={{ marginBottom: 16 }}>
           <div className="bags-admin-actions" style={{ justifyContent: "space-between" }}>
             <Form method="get" className="bags-admin-actions">
@@ -479,6 +480,7 @@ export default function ProductsPage() {
             </button>
           </Form>
         </BagsCard>
+        </BagsPageBody>
       </div>
     </>
   );

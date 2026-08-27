@@ -8,6 +8,7 @@ import {
   PresetSizeChips,
   StepperField,
 } from "../components/editor/bags-ui";
+import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
@@ -140,13 +141,13 @@ type SidebarTab =
 type Screen = "welcome" | "auto_build" | "canvas";
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string }[] = [
-  { id: "uploads", label: "Uploads", icon: "📁" },
-  { id: "gallery", label: "Gallery", icon: "🖼" },
-  { id: "text", label: "Text", icon: "T" },
-  { id: "names", label: "Names", icon: "#" },
-  { id: "auto", label: "Auto", icon: "⚡" },
-  { id: "layers", label: "Layers", icon: "☰" },
-  { id: "help", label: "Help", icon: "?" },
+  { id: "uploads", label: "Uploads", icon: "uploads" },
+  { id: "gallery", label: "Gallery", icon: "gallery" },
+  { id: "text", label: "Text", icon: "text" },
+  { id: "names", label: "Names", icon: "names" },
+  { id: "auto", label: "Auto", icon: "auto" },
+  { id: "layers", label: "Layers", icon: "layers" },
+  { id: "help", label: "Help", icon: "help" },
 ];
 
 type NestPlacement = {
@@ -1829,7 +1830,7 @@ export default function GangSheetEditor() {
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
             <button type="button" className="rail-btn active" title="Home" aria-label="Home">
-              <span className="rail-icon">🏠</span>
+              <EditorRailIcon name="home" label="Home" />
               <span className="rail-label">Home</span>
             </button>
             {SIDEBAR_TABS.map((tab) => (
@@ -1841,7 +1842,7 @@ export default function GangSheetEditor() {
                 aria-label={tab.label}
                 onClick={() => openCanvas({ tab: tab.id === "auto" ? "uploads" : tab.id })}
               >
-                <span className="rail-icon">{tab.icon}</span>
+                <EditorRailIcon name={tab.icon} label={tab.label} />
                 <span className="rail-label">{tab.label}</span>
               </button>
             ))}
@@ -1905,12 +1906,12 @@ export default function GangSheetEditor() {
                   className="welcome-opt primary featured"
                   onClick={() => openCanvas({ tab: "uploads" })}
                 >
-                  <div className="welcome-icon">🎨</div>
+                  <div className="welcome-icon"><EditorRailIcon name="sheet" label="Build" /></div>
                   <strong>Build a Gang Sheet</strong>
                   <span>Open the canvas with your selected sheet size — upload, place, and arrange.</span>
                 </button>
                 <a className="welcome-opt" href={ubsHref}>
-                  <div className="welcome-icon">📐</div>
+                  <div className="welcome-icon"><EditorRailIcon name="upload" label="Upload by Size" /></div>
                   <strong>Upload by Size</strong>
                   <span>Single-design workflow with presets and live pricing.</span>
                 </a>
@@ -1927,12 +1928,12 @@ export default function GangSheetEditor() {
                     setMessage("Upload all designs, set size & quantity — preview updates live.");
                   }}
                 >
-                  <div className="welcome-icon">⚡</div>
+                  <div className="welcome-icon"><EditorRailIcon name="auto" label="Auto Build" /></div>
                   <strong>Auto Build</strong>
                   <span>Bulk upload with live nest preview — fastest for many designs.</span>
                 </button>
                 <button type="button" className="welcome-opt" onClick={() => setShowTemplates((v) => !v)}>
-                  <div className="welcome-icon">📋</div>
+                  <div className="welcome-icon"><EditorRailIcon name="template" label="Templates" /></div>
                   <strong>Start from a template</strong>
                   <span>Pick a preset sheet layout and open the editor.</span>
                 </button>
@@ -1942,7 +1943,7 @@ export default function GangSheetEditor() {
                     className="welcome-opt"
                     onClick={() => void loadRemoteDesign(savedDesigns[0].id, savedDesigns[0].version)}
                   >
-                    <div className="welcome-icon">💾</div>
+                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
                     <strong>Open saved design</strong>
                     <span>
                       {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} in your library.
@@ -1950,7 +1951,7 @@ export default function GangSheetEditor() {
                   </button>
                 ) : (
                   <button type="button" className="welcome-opt" disabled>
-                    <div className="welcome-icon">💾</div>
+                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
                     <strong>Open saved design</strong>
                     <span>Save a design from the editor to build your library.</span>
                   </button>
@@ -1964,7 +1965,7 @@ export default function GangSheetEditor() {
                       if (d) void restoreDraft(d);
                     }}
                   >
-                    <div className="welcome-icon">↺</div>
+                    <div className="welcome-icon"><EditorRailIcon name="upload" label="Continue" /></div>
                     <strong>Continue draft</strong>
                     <span>Resume the local draft saved on this device.</span>
                   </button>
@@ -1974,7 +1975,7 @@ export default function GangSheetEditor() {
                   className="welcome-opt"
                   onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
                 >
-                  <div className="welcome-icon">⬆</div>
+                  <div className="welcome-icon"><EditorRailIcon name="uploads" label="Upload" /></div>
                   <strong>Upload image(s)</strong>
                   <span>Add files to Uploads, then click each one to place on the gang sheet.</span>
                 </button>
@@ -2765,7 +2766,7 @@ export default function GangSheetEditor() {
             aria-label="Home"
             onClick={() => setScreen("welcome")}
           >
-            <span className="rail-icon">🏠</span>
+            <EditorRailIcon name="home" label="Home" />
             <span className="rail-label">Home</span>
           </button>
           {SIDEBAR_TABS.map((tab) => (
@@ -3344,7 +3345,9 @@ a.welcome-opt{text-decoration:none;color:inherit}
 .icon-rail .rail-btn:hover:not(:disabled){color:#fff;background:#1a2230}
 .icon-rail .rail-btn.active{color:#fff;background:#243044;box-shadow:inset 3px 0 0 var(--accent)}
 .icon-rail .rail-btn.soon{opacity:.45;cursor:not-allowed}
+.icon-rail .rail-icon,.welcome-icon svg{width:20px;height:20px;display:block}
 .icon-rail .rail-icon{font-size:18px;line-height:1}
+.welcome-icon{display:grid;place-items:center}
 .icon-rail .rail-label{font-size:9px;font-weight:600;letter-spacing:.02em}
 .icon-rail .rail-badge{position:absolute;top:6px;right:8px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center}
 .sidebar-panel{background:#fff;border-right:1px solid var(--line);width:260px;display:flex;flex-direction:column;overflow:auto}
