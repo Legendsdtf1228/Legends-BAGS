@@ -26,6 +26,13 @@ export type DraftItemV1 = {
   yIn: number;
   rotationDeg: 0 | 90;
   zIndex: number;
+  kind?: "image" | "text";
+  textContent?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  textColor?: string;
+  lockAspect?: boolean;
+  lockPosition?: boolean;
 };
 
 export type GangDraftV1 = {

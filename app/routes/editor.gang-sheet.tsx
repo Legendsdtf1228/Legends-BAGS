@@ -282,6 +282,7 @@ export default function GangSheetEditor() {
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [spacePan, setSpacePan] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [mobileDrawer, setMobileDrawer] = useState<"sidebar" | "properties" | null>(null);
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -371,6 +372,13 @@ export default function GangSheetEditor() {
             yIn,
             rotationDeg,
             zIndex,
+            kind,
+            textContent,
+            fontSize,
+            fontFamily,
+            textColor,
+            lockAspect,
+            lockPosition,
           }) => ({
             assetId,
             name,
@@ -384,6 +392,13 @@ export default function GangSheetEditor() {
             yIn,
             rotationDeg,
             zIndex,
+            kind,
+            textContent,
+            fontSize,
+            fontFamily,
+            textColor,
+            lockAspect,
+            lockPosition,
           }),
         ),
         savedAt: Date.now(),
@@ -491,6 +506,7 @@ export default function GangSheetEditor() {
   function openCanvas(options?: { tab?: SidebarTab; pickUpload?: boolean }) {
     setScreen("canvas");
     setSidebarTab(options?.tab ?? "uploads");
+    setMobileDrawer("sidebar");
     setMessage("");
     setShowFirstTip(true);
     if (options?.pickUpload) {
@@ -527,13 +543,28 @@ export default function GangSheetEditor() {
       contentType: d.contentType,
       id: crypto.randomUUID(),
       name: d.name,
-      previewUrl: assetPreviewUrl(d.assetId),
+      previewUrl:
+        d.kind === "text"
+          ? textPreviewDataUrl(
+              d.textContent ?? d.name,
+              d.fontSize ?? 36,
+              d.fontFamily ?? "Arial",
+              d.textColor ?? "#111827",
+            )
+          : assetPreviewUrl(d.assetId),
       xIn: d.xIn,
       yIn: d.yIn,
       widthIn: d.widthIn,
       heightIn: d.heightIn,
       rotationDeg: d.rotationDeg,
       zIndex: d.zIndex ?? idx + 1,
+      kind: d.kind,
+      textContent: d.textContent,
+      fontSize: d.fontSize,
+      fontFamily: d.fontFamily,
+      textColor: d.textColor,
+      lockAspect: d.lockAspect,
+      lockPosition: d.lockPosition,
     }));
     setHistory([]);
     setFuture([]);
@@ -965,6 +996,7 @@ export default function GangSheetEditor() {
     pushHistory(next);
     setMessage(`Generated ${rows.length} name/number set${rows.length === 1 ? "" : "s"}.`);
     setSidebarTab("layers");
+    setMobileDrawer("sidebar");
   }
 
   function renamePoolItem(poolId: string, name: string) {
@@ -983,6 +1015,7 @@ export default function GangSheetEditor() {
       return;
     }
     setSidebarTab(tab);
+    setMobileDrawer("sidebar");
   }
 
   const filteredPool = useMemo(() => {
@@ -1033,6 +1066,13 @@ export default function GangSheetEditor() {
           yIn,
           rotationDeg,
           zIndex,
+          kind,
+          textContent,
+          fontSize,
+          fontFamily,
+          textColor,
+          lockAspect,
+          lockPosition,
         }) => ({
           assetId,
           name: n,
@@ -1046,6 +1086,13 @@ export default function GangSheetEditor() {
           yIn,
           rotationDeg,
           zIndex,
+          kind,
+          textContent,
+          fontSize,
+          fontFamily,
+          textColor,
+          lockAspect,
+          lockPosition,
         }),
       ),
       savedAt: Date.now(),
@@ -2117,7 +2164,15 @@ export default function GangSheetEditor() {
           ))}
         </nav>
 
-        <aside className="sidebar-panel">
+        <aside className={`sidebar-panel ${mobileDrawer === "sidebar" ? "mobile-open" : ""}`}>
+          <button
+            type="button"
+            className="mobile-drawer-close"
+            onClick={() => setMobileDrawer(null)}
+            aria-label="Close tools panel"
+          >
+            ×
+          </button>
           {sidebarTab === "uploads" ? (
             <>
               <div className="heading">
@@ -2424,7 +2479,15 @@ export default function GangSheetEditor() {
             </div>
           </div>
         </main>
-        <aside className="properties">
+        <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
+          <button
+            type="button"
+            className="mobile-drawer-close"
+            onClick={() => setMobileDrawer(null)}
+            aria-label="Close properties panel"
+          >
+            ×
+          </button>
           <div className="heading">
             <span>
               <strong>Properties</strong>
@@ -2549,10 +2612,11 @@ export default function GangSheetEditor() {
         </aside>
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
-        <button type="button" onClick={() => setSidebarTab("uploads")}>Uploads</button>
+        <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
         <button type="button" onClick={undo} disabled={!history.length}>Undo</button>
         <button type="button" onClick={fitToViewport}>Fit</button>
-        <button type="button" onClick={() => setSidebarTab("layers")}>Layers</button>
+        <button type="button" onClick={() => { setSidebarTab("layers"); setMobileDrawer("sidebar"); }}>Layers</button>
+        <button type="button" onClick={() => setMobileDrawer("properties")} disabled={!selected}>Edit</button>
         <button type="button" className="save" onClick={() => void save()} disabled={saving || !items.length}>
           {saving ? "…" : "Save"}
         </button>
@@ -2819,14 +2883,17 @@ aside{background:#fff;overflow:auto}
 .mobile-bar button{flex:1;border:0;border-radius:8px;background:#242b36;color:#fff;font-size:11px;font-weight:700;padding:8px 4px;cursor:pointer}
 .mobile-bar button.save{background:#21a366}
 .mobile-bar button:disabled{opacity:.45}
+.mobile-drawer-close{display:none}
 .workspace{height:calc(100vh - 88px)}
 @media(max-width:900px){
   .workspace{grid-template-columns:56px minmax(0,1fr);height:calc(100vh - 120px)}
-  .sidebar-panel{position:fixed;left:56px;top:88px;bottom:56px;width:min(280px,78vw);z-index:6;box-shadow:8px 0 24px #34405420}
-  .properties{display:none}
+  .sidebar-panel,.properties{display:none;position:fixed;top:88px;bottom:56px;width:min(320px,84vw);z-index:7;box-shadow:8px 0 24px #34405435;flex-direction:column;overflow:auto}
+  .sidebar-panel{left:56px}
+  .properties{right:0;box-shadow:-8px 0 24px #34405435}
+  .sidebar-panel.mobile-open,.properties.mobile-open{display:flex}
+  .mobile-drawer-close{display:grid;position:absolute;right:8px;top:8px;z-index:3;width:32px;height:32px;place-items:center;border:1px solid #ccd2da;border-radius:999px;background:#fff;color:#344054;font-size:20px;cursor:pointer}
   .top-toolbar{display:none}
   .mobile-bar{display:flex}
   .canvas-meta{font-size:11px;flex-wrap:wrap;height:auto;min-height:40px;padding:6px 10px}
 }
-@media(max-width:900px){.workspace{grid-template-columns:72px 200px minmax(320px,1fr)}.properties{position:fixed;right:0;top:68px;bottom:56px;width:270px;z-index:4;box-shadow:-8px 0 24px #34405420;display:block}}
 `;
