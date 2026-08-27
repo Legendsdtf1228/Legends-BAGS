@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
@@ -38,6 +38,11 @@ import {
   type GalleryItem,
 } from "../components/editor/gang-sheet/editor-data";
 import { snapPoint, type SnapGuide } from "../components/editor/gang-sheet/snap";
+import {
+  DEFAULT_APPEARANCE,
+  getShopAppearance,
+  type ShopAppearance,
+} from "../lib/shop-appearance.server";
 
 type Asset = {
   assetId: string;
@@ -56,6 +61,8 @@ type CanvasItem = Asset & {
   widthIn: number;
   heightIn: number;
   rotationDeg: 0 | 90;
+  flipX?: boolean;
+  flipY?: boolean;
   zIndex: number;
   kind?: "image" | "text";
   textContent?: string;
@@ -224,6 +231,7 @@ type LibraryDesign = {
   updatedAt: string;
   status: string;
   archived: boolean;
+  previewPath?: string | null;
 };
 
 type RemoteDesignPayload = {
@@ -240,6 +248,8 @@ type RemoteDesignPayload = {
       xIn?: number;
       yIn?: number;
       rotationDeg: 0 | 90;
+      flipX?: boolean;
+      flipY?: boolean;
       zIndex?: number;
       kind?: "image" | "text";
       name?: string;
@@ -277,6 +287,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       `lgs_test_token=${encodeURIComponent(token)}; Path=/; SameSite=None; Secure; HttpOnly`,
     );
   }
+  const appearance = shop ? await getShopAppearance(shop) : DEFAULT_APPEARANCE;
   return data(
     {
       shop,
@@ -287,9 +298,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
       parentOrigin,
       editorOrigin: process.env.SHOPIFY_APP_URL || "",
       hasDevAuth: Boolean(token && shop),
+      appearance,
     },
     { headers },
   );
+}
+
+function pieceTransform(item: Pick<CanvasItem, "rotationDeg" | "flipX" | "flipY">) {
+  return `rotate(${item.rotationDeg}deg) scaleX(${item.flipX ? -1 : 1}) scaleY(${item.flipY ? -1 : 1})`;
+}
+
+function appearanceVars(appearance: ShopAppearance): CSSProperties {
+  return {
+    ["--accent" as string]: appearance.accentColor,
+    ["--accent-dark" as string]: appearance.accentColorDark,
+  };
 }
 
 export default function GangSheetEditor() {
@@ -316,6 +339,7 @@ export default function GangSheetEditor() {
   const [autoPreviewError, setAutoPreviewError] = useState("");
   const [selectedAutoId, setSelectedAutoId] = useState<string | null>(null);
   const [autoPhase, setAutoPhase] = useState<AutoPhase>("setup");
+  const [autoUploadTab, setAutoUploadTab] = useState<"upload" | "pool" | "gallery">("upload");
   const [allowRotate90, setAllowRotate90] = useState(true);
   const [uploadPool, setUploadPool] = useState<PoolItem[]>([]);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("uploads");
@@ -327,6 +351,8 @@ export default function GangSheetEditor() {
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(GALLERY_ITEMS);
+  const [galleryCategories, setGalleryCategories] = useState<string[]>([...GALLERY_CATEGORIES]);
   const [textContent, setTextContent] = useState("Your text");
   const [textFontSize, setTextFontSize] = useState(36);
   const [textFontFamily, setTextFontFamily] = useState("Arial");
@@ -336,6 +362,12 @@ export default function GangSheetEditor() {
   const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
   const [librarySearch, setLibrarySearch] = useState("");
   const [librarySort, setLibrarySort] = useState<"recent" | "name">("recent");
+  const [libraryIncludeArchived, setLibraryIncludeArchived] = useState(false);
+  const [libraryRenamingId, setLibraryRenamingId] = useState<string | null>(null);
+  const [libraryRenameValue, setLibraryRenameValue] = useState("");
+  const [showLibrarySave, setShowLibrarySave] = useState(false);
+  const [libraryName, setLibraryName] = useState("");
+  const [librarySaving, setLibrarySaving] = useState(false);
   const [editingDesignId, setEditingDesignId] = useState<string | null>(page.designId || null);
   const [editingVersion, setEditingVersion] = useState<number | null>(
     page.designVersion ? Number(page.designVersion) : null,
@@ -413,7 +445,12 @@ export default function GangSheetEditor() {
     setHasStoredDraft(Boolean(draft?.items.length));
     if (draft?.items.length && !page.designId) setDraftOffer(draft);
     void refreshLibrary();
+    void refreshGallery();
   }, [page.shop, page.designId]);
+
+  useEffect(() => {
+    if (sidebarTab === "gallery") void refreshGallery();
+  }, [sidebarTab]);
 
   useEffect(() => {
     if (!page.designId) return;
@@ -452,6 +489,8 @@ export default function GangSheetEditor() {
             xIn,
             yIn,
             rotationDeg,
+            flipX,
+            flipY,
             zIndex,
             kind,
             textContent,
@@ -472,6 +511,8 @@ export default function GangSheetEditor() {
             xIn,
             yIn,
             rotationDeg,
+            flipX,
+            flipY,
             zIndex,
             kind,
             textContent,
@@ -638,6 +679,8 @@ export default function GangSheetEditor() {
       widthIn: d.widthIn,
       heightIn: d.heightIn,
       rotationDeg: d.rotationDeg,
+      flipX: d.flipX,
+      flipY: d.flipY,
       zIndex: d.zIndex ?? idx + 1,
       kind: d.kind,
       textContent: d.textContent,
@@ -836,6 +879,60 @@ export default function GangSheetEditor() {
       heightIn: selected.widthIn,
       rotationDeg: selected.rotationDeg ? 0 : 90,
     });
+  }
+
+  function flipHorizontal() {
+    if (!selected) return;
+    change({ flipX: !selected.flipX });
+  }
+
+  function flipVertical() {
+    if (!selected) return;
+    change({ flipY: !selected.flipY });
+  }
+
+  function addPoolItemToAuto(entry: PoolItem) {
+    const aspect = entry.asset.widthPx / entry.asset.heightPx;
+    const w = Math.min(6, sheetWidth - 0.4);
+    const draft: AutoDraft = {
+      id: crypto.randomUUID(),
+      asset: entry.asset,
+      previewUrl: entry.previewUrl,
+      name: entry.name,
+      widthIn: w,
+      heightIn: w / aspect,
+      quantity: 1,
+      lockAspect: true,
+    };
+    setAutoDrafts((d) => [...d, draft]);
+    setSelectedAutoId(draft.id);
+    setMessage(`Added "${entry.name}" from uploads.`);
+  }
+
+  async function addGalleryItemToAuto(g: GalleryItem) {
+    setUploading(true);
+    try {
+      const { asset, previewUrl } = await galleryThumbToAsset(g);
+      const aspect = asset.widthPx / asset.heightPx;
+      const w = Math.min(g.widthIn ?? 6, sheetWidth - 0.4);
+      const draft: AutoDraft = {
+        id: crypto.randomUUID(),
+        asset,
+        previewUrl,
+        name: g.name,
+        widthIn: w,
+        heightIn: g.heightIn ?? w / aspect,
+        quantity: 1,
+        lockAspect: true,
+      };
+      setAutoDrafts((d) => [...d, draft]);
+      setSelectedAutoId(draft.id);
+      setMessage(`Added "${g.name}" from gallery.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add gallery item");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function fillSheet() {
@@ -1114,7 +1211,7 @@ export default function GangSheetEditor() {
   }, [uploadPool, uploadSearch, uploadSort]);
 
   const filteredGallery = useMemo(() => {
-    let list = GALLERY_ITEMS;
+    let list = galleryItems;
     if (galleryCategory !== "All") list = list.filter((g) => g.category === galleryCategory);
     if (gallerySearch.trim()) {
       const q = gallerySearch.toLowerCase();
@@ -1125,19 +1222,83 @@ export default function GangSheetEditor() {
       );
     }
     return list;
-  }, [galleryCategory, gallerySearch]);
+  }, [galleryCategory, gallerySearch, galleryItems]);
 
-  async function refreshLibrary() {
+  async function refreshGallery() {
+    try {
+      const params = new URLSearchParams();
+      if (galleryCategory !== "All") params.set("category", galleryCategory);
+      if (gallerySearch.trim()) params.set("search", gallerySearch.trim());
+      const res = await fetch(`/api/gallery?${params.toString()}`, {
+        credentials: "include",
+        headers: { "X-LGS-Shop": page.shop },
+      });
+      const json = (await res.json()) as {
+        categories?: string[];
+        items?: GalleryItem[];
+      };
+      if (res.ok && json.items) {
+        setGalleryItems(json.items);
+        if (json.categories?.length) setGalleryCategories(json.categories);
+      }
+    } catch {
+      /* fallback to seed data */
+    }
+  }
+
+  async function refreshLibrary(includeArchived = libraryIncludeArchived) {
     try {
       const q = librarySearch.trim();
       const res = await fetch(
-        `/api/design-library?sort=${librarySort}${q ? `&search=${encodeURIComponent(q)}` : ""}`,
+        `/api/design-library?sort=${librarySort}${q ? `&search=${encodeURIComponent(q)}` : ""}${includeArchived ? "&archived=1" : ""}`,
         { credentials: "include", headers: { "X-LGS-Shop": page.shop } },
       );
       const json = (await res.json()) as { designs?: LibraryDesign[] };
       if (res.ok && json.designs) setSavedDesigns(json.designs);
     } catch {
       /* offline */
+    }
+  }
+
+  async function renameLibraryDesign(designId: string, name: string) {
+    const cleanName = name.trim();
+    if (!cleanName) return;
+    try {
+      const res = await fetch("/api/design-library", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+        body: JSON.stringify({ intent: "rename", designId, name: cleanName }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "Rename failed");
+      setLibraryRenamingId(null);
+      setLibraryRenameValue("");
+      await refreshLibrary();
+      if (editingDesignId === designId) setDesignName(cleanName);
+      setMessage(`Renamed to "${cleanName}".`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+    }
+  }
+
+  async function archiveLibraryDesign(designId: string) {
+    if (!window.confirm("Archive this design? You can show archived designs with the filter below.")) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/design-library", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+        body: JSON.stringify({ intent: "archive", designId, archived: true }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "Archive failed");
+      await refreshLibrary();
+      setMessage("Design archived.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Archive failed");
     }
   }
 
@@ -1178,6 +1339,8 @@ export default function GangSheetEditor() {
           widthIn: d.widthIn,
           heightIn: d.heightIn,
           rotationDeg: d.rotationDeg ?? 0,
+          flipX: d.flipX,
+          flipY: d.flipY,
           zIndex: d.zIndex ?? idx + 1,
           kind: isText ? "text" : "image",
           textContent: d.textContent,
@@ -1210,28 +1373,37 @@ export default function GangSheetEditor() {
     }
   }
 
-  function saveNamedDesign(name: string) {
-    void (async () => {
-      if (!editingDesignId) {
-        setError("Save the design to your account first, then name it in the library.");
-        return;
-      }
-      try {
+  async function saveNamedDesign(name: string) {
+    if (!editingDesignId) {
+      setError("Save the design first, then add it to your library.");
+      return;
+    }
+    const cleanName = name.trim();
+    if (!cleanName) {
+      setError("Enter a design name.");
+      return;
+    }
+    setLibrarySaving(true);
+    setError("");
+    try {
         const res = await fetch("/api/design-library", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
-          body: JSON.stringify({ intent: "save", designId: editingDesignId, name }),
+          body: JSON.stringify({ intent: "save", designId: editingDesignId, name: cleanName }),
         });
         const json = (await res.json()) as { error?: string; name?: string };
         if (!res.ok) throw new Error(json.error || "Could not save to library");
-        setDesignName(json.name ?? name);
-        void refreshLibrary();
-        setMessage(`Saved "${name}" to your design library.`);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Library save failed");
-      }
-    })();
+      setDesignName(json.name ?? cleanName);
+      await refreshLibrary();
+      setShowLibrarySave(false);
+      setLibraryName("");
+      setMessage(`Saved "${cleanName}" to your design library.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Library save failed");
+    } finally {
+      setLibrarySaving(false);
+    }
   }
 
   async function rasterizeTextItem(item: CanvasItem): Promise<Asset> {
@@ -1412,6 +1584,8 @@ export default function GangSheetEditor() {
         xIn: number;
         yIn: number;
         rotationDeg: 0 | 90;
+        flipX?: boolean;
+        flipY?: boolean;
         zIndex: number;
         quantity: number;
         kind?: "image" | "text";
@@ -1434,6 +1608,8 @@ export default function GangSheetEditor() {
           xIn: item.xIn,
           yIn: item.yIn,
           rotationDeg: item.rotationDeg,
+          flipX: item.flipX,
+          flipY: item.flipY,
           zIndex: item.zIndex,
           quantity: 1,
           kind: item.kind,
@@ -1542,10 +1718,43 @@ export default function GangSheetEditor() {
       </div>
     ) : null;
 
+  const librarySaveDialog = showLibrarySave ? (
+    <div className="draft-modal" role="dialog" aria-modal="true" aria-labelledby="library-save-title">
+      <form
+        className="draft-modal-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveNamedDesign(libraryName);
+        }}
+      >
+        <h2 id="library-save-title">Save to your design library</h2>
+        <p>Name this design so you can find, edit, or reorder it later.</p>
+        <label className="library-name-field">
+          Design name
+          <input
+            autoFocus
+            value={libraryName}
+            maxLength={80}
+            onChange={(event) => setLibraryName(event.target.value)}
+            placeholder="Example: Smith family shirts"
+          />
+        </label>
+        <div className="draft-modal-actions">
+          <button type="submit" className="save" disabled={librarySaving || !libraryName.trim()}>
+            {librarySaving ? "Saving…" : "Save design"}
+          </button>
+          <button type="button" className="ghost-btn" onClick={() => setShowLibrarySave(false)}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  ) : null;
+
   if (screen === "welcome") {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
-      <div className="bags welcome lgs-editor">
+      <div className="bags welcome lgs-editor" style={appearanceVars(page.appearance)}>
         <style>{BAGS_BASE_CSS}{CSS}</style>
         {restoreDialog}
         <div className="home-shell">
@@ -1578,10 +1787,8 @@ export default function GangSheetEditor() {
                   <small>Welcome Center</small>
                 </span>
               </div>
-              <h1>How would you like to start?</h1>
-              <p className="welcome-lead">
-                Pick a sheet size, then build a gang sheet — or jump into Auto Build for bulk nesting.
-              </p>
+              <h1>{page.appearance.welcomeTitle}</h1>
+              <p className="welcome-lead">{page.appearance.welcomeSubtitle}</p>
               {!page.hasDevAuth ? (
                 <p className="error block">Dev auth not configured — check DEV_SHOP / TEST_API_TOKEN.</p>
               ) : null}
@@ -1739,47 +1946,120 @@ export default function GangSheetEditor() {
                       <option value="recent">Recent</option>
                       <option value="name">Name</option>
                     </select>
+                    <label className="library-archived-toggle">
+                      <input
+                        type="checkbox"
+                        checked={libraryIncludeArchived}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          setLibraryIncludeArchived(next);
+                          void refreshLibrary(next);
+                        }}
+                      />
+                      Show archived
+                    </label>
                   </div>
                   <h3>Saved designs (server)</h3>
                   {savedDesigns.slice(0, 8).map((d) => (
                     <div key={d.id} className="saved-design-row-wrap">
-                      <button
-                        type="button"
-                        className="saved-design-row"
-                        onClick={() => void loadRemoteDesign(d.id, d.version)}
-                      >
-                        <strong>{d.name || "Untitled design"}</strong>
-                        <small>
-                          {d.pieceCount} piece{d.pieceCount === 1 ? "" : "s"} · {d.sheetLabel} · v{d.version} ·{" "}
-                          ${(d.priceCents / 100).toFixed(2)} · {new Date(d.updatedAt).toLocaleDateString()}
-                        </small>
-                      </button>
-                      <button
-                        type="button"
-                        className="saved-design-action"
-                        onClick={() =>
-                          void fetch("/api/design-library", {
-                            method: "POST",
-                            credentials: "include",
-                            headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
-                            body: JSON.stringify({
-                              intent: "duplicate",
-                              sourceDesignId: d.id,
-                              sourceVersion: d.version,
-                              productGid: page.productGid,
-                              variantGid: page.variantId
-                                ? `gid://shopify/ProductVariant/${page.variantId}`
-                                : undefined,
-                            }),
-                          }).then(async (res) => {
-                            const json = (await res.json()) as { designId?: string; error?: string };
-                            if (!res.ok || !json.designId) throw new Error(json.error || "Duplicate failed");
-                            void loadRemoteDesign(json.designId!);
-                          })
-                        }
-                      >
-                        Duplicate
-                      </button>
+                      {libraryRenamingId === d.id ? (
+                        <form
+                          className="saved-design-rename"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void renameLibraryDesign(d.id, libraryRenameValue);
+                          }}
+                        >
+                          <input
+                            value={libraryRenameValue}
+                            onChange={(e) => setLibraryRenameValue(e.target.value)}
+                            aria-label="Design name"
+                            autoFocus
+                          />
+                          <button type="submit" className="saved-design-action">
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            className="saved-design-action"
+                            onClick={() => {
+                              setLibraryRenamingId(null);
+                              setLibraryRenameValue("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="saved-design-row"
+                            onClick={() => void loadRemoteDesign(d.id, d.version)}
+                          >
+                            {d.previewPath ? (
+                              <span className="saved-design-thumb checkerboard">
+                                <img src={d.previewPath} alt="" />
+                              </span>
+                            ) : null}
+                            <span className="saved-design-copy">
+                              <strong>{d.name || "Untitled design"}</strong>
+                              <small>
+                                {d.pieceCount} piece{d.pieceCount === 1 ? "" : "s"} · {d.sheetLabel} · v{d.version} ·{" "}
+                                ${(d.priceCents / 100).toFixed(2)} · {new Date(d.updatedAt).toLocaleDateString()}
+                                {d.archived ? " · archived" : ""}
+                              </small>
+                            </span>
+                          </button>
+                          <div className="saved-design-actions">
+                            <button
+                              type="button"
+                              className="saved-design-action"
+                              onClick={() => {
+                                setLibraryRenamingId(d.id);
+                                setLibraryRenameValue(d.name || "");
+                              }}
+                            >
+                              Rename
+                            </button>
+                            {!d.archived ? (
+                              <button
+                                type="button"
+                                className="saved-design-action"
+                                onClick={() => void archiveLibraryDesign(d.id)}
+                              >
+                                Archive
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="saved-design-action"
+                              onClick={() =>
+                                void fetch("/api/design-library", {
+                                  method: "POST",
+                                  credentials: "include",
+                                  headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+                                  body: JSON.stringify({
+                                    intent: "duplicate",
+                                    sourceDesignId: d.id,
+                                    sourceVersion: d.version,
+                                    productGid: page.productGid,
+                                    variantGid: page.variantId
+                                      ? `gid://shopify/ProductVariant/${page.variantId}`
+                                      : undefined,
+                                  }),
+                                }).then(async (res) => {
+                                  const json = (await res.json()) as { designId?: string; error?: string };
+                                  if (!res.ok || !json.designId) throw new Error(json.error || "Duplicate failed");
+                                  void loadRemoteDesign(json.designId!);
+                                })
+                              }
+                            >
+                              Duplicate
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1813,7 +2093,7 @@ export default function GangSheetEditor() {
         : "";
 
     return (
-      <div className="bags auto-mode lgs-editor">
+      <div className="bags auto-mode lgs-editor" style={appearanceVars(page.appearance)}>
         <style>{BAGS_BASE_CSS}{CSS}</style>
         <header>
           <div className="brand">
@@ -1891,30 +2171,87 @@ export default function GangSheetEditor() {
 
             {autoPhase === "setup" ? (
               <div className="upload-tabs">
-                <button type="button" className="tab active">Upload image(s)</button>
-                <button type="button" className="tab disabled" disabled>
+                <button
+                  type="button"
+                  className={autoUploadTab === "upload" ? "tab active" : "tab"}
+                  onClick={() => setAutoUploadTab("upload")}
+                >
+                  Upload image(s)
+                </button>
+                <button
+                  type="button"
+                  className={autoUploadTab === "pool" ? "tab active" : "tab"}
+                  onClick={() => setAutoUploadTab("pool")}
+                >
                   My images
                 </button>
-                <button type="button" className="tab disabled" disabled>
+                <button
+                  type="button"
+                  className={autoUploadTab === "gallery" ? "tab active" : "tab"}
+                  onClick={() => {
+                    setAutoUploadTab("gallery");
+                    void refreshGallery();
+                  }}
+                >
                   Gallery
                 </button>
               </div>
             ) : null}
 
-            {!autoDrafts.length ? (
+            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "upload" ? (
               <label className="drop large">
                 <b>⬆</b>
                 <strong>Upload all your images</strong>
-                <small>PNG/JPEG · select multiple files at once</small>
+                <small>PNG/JPEG/SVG · select multiple files at once</small>
                 <input
                   type="file"
                   multiple
-                  accept="image/png,image/jpeg"
+                  accept="image/png,image/jpeg,image/svg+xml,.svg"
                   hidden
                   onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
                 />
               </label>
-            ) : (
+            ) : null}
+
+            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "pool" ? (
+              <div className="pool-grid">
+                {!uploadPool.length ? (
+                  <p className="muted">Upload images in the main editor first — they appear here.</p>
+                ) : (
+                  uploadPool.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="pool-item"
+                      onClick={() => addPoolItemToAuto(p)}
+                      disabled={uploading}
+                    >
+                      <img src={p.previewUrl} alt="" />
+                      <span>{p.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+
+            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "gallery" ? (
+              <div className="pool-grid">
+                {filteredGallery.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className="pool-item"
+                    onClick={() => void addGalleryItemToAuto(g)}
+                    disabled={uploading}
+                  >
+                    <img src={g.thumb} alt="" />
+                    <span>{g.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {autoDrafts.length > 0 ? (
               <>
                 <div className="auto-sheet-settings">
                   <label>
@@ -2122,7 +2459,7 @@ export default function GangSheetEditor() {
                   />
                 </label>
               </>
-            )}
+            ) : null}
           </section>
 
           <section className="auto-preview-panel">
@@ -2241,9 +2578,10 @@ export default function GangSheetEditor() {
   }
 
   return (
-    <div className="bags lgs-editor">
+    <div className="bags lgs-editor" style={appearanceVars(page.appearance)}>
       <style>{BAGS_BASE_CSS}{CSS}</style>
       {restoreDialog}
+      {librarySaveDialog}
       <header className="editor-header">
         <div className="brand">
           <b>L</b>
@@ -2468,7 +2806,7 @@ export default function GangSheetEditor() {
                 <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
               </div>
               <div className="chip-row">
-                {GALLERY_CATEGORIES.map((cat) => (
+                {galleryCategories.map((cat) => (
                   <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
                 ))}
               </div>
@@ -2635,7 +2973,7 @@ export default function GangSheetEditor() {
                         fontSize: `${Math.max(8, (i.fontSize ?? 24) * (i.heightIn / Math.max(0.5, (i.fontSize ?? 24) / 72)))}px`,
                         fontFamily: i.fontFamily ?? "Arial",
                         color: i.textColor ?? "#111827",
-                        transform: `rotate(${i.rotationDeg}deg)`,
+                        transform: pieceTransform(i),
                       }}
                     >
                       {i.textContent ?? i.name}
@@ -2645,7 +2983,7 @@ export default function GangSheetEditor() {
                       src={i.previewUrl}
                       alt={i.name}
                       className="checkerboard"
-                      style={{ transform: `rotate(${i.rotationDeg}deg)` }}
+                      style={{ transform: pieceTransform(i) }}
                       draggable={false}
                     />
                   )}
@@ -2779,6 +3117,8 @@ export default function GangSheetEditor() {
               <div className="actions">
                 <button type="button" onClick={duplicate} aria-label="Duplicate selected">⧉ Duplicate</button>
                 <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
+                <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
+                <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
                 <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
                 <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
               </div>
@@ -2793,7 +3133,16 @@ export default function GangSheetEditor() {
                 Spacing <span>{gap.toFixed(2)} in</span>
                 <input type="range" min={0} max={0.5} step={0.05} value={gap} aria-label="Spacing between pieces" onChange={(e) => setGap(+e.target.value)} />
               </label>
-              <button type="button" className="ghost-save-btn" onClick={() => { const name = window.prompt("Design name", `Gang sheet ${new Date().toLocaleDateString()}`); if (name) saveNamedDesign(name); }}>Save to library</button>
+              <button
+                type="button"
+                className="ghost-save-btn"
+                onClick={() => {
+                  setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
+                  setShowLibrarySave(true);
+                }}
+              >
+                Save to library
+              </button>
             </>
           ) : (
             <div className="none">
@@ -2874,6 +3223,8 @@ a.welcome-opt{text-decoration:none;color:inherit}
 .draft-modal-actions button{border:0;border-radius:7px;padding:10px 14px;background:#242b36;color:#fff;font-weight:700;cursor:pointer}
 .draft-modal-actions .save{background:#21a366}
 .draft-modal-actions .ghost-btn{background:#fff;color:#344054;border:1px solid #ccd2da}
+.library-name-field{display:grid;gap:6px;margin:0 0 16px;font-size:12px;font-weight:600;color:#344054}
+.library-name-field input{width:100%;padding:10px;border:1px solid #ccd2da;border-radius:7px;font:inherit}
 .rotate-toggle{display:flex;align-items:center;gap:8px;font-size:12px;color:#475467;margin:0 0 12px}
 .toast.warn{background:#fff7ed;color:#9a3412}
 .toast.tip{background:#f8fafc;color:#475467;display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -3036,9 +3387,17 @@ aside{background:#fff;overflow:auto}
 .template-card strong{display:block;font-size:13px}
 .template-card span{font-size:11px;color:#667085}
 .saved-designs-list h3{margin:0 0 8px;font-size:13px}
-.saved-design-row{width:100%;text-align:left;border:1px solid #dfe3e8;border-radius:8px;padding:10px;background:#fff;margin-bottom:6px;cursor:pointer}
-.saved-design-row strong{display:block;font-size:12px}
-.saved-design-row small{font-size:10px;color:#667085}
+.saved-design-row-wrap{display:grid;gap:4px;margin-bottom:8px}
+.saved-design-row{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid #dfe3e8;border-radius:8px;padding:10px;background:#fff;cursor:pointer}
+.saved-design-thumb{width:44px;height:44px;border-radius:6px;overflow:hidden;border:1px solid #dfe3e8;display:grid;place-items:center}
+.saved-design-thumb img{width:100%;height:100%;object-fit:contain}
+.saved-design-copy strong{display:block;font-size:12px}
+.saved-design-copy small{font-size:10px;color:#667085}
+.saved-design-actions{display:flex;flex-wrap:wrap;gap:6px}
+.saved-design-action{border:1px solid #dfe3e8;background:#fff;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer}
+.saved-design-rename{display:flex;gap:6px;align-items:center}
+.saved-design-rename input{flex:1;padding:6px 8px;border:1px solid #dfe3e8;border-radius:6px}
+.library-archived-toggle{display:flex;align-items:center;gap:6px;font-size:11px;color:#667085;white-space:nowrap}
 .sidebar-tools{padding:0 14px 10px;display:grid;grid-template-columns:1fr auto;gap:8px}
 .sidebar-tools input,.sidebar-form input,.sidebar-form select,.sidebar-form textarea{width:100%;padding:8px;border:1px solid #ccd2da;border-radius:6px;font:inherit}
 .sidebar-form{padding:0 14px 14px;display:grid;gap:10px}

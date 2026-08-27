@@ -49,11 +49,49 @@ type RemovedSnapshot = {
   index: number;
 };
 
+type RemoteDesignPayload = {
+  designId: string;
+  version: number;
+  name: string | null;
+  state: {
+    items: Array<{
+      assetId: string;
+      widthIn: number;
+      heightIn: number;
+      quantity: number;
+      name?: string;
+    }>;
+    pricing: { totalCents: number };
+  };
+  assets?: Record<
+    string,
+    { widthPx: number; heightPx: number; dpi?: number | null; contentType: string }
+  >;
+  cartProperties?: Record<string, string>;
+};
+
+function assetPreviewUrl(assetId: string) {
+  return `/api/assets/${encodeURIComponent(assetId)}`;
+}
+
+function inferPresetId(
+  widthIn: number,
+  heightIn: number,
+  presets: Array<{ id: string; longestSideIn: number }>,
+) {
+  const longest = Math.max(widthIn, heightIn);
+  const match = presets.find((p) => Math.abs(p.longestSideIn - longest) < 0.06);
+  return match?.id ?? "4in";
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop") || process.env.DEV_SHOP || "";
   const productGid = url.searchParams.get("productGid") ?? "";
   const variantId = url.searchParams.get("variantId") ?? "";
+  const designId = url.searchParams.get("designId") ?? "";
+  const designVersion = url.searchParams.get("designVersion") ?? "";
+  const parentOrigin = url.searchParams.get("parentOrigin") ?? "";
   const token = process.env.TEST_API_TOKEN || "";
 
   const headers = new Headers();
@@ -73,6 +111,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       productGid,
       variantId,
       shop,
+      designId,
+      designVersion,
+      parentOrigin,
       pricePerSqIn: 0.049,
       presets: Object.entries(SIZE_PRESETS).map(([id, p]) => ({
         id,
@@ -98,6 +139,12 @@ export default function UploadBySizeEditor() {
   const [totalArea, setTotalArea] = useState<number | null>(null);
   const [pricePerSqIn, setPricePerSqIn] = useState(page.pricePerSqIn);
   const [lastRemoved, setLastRemoved] = useState<RemovedSnapshot | null>(null);
+  const [editingDesignId, setEditingDesignId] = useState<string | null>(page.designId || null);
+  const [editingVersion, setEditingVersion] = useState<number | null>(
+    page.designVersion ? Number(page.designVersion) : null,
+  );
+  const [dirty, setDirty] = useState(false);
+  const [loadingDesign, setLoadingDesign] = useState(Boolean(page.designId));
 
   const active = queue.find((l) => l.id === activeId) ?? queue[0] ?? null;
   const busy = uploading || saving;
@@ -203,13 +250,87 @@ export default function UploadBySizeEditor() {
     return () => clearTimeout(t);
   }, [queue, refreshQuote]);
 
+  useEffect(() => {
+    if (!page.designId) return;
+    void loadRemoteDesign(
+      page.designId,
+      page.designVersion ? Number(page.designVersion) : undefined,
+    );
+  }, [page.designId, page.designVersion]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirty && !saved) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty, saved]);
+
+  async function loadRemoteDesign(designId: string, version?: number) {
+    setLoadingDesign(true);
+    setError("");
+    try {
+      const url = version
+        ? `/api/designs/${encodeURIComponent(designId)}?version=${version}`
+        : `/api/designs/${encodeURIComponent(designId)}`;
+      const res = await fetch(url, {
+        credentials: "include",
+        headers: headers(),
+      });
+      const json = (await res.json()) as RemoteDesignPayload & { error?: string };
+      if (!res.ok) throw new Error(json.error || "Could not load design");
+
+      const restored: QueueLine[] = json.state.items.map((item, idx) => {
+        const meta = json.assets?.[item.assetId];
+        const presetId = inferPresetId(item.widthIn, item.heightIn, page.presets);
+        return {
+          id: crypto.randomUUID(),
+          asset: {
+            assetId: item.assetId,
+            widthPx: meta?.widthPx ?? 400,
+            heightPx: meta?.heightPx ?? 400,
+            dpi: meta?.dpi,
+            contentType: meta?.contentType ?? "image/png",
+          },
+          previewUrl: assetPreviewUrl(item.assetId),
+          name: item.name || `Artwork ${idx + 1}`,
+          mode: "custom" as const,
+          presetId,
+          widthIn: item.widthIn,
+          heightIn: item.heightIn,
+          lockAspect: true,
+          quantity: item.quantity ?? 1,
+        };
+      });
+
+      setQueue(restored);
+      setActiveId(restored[0]?.id ?? null);
+      setEditingDesignId(json.designId);
+      setEditingVersion(json.version);
+      setSaved(true);
+      setDirty(false);
+      setTotalCents(json.state.pricing.totalCents);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load design");
+    } finally {
+      setLoadingDesign(false);
+    }
+  }
+
+  function markDirty() {
+    setSaved(false);
+    setDirty(true);
+  }
+
   async function onFiles(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (!files.length || busy) return;
     setUploading(true);
     setError("");
-    setSaved(false);
+    markDirty();
     try {
       const added: QueueLine[] = [];
       for (const file of files) {
@@ -243,6 +364,7 @@ export default function UploadBySizeEditor() {
       setQueue((q) => [...q, ...added]);
       setActiveId(added.at(-1)?.id ?? null);
       setLastRemoved(null);
+      markDirty();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -252,7 +374,7 @@ export default function UploadBySizeEditor() {
 
   function patchActive(patch: Partial<QueueLine>) {
     if (!active) return;
-    setSaved(false);
+    markDirty();
     setQueue((lines) =>
       lines.map((line) => (line.id === active.id ? { ...line, ...patch } : line)),
     );
@@ -262,7 +384,7 @@ export default function UploadBySizeEditor() {
     const index = queue.findIndex((l) => l.id === id);
     if (index < 0) return;
     setLastRemoved({ line: queue[index], index });
-    setSaved(false);
+    markDirty();
     setQueue((lines) => lines.filter((l) => l.id !== id));
     if (activeId === id) {
       const next = queue.filter((l) => l.id !== id);
@@ -280,7 +402,7 @@ export default function UploadBySizeEditor() {
     });
     setActiveId(line.id);
     setLastRemoved(null);
-    setSaved(false);
+    markDirty();
     setError("");
   }
 
@@ -298,7 +420,7 @@ export default function UploadBySizeEditor() {
       return next;
     });
     setActiveId(copy.id);
-    setSaved(false);
+    markDirty();
     setError("");
   }
 
@@ -311,33 +433,28 @@ export default function UploadBySizeEditor() {
     setSaving(true);
     setError("");
     try {
-      const payload =
-        queue.length === 1
-          ? {
-              assetId: queue[0].asset.assetId,
-              size: sizePayload(queue[0]),
-              productGid: page.productGid,
-              variantGid: page.variantId
-                ? `gid://shopify/ProductVariant/${page.variantId}`
-                : undefined,
-            }
-          : {
-              uploads: queue.map((line) => ({
-                assetId: line.asset.assetId,
-                size: sizePayload(line),
-              })),
-              productGid: page.productGid,
-              variantGid: page.variantId
-                ? `gid://shopify/ProductVariant/${page.variantId}`
-                : undefined,
-            };
+      const payload = {
+        uploads: queue.map((line) => ({
+          assetId: line.asset.assetId,
+          size: sizePayload(line),
+        })),
+        productGid: page.productGid,
+        variantGid: page.variantId
+          ? `gid://shopify/ProductVariant/${page.variantId}`
+          : undefined,
+      };
 
-      const res = await fetch("/api/designs", {
-        method: "POST",
-        headers: headers({ "Content-Type": "application/json" }),
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        editingDesignId
+          ? `/api/designs/${encodeURIComponent(editingDesignId)}`
+          : "/api/designs",
+        {
+          method: editingDesignId ? "PUT" : "POST",
+          headers: headers({ "Content-Type": "application/json" }),
+          credentials: "include",
+          body: JSON.stringify(payload),
+        },
+      );
       const json = (await res.json()) as {
         designId?: string;
         version?: number;
@@ -349,8 +466,12 @@ export default function UploadBySizeEditor() {
         throw new Error(json.error || "Could not save design");
       }
       setSaved(true);
+      setDirty(false);
+      setEditingDesignId(json.designId);
+      setEditingVersion(json.version ?? editingVersion);
       setTotalCents(json.state?.pricing.totalCents ?? totalCents);
       if (window.parent && window.parent !== window) {
+        const target = page.parentOrigin || "*";
         window.parent.postMessage(
           {
             type: "lgs:design-ready",
@@ -358,7 +479,7 @@ export default function UploadBySizeEditor() {
             version: json.version,
             cartProperties: json.cartProperties,
           },
-          "*",
+          target,
         );
       }
     } catch (err) {
@@ -420,6 +541,19 @@ export default function UploadBySizeEditor() {
         <p className="banner err" role="alert">
           Dev auth missing — set DEV_SHOP and TEST_API_TOKEN in <code>.env</code>, then restart{" "}
           <code>shopify app dev</code>.
+        </p>
+      ) : null}
+
+      {loadingDesign ? (
+        <p className="banner info" role="status">
+          Loading your design…
+        </p>
+      ) : null}
+
+      {editingDesignId ? (
+        <p className="banner info" role="status">
+          Editing design · v{editingVersion ?? "—"}
+          {dirty ? " · unsaved changes" : saved ? " · saved" : ""}
         </p>
       ) : null}
 

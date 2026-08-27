@@ -121,6 +121,8 @@ export function buildNest(
     heightIn: item.heightIn,
     rotationDeg: item.rotationDeg,
     zIndex: item.zIndex ?? index,
+    flipX: item.flipX,
+    flipY: item.flipY,
   }));
   for (const p of placements) {
     if (

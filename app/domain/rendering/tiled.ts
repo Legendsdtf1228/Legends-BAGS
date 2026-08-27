@@ -31,6 +31,8 @@ export async function renderSheetPngTiled(
     width: inchesToPx(p.widthIn),
     height: inchesToPx(p.heightIn),
     rotationDeg: p.rotationDeg,
+    flipX: p.flipX,
+    flipY: p.flipY,
   }));
 
   const placedBuffers: Array<{
@@ -46,6 +48,8 @@ export async function renderSheetPngTiled(
     if (!asset) throw new Error(`Missing asset ${p.assetId}`);
     let img = sharp(asset.bytes, { failOn: "none" }).ensureAlpha();
     if (p.rotationDeg === 90) img = img.rotate(90);
+    if (p.flipX) img = img.flop();
+    if (p.flipY) img = img.flip();
     const buffer = await img
       .resize(p.width, p.height, {
         fit: "fill",

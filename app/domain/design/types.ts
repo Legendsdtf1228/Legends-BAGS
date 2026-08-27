@@ -21,6 +21,8 @@ export type DesignItem = {
   quantity: number;
   /** Preferred rotation hint; nesting may override when allowRotate90 is true */
   rotationDeg: 0 | 90;
+  flipX?: boolean;
+  flipY?: boolean;
   /** Explicit placement used by the visual gang-sheet builder. */
   xIn?: number;
   yIn?: number;
@@ -99,7 +101,11 @@ export function assertDesignStateV1(state: unknown): DesignStateV1 {
   ) {
     throw new Error("Unsupported design state version");
   }
-  if (!Array.isArray(s.items) || s.items.length === 0) {
+  if (!Array.isArray(s.items)) {
+    throw new Error("Design state requires items array");
+  }
+  if (s.items.length === 0) {
+    if (s.workflow === "gang_sheet") return s;
     throw new Error("Design state requires at least one item");
   }
   return s;

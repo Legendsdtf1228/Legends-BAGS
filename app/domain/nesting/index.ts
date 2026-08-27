@@ -9,6 +9,8 @@ export type NestPlacement = {
   rotationDeg: 0 | 90;
   /** Higher paints later / on top when compositing. */
   zIndex?: number;
+  flipX?: boolean;
+  flipY?: boolean;
 };
 
 export type NestResult = {

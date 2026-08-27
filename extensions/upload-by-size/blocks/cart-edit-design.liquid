@@ -1,0 +1,63 @@
+{% comment %}
+  Cart line-item "Edit design" links for Legends BAGS designs.
+  Add this block to the cart template in the theme editor.
+{% endcomment %}
+
+<div class="lgs-cart-edit" data-lgs-cart-edit>
+  <style>
+    .lgs-cart-edit { margin: 0.5rem 0; font-size: 0.875rem; }
+    .lgs-cart-edit__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+    .lgs-cart-edit__item { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: baseline; }
+    .lgs-cart-edit__title { font-weight: 600; }
+    .lgs-cart-edit__link {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .lgs-cart-edit__link:hover { opacity: 0.85; }
+    .lgs-cart-edit__meta { opacity: 0.75; font-size: 0.8125rem; }
+  </style>
+
+  {% assign lgs_design_count = 0 %}
+  {% for item in cart.items %}
+    {% assign lgs_design_id = item.properties['_lgs_design_id'] %}
+    {% if lgs_design_id != blank %}
+      {% assign lgs_design_count = lgs_design_count | plus: 1 %}
+    {% endif %}
+  {% endfor %}
+
+  {% if lgs_design_count > 0 %}
+    <ul class="lgs-cart-edit__list" role="list">
+      {% for item in cart.items %}
+        {% assign lgs_design_id = item.properties['_lgs_design_id'] %}
+        {% if lgs_design_id != blank %}
+          {% assign lgs_version = item.properties['_lgs_design_version'] | default: '1' %}
+          {% assign lgs_name = item.properties['Design'] | default: item.product.title %}
+          {% assign lgs_edit_url = item.url
+            | append: '?lgs_design_id='
+            | append: lgs_design_id
+            | append: '&lgs_design_version='
+            | append: lgs_version %}
+          <li class="lgs-cart-edit__item">
+            <span class="lgs-cart-edit__title">{{ lgs_name }}</span>
+            <a class="lgs-cart-edit__link" href="{{ lgs_edit_url }}">Edit design</a>
+            <span class="lgs-cart-edit__meta">v{{ lgs_version }}</span>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  {% elsif request.design_mode %}
+    <p class="lgs-cart-edit__meta">Legends BAGS — Edit design links appear here when cart lines include a saved design.</p>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "LGS Cart Edit Design",
+  "target": "section",
+  "enabled_on": {
+    "templates": ["cart"]
+  },
+  "settings": []
+}
+{% endschema %}

@@ -37,7 +37,7 @@ describe("upload validation", () => {
 
   it("rejects non-image bytes", async () => {
     await expect(validateUpload(Buffer.from("%PDF-1.4"))).rejects.toThrow(
-      /PNG and JPEG/,
+      /PNG, JPEG, and SVG/,
     );
   });
 });

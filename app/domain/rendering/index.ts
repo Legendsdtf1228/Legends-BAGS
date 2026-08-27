@@ -66,6 +66,8 @@ export async function renderSheetPng(input: RenderInput): Promise<RenderOutput> 
     width: inchesToPx(p.widthIn),
     height: inchesToPx(p.heightIn),
     rotationDeg: p.rotationDeg,
+    flipX: p.flipX,
+    flipY: p.flipY,
   }));
 
   const composites: sharp.OverlayOptions[] = [];
@@ -79,6 +81,8 @@ export async function renderSheetPng(input: RenderInput): Promise<RenderOutput> 
     if (p.rotationDeg === 90) {
       img = img.rotate(90);
     }
+    if (p.flipX) img = img.flop();
+    if (p.flipY) img = img.flip();
 
     const resized = await img
       .resize(p.width, p.height, {

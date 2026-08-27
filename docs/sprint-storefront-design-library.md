@@ -75,9 +75,23 @@ Rollback: revert migration `20260827180000_design_library` (columns nullable; sa
 7. [ ] Reorder creates distinct design ID
 8. [ ] Second designed product in cart is isolated
 
+### Cart edit from cart page
+- `extensions/upload-by-size/blocks/cart-edit-design.liquid` — theme block for cart template; links to product with `lgs_design_id` / `lgs_design_version`
+
+### Upload-by-Size versioning parity
+- `editor.upload-by-size.tsx` — load `designId`/`designVersion`, PUT save for new version, `beforeunload`, origin-safe postMessage
+
+### Preview thumbnails & library UX
+- `Design.previewKey` populated when render completes
+- `listDesignLibrary()` returns signed `previewPath`
+- Welcome Center: thumbnails, rename, archive, show archived filter
+
+### Merchant dashboard
+- Search, workflow/status filters, design names, preview thumbs, order linkage
+
 ## Known limitations
 
-- Cart page “Edit design” link requires theme snippet (not auto-injected on all themes)
-- Upload-by-Size reopen/version save not fully wired (gang sheet primary)
+- Cart page “Edit design” — add the **LGS Cart Edit Design** theme block to the cart template (links back to product with design params)
 - Customer Shopify login / App Proxy auth not yet integrated (guest token only)
-- No cloud preview thumbnails in library yet
+- Dynamic checkout line pricing requires Shopify Functions or tiered variants (see Pricing section)
+- Upscale / background removal tools are UI placeholders only

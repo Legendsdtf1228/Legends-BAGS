@@ -14,6 +14,7 @@ import type { SizeInput } from "../domain/pricing";
 import { assetKey, getObjectStore } from "../domain/storage";
 import { assertDesignStateV1 } from "../domain/design/types";
 import { verifyPriceRef } from "../domain/security/design-access";
+import { signDownload } from "../domain/security/signed-urls";
 
 export async function createAssetFromUpload(shop: string, bytes: Buffer) {
   const validated = await validateUpload(bytes);
@@ -521,6 +522,7 @@ export async function listDesignLibrary(params: {
 }) {
   const where: Prisma.DesignWhereInput = {
     shop: params.shop,
+    staffSheet: false,
     name: params.search?.trim()
       ? { not: null, contains: params.search.trim() }
       : { not: null },
@@ -551,6 +553,21 @@ export async function listDesignLibrary(params: {
           /* ignore */
         }
       }
+      let previewPath: string | null = null;
+      const previewKey =
+        d.previewKey ??
+        (
+          await prisma.renderJob.findFirst({
+            where: { shop: params.shop, designId: d.id, previewKey: { not: null } },
+            orderBy: { createdAt: "desc" },
+            select: { previewKey: true },
+          })
+        )?.previewKey;
+      if (previewKey) {
+        const { token } = signDownload({ shop: params.shop, objectKey: previewKey });
+        previewPath = `/api/files/download?token=${encodeURIComponent(token)}`;
+      }
+
       return {
         id: d.id,
         name: d.name,
@@ -565,9 +582,179 @@ export async function listDesignLibrary(params: {
         createdAt: d.createdAt.toISOString(),
         sourceDesignId: d.sourceDesignId,
         sourceOrderId: d.sourceOrderId,
+        previewPath,
       };
     }),
   );
+}
+
+export async function createStaffSheet(params: {
+  shop: string;
+  name: string;
+  sheetWidthIn?: number;
+  sheetHeightIn?: number;
+}) {
+  const config = await prisma.shopConfig.findUnique({ where: { shop: params.shop } });
+  const sheet = {
+    widthIn: params.sheetWidthIn ?? config?.sheetWidthIn ?? 22.5,
+    maxHeightIn: params.sheetHeightIn ?? 24,
+    imageMarginIn: config?.imageMarginIn ?? 0.15,
+    artboardMarginIn: config?.artboardMarginIn ?? 0.1,
+  };
+  const state: DesignStateV1 = {
+    schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
+    workflow: "gang_sheet",
+    sheet,
+    items: [],
+    pricing: {
+      currency: "USD",
+      pricePerSqIn: config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
+      areaSqIn: 0,
+      totalCents: 0,
+    },
+    allowRotate90: false,
+    layout: "manual",
+  };
+  const cleanName = params.name.trim() || "Untitled shop sheet";
+  const design = await prisma.design.create({
+    data: {
+      shop: params.shop,
+      status: "draft",
+      staffSheet: true,
+      name: cleanName,
+      currentVersion: 1,
+      versions: {
+        create: {
+          version: 1,
+          stateJson: JSON.stringify(state),
+          priceCents: 0,
+          areaSqIn: 0,
+        },
+      },
+    },
+  });
+  await prisma.auditEvent.create({
+    data: {
+      shop: params.shop,
+      action: "staff_sheet.created",
+      actorType: "merchant",
+      entityType: "design",
+      entityId: design.id,
+      metaJson: JSON.stringify({ name: cleanName, sheet }),
+    },
+  });
+  return { design, state };
+}
+
+export async function listStaffSheets(shop: string, search?: string) {
+  const designs = await prisma.design.findMany({
+    where: {
+      shop,
+      staffSheet: true,
+      archived: false,
+      ...(search?.trim()
+        ? { OR: [{ name: { contains: search.trim() } }, { id: { contains: search.trim() } }] }
+        : {}),
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+
+  const jobs = await prisma.renderJob.findMany({
+    where: { shop, designId: { in: designs.map((d) => d.id) } },
+    orderBy: { createdAt: "desc" },
+  });
+  const jobByDesign = new Map<string, (typeof jobs)[number]>();
+  for (const j of jobs) {
+    if (!jobByDesign.has(j.designId)) jobByDesign.set(j.designId, j);
+  }
+
+  return Promise.all(
+    designs.map(async (d) => {
+      const v = await prisma.designVersion.findUnique({
+        where: { designId_version: { designId: d.id, version: d.currentVersion } },
+      });
+      let pieceCount = 0;
+      let sheetLabel = "";
+      if (v) {
+        try {
+          const state = JSON.parse(v.stateJson) as DesignStateV1;
+          pieceCount = state.items.length;
+          sheetLabel = `${state.sheet.widthIn}″ × ${state.sheet.maxHeightIn}″`;
+        } catch {
+          /* ignore */
+        }
+      }
+      const job = jobByDesign.get(d.id);
+      let previewPath: string | null = null;
+      const previewKey = d.previewKey ?? job?.previewKey ?? null;
+      if (previewKey) {
+        const { token } = signDownload({ shop, objectKey: previewKey });
+        previewPath = `/api/files/download?token=${encodeURIComponent(token)}`;
+      }
+      let downloadPath: string | null = null;
+      if (job?.outputKey) {
+        const { token } = signDownload({ shop, objectKey: job.outputKey });
+        downloadPath = `/api/files/download?token=${encodeURIComponent(token)}`;
+      }
+      return {
+        id: d.id,
+        name: d.name,
+        status: d.status,
+        version: d.currentVersion,
+        pieceCount,
+        sheetLabel,
+        updatedAt: d.updatedAt.toISOString(),
+        jobStatus: job?.status ?? null,
+        previewPath,
+        downloadPath,
+      };
+    }),
+  );
+}
+
+export async function renameStaffSheet(shop: string, designId: string, name: string) {
+  const design = await prisma.design.findFirst({
+    where: { id: designId, shop, staffSheet: true },
+  });
+  if (!design) throw new Error("Staff sheet not found");
+  const cleanName = name.trim();
+  if (!cleanName) throw new Error("Name required");
+  return prisma.design.update({
+    where: { id: design.id },
+    data: { name: cleanName },
+  });
+}
+
+export async function archiveStaffSheet(shop: string, designId: string) {
+  const design = await prisma.design.findFirst({
+    where: { id: designId, shop, staffSheet: true },
+  });
+  if (!design) throw new Error("Staff sheet not found");
+  return prisma.design.update({
+    where: { id: design.id },
+    data: { archived: true },
+  });
+}
+
+export async function duplicateStaffSheet(shop: string, designId: string) {
+  const { design, state } = await getDesignState(shop, designId);
+  if (!design.staffSheet) throw new Error("Not a staff sheet");
+  const copy = await createStaffSheet({
+    shop,
+    name: `${design.name || "Shop sheet"} (copy)`,
+    sheetWidthIn: state.sheet.widthIn,
+    sheetHeightIn: state.sheet.maxHeightIn,
+  });
+  if (state.items.length) {
+    await saveGangSheetNewVersion({
+      shop,
+      designId: copy.design.id,
+      items: state.items,
+      sheet: state.sheet,
+    });
+  }
+  return copy.design;
 }
 
 export async function updateDesignLibraryEntry(params: {
@@ -726,6 +913,7 @@ export async function enqueueRenderJob(params: {
   shop: string;
   designId: string;
   orderLinkId?: string;
+  reprocessWidthIn?: number;
 }) {
   const existing = await prisma.renderJob.findMany({
     where: {
@@ -744,6 +932,7 @@ export async function enqueueRenderJob(params: {
       shop: params.shop,
       designId: params.designId,
       orderLinkId: params.orderLinkId,
+      reprocessWidthIn: params.reprocessWidthIn ?? null,
       status: "queued",
       attempt: 0,
     },
@@ -819,6 +1008,7 @@ export async function processNextRenderJob(): Promise<
       jobId: job.id,
       state,
       store: getObjectStore(),
+      reprocessWidthIn: job.reprocessWidthIn ?? undefined,
     });
 
     await prisma.renderJob.update({
@@ -839,7 +1029,10 @@ export async function processNextRenderJob(): Promise<
 
     await prisma.design.update({
       where: { id: job.designId },
-      data: { status: "completed" },
+      data: {
+        status: "completed",
+        previewKey: result.previewObjectKey,
+      },
     });
 
     await prisma.auditEvent.create({

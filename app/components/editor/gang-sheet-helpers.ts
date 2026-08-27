@@ -25,6 +25,8 @@ export type DraftItemV1 = {
   xIn: number;
   yIn: number;
   rotationDeg: 0 | 90;
+  flipX?: boolean;
+  flipY?: boolean;
   zIndex: number;
   kind?: "image" | "text";
   textContent?: string;
