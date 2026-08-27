@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { resolveAppUrl } from "./app-url.server";
 import { getShopAppearance } from "./shop-appearance.server";
 
 export async function loadStorefrontConfig(shop: string, productGid?: string) {
@@ -15,7 +16,10 @@ export async function loadStorefrontConfig(shop: string, productGid?: string) {
       })
     : [];
 
+  const editorBaseUrl = resolveAppUrl() || null;
+
   return {
+    editorBaseUrl,
     appearance: {
       accentColor: appearance.accentColor,
       accentColorDark: appearance.accentColorDark,

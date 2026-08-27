@@ -35,6 +35,10 @@ describe("cart line properties", () => {
     });
     expect(props._lgs_design_id).toBe("des_1");
     expect(props._lgs_design_version).toBe("3");
+    expect(props._lgs_builder_type).toBe("gang_sheet");
+    expect(props._lgs_sheet_width).toBe("22.5");
+    expect(props._lgs_sheet_height).toBe("24");
+    expect(props._lgs_render_status).toBe("pending");
     expect(props[CART_SHEET_SIZE_PROPERTY]).toBe(sheetSizeLabel(state));
     expect(props[CART_PIECE_COUNT_PROPERTY]).toBe(String(pieceCount(state)));
     expect(props[CART_DESIGN_NAME_PROPERTY]).toBe("Team Sheet");

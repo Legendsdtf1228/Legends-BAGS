@@ -88,6 +88,8 @@ export function verifyStorefrontSession(
 export type AppProxyRoute =
   | { kind: "storefront-config" }
   | { kind: "session" }
+  | { kind: "builder" }
+  | { kind: "launcher-script" }
   | { kind: "design"; designId: string };
 
 /** Parse splat path from /apps/legends-bags/* proxy route. */
@@ -95,6 +97,8 @@ export function parseAppProxyPath(path: string): AppProxyRoute | null {
   const normalized = path.replace(/\/$/, "");
   if (normalized === "storefront-config") return { kind: "storefront-config" };
   if (normalized === "session") return { kind: "session" };
+  if (normalized === "builder") return { kind: "builder" };
+  if (normalized === "lgs-launcher.full.js") return { kind: "launcher-script" };
   const designMatch = /^designs\/([^/]+)$/.exec(normalized);
   if (designMatch) return { kind: "design", designId: decodeURIComponent(designMatch[1]) };
   return null;

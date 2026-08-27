@@ -6,9 +6,15 @@ import {
 import { signDesignAccess, signPriceRef } from "../security/design-access";
 
 export const CART_WORKFLOW_PROPERTY = "_lgs_workflow" as const;
+export const CART_BUILDER_TYPE_PROPERTY = "_lgs_builder_type" as const;
 export const CART_SHEET_SIZE_PROPERTY = "_lgs_sheet_size" as const;
+export const CART_SHEET_WIDTH_PROPERTY = "_lgs_sheet_width" as const;
+export const CART_SHEET_HEIGHT_PROPERTY = "_lgs_sheet_height" as const;
+export const CART_RENDER_STATUS_PROPERTY = "_lgs_render_status" as const;
 export const CART_PIECE_COUNT_PROPERTY = "_lgs_piece_count" as const;
 export const CART_DESIGN_NAME_PROPERTY = "Design" as const;
+export const CART_BUILDER_TYPE_VISIBLE_PROPERTY = "Builder type" as const;
+export const CART_SHEET_SIZE_VISIBLE_PROPERTY = "Sheet size" as const;
 export const CART_PRICE_REF_PROPERTY = "_lgs_price_ref" as const;
 export const CART_DESIGN_TOKEN_PROPERTY = "_lgs_design_token" as const;
 
@@ -87,10 +93,16 @@ export function buildCartLineProperties(params: {
     [CART_DESIGN_ID_PROPERTY]: designId,
     [CART_DESIGN_VERSION_PROPERTY]: String(version),
     [CART_WORKFLOW_PROPERTY]: state.workflow,
+    [CART_BUILDER_TYPE_PROPERTY]: state.workflow,
     [CART_SHEET_SIZE_PROPERTY]: sheetSizeLabel(state),
+    [CART_SHEET_WIDTH_PROPERTY]: String(state.sheet.widthIn),
+    [CART_SHEET_HEIGHT_PROPERTY]: String(state.sheet.maxHeightIn),
+    [CART_RENDER_STATUS_PROPERTY]: "pending",
     [CART_PIECE_COUNT_PROPERTY]: String(pieceCount(state)),
     [CART_PRICE_REF_PROPERTY]: priceRef,
     [CART_DESIGN_TOKEN_PROPERTY]: designToken,
+    [CART_BUILDER_TYPE_VISIBLE_PROPERTY]: workflowLabel(state.workflow),
+    [CART_SHEET_SIZE_VISIBLE_PROPERTY]: sheetSizeLabel(state),
   };
   if (designName?.trim()) {
     props[CART_DESIGN_NAME_PROPERTY] = designName.trim();

@@ -1210,11 +1210,31 @@ export async function linkOrderToDesigns(params: {
   shop: string;
   orderId: string;
   orderGid?: string;
-  lines: Array<{ lineItemId: string; designId: string; designVersion?: number; priceRef?: string }>;
+  orderNumber?: string;
+  financialStatus?: string;
+  fulfillmentStatus?: string | null;
+  paidAt?: Date;
+  cancelledAt?: Date;
+  customerGid?: string;
+  customerEmail?: string;
+  customerName?: string;
+  lines: Array<{
+    lineItemId: string;
+    designId: string;
+    designVersion?: number;
+    priceRef?: string;
+    builderType?: string;
+    sheetWidthIn?: number;
+    sheetHeightIn?: number;
+    quantity?: number;
+    productGid?: string;
+    variantGid?: string;
+  }>;
   idempotencyKey: string;
   topic: string;
   webhookId?: string;
   payloadHash: string;
+  enqueueRender?: boolean;
 }) {
   const existing = await prisma.webhookDelivery.findUnique({
     where: { idempotencyKey: params.idempotencyKey },
@@ -1236,6 +1256,7 @@ export async function linkOrderToDesigns(params: {
   });
 
   const linked: string[] = [];
+  const enqueueRender = params.enqueueRender ?? true;
   for (const line of params.lines) {
     const design = await prisma.design.findFirst({
       where: { id: line.designId, shop: params.shop },
@@ -1267,25 +1288,56 @@ export async function linkOrderToDesigns(params: {
         shop: params.shop,
         orderId: params.orderId,
         orderGid: params.orderGid,
+        orderNumber: params.orderNumber,
         lineItemId: line.lineItemId,
         designId: line.designId,
         designVersion: line.designVersion ?? design.currentVersion,
+        productGid: line.productGid,
+        variantGid: line.variantGid,
+        customerGid: params.customerGid,
+        customerEmail: params.customerEmail,
+        customerName: params.customerName,
+        builderType: line.builderType,
+        sheetWidthIn: line.sheetWidthIn,
+        sheetHeightIn: line.sheetHeightIn,
+        quantity: line.quantity ?? 1,
+        financialStatus: params.financialStatus,
+        fulfillmentStatus: params.fulfillmentStatus ?? undefined,
+        paidAt: params.paidAt,
+        cancelledAt: params.cancelledAt,
       },
       update: {
         orderGid: params.orderGid,
+        orderNumber: params.orderNumber,
+        designVersion: line.designVersion ?? design.currentVersion,
+        productGid: line.productGid,
+        variantGid: line.variantGid,
+        customerGid: params.customerGid,
+        customerEmail: params.customerEmail,
+        customerName: params.customerName,
+        builderType: line.builderType,
+        sheetWidthIn: line.sheetWidthIn,
+        sheetHeightIn: line.sheetHeightIn,
+        quantity: line.quantity ?? 1,
+        financialStatus: params.financialStatus,
+        fulfillmentStatus: params.fulfillmentStatus ?? undefined,
+        paidAt: params.paidAt ?? undefined,
+        cancelledAt: params.cancelledAt ?? undefined,
       },
     });
 
-    await prisma.design.update({
-      where: { id: design.id },
-      data: { status: "ordered" },
-    });
+    if (enqueueRender) {
+      await prisma.design.update({
+        where: { id: design.id },
+        data: { status: "ordered" },
+      });
 
-    await enqueueRenderJob({
-      shop: params.shop,
-      designId: design.id,
-      orderLinkId: orderLink.id,
-    });
+      await enqueueRenderJob({
+        shop: params.shop,
+        designId: design.id,
+        orderLinkId: orderLink.id,
+      });
+    }
     linked.push(design.id);
   }
 

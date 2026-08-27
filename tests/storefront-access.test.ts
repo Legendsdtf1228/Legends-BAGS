@@ -32,6 +32,8 @@ describe("parseAppProxyPath", () => {
   it("parses known proxy routes", () => {
     expect(parseAppProxyPath("storefront-config")).toEqual({ kind: "storefront-config" });
     expect(parseAppProxyPath("session")).toEqual({ kind: "session" });
+    expect(parseAppProxyPath("builder")).toEqual({ kind: "builder" });
+    expect(parseAppProxyPath("lgs-launcher.full.js")).toEqual({ kind: "launcher-script" });
     expect(parseAppProxyPath("designs/abc123")).toEqual({
       kind: "design",
       designId: "abc123",

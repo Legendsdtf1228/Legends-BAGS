@@ -46,6 +46,8 @@ model ShopConfig {
   welcomeSubtitle    String   @default("Upload artwork, arrange on the sheet, then save to cart.")
   podEnabled         Boolean  @default(false)
   podProviderNotes   String?
+  lastProductSyncAt  DateTime?
+  lastProductSyncError String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -65,6 +67,12 @@ model ProductBinding {
   variantPriceCents Int?
   /** Sheet height in inches for this variant (gang sheet catalog) */
   sheetHeightIn       Float?
+  productTitle        String?
+  productStatus       String?
+  productImageUrl     String?
+  variantTitle        String?
+  shopifyUpdatedAt    DateTime?
+  syncStatus          String   @default("manual")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -186,19 +194,35 @@ model DesignVersion {
 }
 
 model OrderLink {
-  id             String   @id @default(cuid())
-  shop           String
-  orderId        String
-  orderGid       String?
-  lineItemId     String
-  designId       String
-  design         Design   @relation(fields: [designId], references: [id])
-  designVersion  Int
-  createdAt      DateTime @default(now())
-  renderJobs     RenderJob[]
+  id                String    @id @default(cuid())
+  shop              String
+  orderId           String
+  orderGid          String?
+  orderNumber       String?
+  lineItemId        String
+  productGid        String?
+  variantGid        String?
+  customerGid       String?
+  customerEmail     String?
+  customerName      String?
+  designId          String
+  design            Design    @relation(fields: [designId], references: [id])
+  designVersion     Int
+  builderType       String?
+  sheetWidthIn      Float?
+  sheetHeightIn     Float?
+  quantity          Int       @default(1)
+  financialStatus   String?
+  fulfillmentStatus String?
+  paidAt            DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  renderJobs        RenderJob[]
 
   @@unique([shop, orderId, lineItemId, designId])
   @@index([shop, orderId])
+  @@index([shop, orderNumber])
   @@index([designId])
 }
 
