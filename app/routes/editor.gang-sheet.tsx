@@ -16,6 +16,8 @@ import { BagsSheetToolbar } from "../components/editor/bags-parity/bags-sheet-to
 import { BagsBottomNav, type BagsBottomNavTab } from "../components/editor/bags-parity/bags-bottom-nav";
 import { BagsLeftRail, isBagsLeftRailPanelTab, type BagsLeftRailTab } from "../components/editor/bags-parity/bags-left-rail";
 import { BagsProductsPanel } from "../components/editor/bags-parity/bags-products-panel";
+import { BagsUploadsPanel } from "../components/editor/bags-parity/bags-uploads-panel";
+import { BagsPropertiesPanel } from "../components/editor/bags-parity/bags-properties-panel";
 import { BagsActiveSheetsDrawer } from "../components/editor/bags-parity/bags-active-sheets-drawer";
 import { BagsAddImageModal, type AddImageTab } from "../components/editor/bags-parity/bags-add-image-modal";
 import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-editor-settings-drawer";
@@ -440,6 +442,9 @@ export default function GangSheetEditor() {
   const [showFirstTip, setShowFirstTip] = useState(true);
   const [uploadSearch, setUploadSearch] = useState("");
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
+  const [uploadView, setUploadView] = useState<"grid" | "list">("grid");
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [upscaling, setUpscaling] = useState(false);
   const [sheetQuantity, setSheetQuantity] = useState(page.quantity ?? 1);
   const [bottomNav, setBottomNav] = useState<BagsBottomNavTab | null>(null);
   const [leftRailTab, setLeftRailTab] = useState<BagsLeftRailTab>("uploads");
@@ -926,6 +931,7 @@ export default function GangSheetEditor() {
   }
 
   const desktopSidePanelOpen = isBagsLeftRailPanelTab(leftRailTab);
+  const desktopPropertiesOpen = Boolean(selected);
 
   function commitSheetSize(w: number, h: number, mode: "clamp" | "scale") {
     if (itemsRef.current.length) {
@@ -1128,6 +1134,7 @@ export default function GangSheetEditor() {
   ) {
     if (!files.length) return;
     setUploading(true);
+    setUploadProgress(`Uploading 0/${files.length}…`);
     setError("");
     setSaved(false);
     try {
@@ -1136,7 +1143,10 @@ export default function GangSheetEditor() {
         const placed: CanvasItem[] = [];
         const placeOnSheet = options?.placeOnSheet ?? false;
         let base = items;
+        let index = 0;
         for (const file of files) {
+          index += 1;
+          setUploadProgress(`Uploading ${index}/${files.length}: ${file.name}`);
           const asset = await postUpload(file);
           const previewUrl = URL.createObjectURL(file);
           poolAdded.push({
@@ -1190,6 +1200,30 @@ export default function GangSheetEditor() {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
+    }
+  }
+
+  async function upscaleSelected() {
+    if (!selected || selected.kind === "text") return;
+    setUpscaling(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/assets/${encodeURIComponent(selected.assetId)}/upscale`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+        body: JSON.stringify({ widthIn: selected.widthIn, heightIn: selected.heightIn }),
+      });
+      const json = (await res.json()) as { assetId?: string; error?: string };
+      if (!res.ok || !json.assetId) throw new Error(json.error || "Upscale failed");
+      const previewUrl = assetPreviewUrl(json.assetId);
+      change({ assetId: json.assetId, previewUrl });
+      setMessage("Artwork upscaled for print.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upscale failed");
+    } finally {
+      setUpscaling(false);
     }
   }
 
@@ -3077,7 +3111,9 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className={`workspace bags-parity-workspace${desktopSidePanelOpen ? " has-side-panel" : ""}`}>
+      <div
+        className={`workspace bags-parity-workspace${desktopSidePanelOpen ? " has-side-panel" : ""}${desktopPropertiesOpen ? " has-properties" : ""}`}
+      >
         <BagsLeftRail
           active={leftRailTab}
           onSelect={handleLeftRail}
@@ -3108,91 +3144,31 @@ export default function GangSheetEditor() {
               onSelectHeight={(heightIn) => requestSheetSize(sheetWidth, heightIn)}
             />
           ) : sidebarTab === "uploads" ? (
-            <>
-              <div className="heading">
-                <span>
-                  <strong>Uploads</strong>
-                  <small>{uploadPool.length} file{uploadPool.length === 1 ? "" : "s"}</small>
-                </span>
-                <button
-                  type="button"
-                  className="refresh-btn"
-                  title="Refresh uploads"
-                  aria-label="Refresh uploads"
-                  onClick={() => setPoolTick((t) => t + 1)}
-                >
-                  <ToolbarIcon name="refresh" />
-                </button>
-              </div>
-              <div className="sidebar-tools">
-                <input
-                  type="search"
-                  placeholder="Search uploads…"
-                  value={uploadSearch}
-                  onChange={(e) => setUploadSearch(e.target.value)}
-                  aria-label="Search uploads"
-                />
-                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
-                  <option value="recent">Recent</option>
-                  <option value="name">Name</option>
-                </select>
-              </div>
-              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
-              <label
-                className="sidebar-upload-btn drop-target"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                }}
-              >
-                {uploading ? "Uploading…" : "Upload image(s)"}
-                <input
-                  ref={sidebarUploadRef}
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg"
-                  hidden
-                  onChange={(e) => {
-                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {!filteredPool.length ? (
-                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
-                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
-                  <small>Drop PNG/JPEG files here or browse above</small>
-                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
-                </label>
-              ) : (
-                <div className="pool-grid" key={poolTick}>
-                  {filteredPool.map((p) => {
-                    const dpiInfo = dpiQualityTier(p.asset.dpi);
-                    const onSheet = sheetCountForAsset(p.asset.assetId);
-                    return (
-                      <div key={p.id} className="pool-item-wrap">
-                        <button type="button" className="pool-item" onClick={() => placeFromPool(p.id)} title="Click to place on gang sheet" draggable onDragStart={(e) => e.dataTransfer.setData("text/pool-id", p.id)}>
-                          <img src={p.previewUrl} alt="" className="checkerboard" />
-                          <span>{p.name}</span>
-                          {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
-                          {dpiInfo.tier !== "excellent" && dpiInfo.tier !== "good" ? (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label} DPI</em>
-                          ) : (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label}</em>
-                          )}
-                        </button>
-                        <div className="pool-item-actions">
-                          <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
-                          <button type="button" aria-label="Remove background" title="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>Cut</button>
-                          <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>Del</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+            <BagsUploadsPanel
+              uploadPool={uploadPool}
+              filteredPool={filteredPool}
+              uploadSearch={uploadSearch}
+              onUploadSearchChange={setUploadSearch}
+              uploadSort={uploadSort}
+              onUploadSortChange={setUploadSort}
+              uploadView={uploadView}
+              onUploadViewChange={setUploadView}
+              uploading={uploading}
+              uploadProgress={uploadProgress}
+              poolTick={poolTick}
+              sidebarUploadRef={sidebarUploadRef}
+              onRefresh={() => setPoolTick((t) => t + 1)}
+              onUploadFiles={(files) => void uploadFiles(files, "canvas")}
+              onPlace={placeFromPool}
+              onRename={renamePoolItem}
+              onRemoveBg={openBgRemoveForAsset}
+              onDelete={deletePoolItem}
+              sheetCountForAsset={sheetCountForAsset}
+              onAddText={() => {
+                setSidebarTab("text");
+                setLeftRailTab("uploads");
+              }}
+            />
           ) : sidebarTab === "gallery" ? (
             <>
               <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
@@ -3489,7 +3465,10 @@ export default function GangSheetEditor() {
           </div>
           </div>
         </main>
-        <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
+        <aside
+          className={`properties bags-parity-properties ${desktopPropertiesOpen ? "open" : ""} ${mobileDrawer === "properties" ? "mobile-open" : ""}`}
+          aria-hidden={!desktopPropertiesOpen && mobileDrawer !== "properties"}
+        >
           <button
             type="button"
             className="mobile-drawer-close"
@@ -3498,133 +3477,37 @@ export default function GangSheetEditor() {
           >
             ×
           </button>
-          <div className="heading">
-            <span>
-              <strong>Properties</strong>
-              <small>{selected ? "Artwork selected" : "Select an item"}</small>
-            </span>
-          </div>
-          {selected ? (
-            <>
-              <div className="preview">
-                {selected.kind === "text" ? (
-                  <span className="text-preview">{selected.textContent ?? selected.name}</span>
-                ) : (
-                  <img src={selected.previewUrl} alt="" className="checkerboard" />
-                )}
-                <strong>{selected.name}</strong>
-                <small>
-                  {selected.kind === "text"
-                    ? `${selected.fontFamily} · ${selected.fontSize}pt`
-                    : `${selected.widthPx} × ${selected.heightPx}px · ${selected.dpi ? `${selected.dpi} DPI` : "DPI not tagged"}`}
-                </small>
-              </div>
-              <div className="fields grid-2">
-                <label>
-                  X (in)
-                  <input type="number" step={0.05} value={round(selected.xIn)} disabled={selected.lockPosition} onChange={(e) => change({ xIn: +e.target.value })} />
-                </label>
-                <label>
-                  Y (in)
-                  <input type="number" step={0.05} value={round(selected.yIn)} disabled={selected.lockPosition} onChange={(e) => change({ yIn: +e.target.value })} />
-                </label>
-                <label>
-                  Width (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.widthIn)}
-                    onChange={(e) => {
-                      const w = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ widthIn: w });
-                      else change({ widthIn: w, heightIn: w / (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Height (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.heightIn)}
-                    onChange={(e) => {
-                      const h = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ heightIn: h });
-                      else change({ heightIn: h, widthIn: h * (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Rotation
-                  <select value={selected.rotationDeg} onChange={(e) => change({ rotationDeg: +e.target.value as 0 | 90 })}>
-                    <option value={0}>0°</option>
-                    <option value={90}>90°</option>
-                  </select>
-                </label>
-              </div>
-              <div className="align-row">
-                <span>Align</span>
-                <button type="button" onClick={() => alignSelection("left")} aria-label="Align left">⫷</button>
-                <button type="button" onClick={() => alignSelection("center-h")} aria-label="Align center">⫿</button>
-                <button type="button" onClick={() => alignSelection("right")} aria-label="Align right">⫸</button>
-                <button type="button" onClick={() => alignSelection("top")} aria-label="Align top">⫠</button>
-                <button type="button" onClick={() => alignSelection("center-v")} aria-label="Align middle">⫟</button>
-                <button type="button" onClick={() => alignSelection("bottom")} aria-label="Align bottom">⫡</button>
-              </div>
-              <div className="align-row">
-                <span>Distribute</span>
-                <button type="button" onClick={() => distributeSelection("horizontal")}>Horizontal</button>
-                <button type="button" onClick={() => distributeSelection("vertical")}>Vertical</button>
-              </div>
-              <label className="toggle-row"><input type="checkbox" checked={selected.lockAspect !== false && selected.kind !== "text"} onChange={(e) => change({ lockAspect: e.target.checked })} /> Lock aspect ratio</label>
-              <label className="toggle-row"><input type="checkbox" checked={Boolean(selected.lockPosition)} onChange={(e) => change({ lockPosition: e.target.checked })} /> Lock position</label>
-              <div className="actions">
-                <button type="button" onClick={duplicate} aria-label="Duplicate selected">⧉ Duplicate</button>
-                <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
-                <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
-                <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
-                {selected.kind !== "text" && !selected.assetId.startsWith("text-") ? (
-                  <button
-                    type="button"
-                    onClick={() => openBgRemoveForAsset(selected.assetId, selected.previewUrl)}
-                    aria-label="Remove background"
-                  >
-                    ✂ Remove BG
-                  </button>
-                ) : null}
-                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
-                <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
-              </div>
-              <div className="layer-actions">
-                <span>Layer</span>
-                <button type="button" onClick={() => layerAction("forward")} aria-label="Bring forward">Forward</button>
-                <button type="button" onClick={() => layerAction("backward")} aria-label="Send backward">Backward</button>
-                <button type="button" onClick={() => layerAction("front")} aria-label="Bring to front">To front</button>
-                <button type="button" onClick={() => layerAction("back")} aria-label="Send to back">To back</button>
-              </div>
-              <label className="spacing">
-                Spacing <span>{gap.toFixed(2)} in</span>
-                <input type="range" min={0} max={0.5} step={0.05} value={gap} aria-label="Spacing between pieces" onChange={(e) => setGap(+e.target.value)} />
-              </label>
-              <button
-                type="button"
-                className="ghost-save-btn"
-                onClick={() => {
-                  setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
-                  setShowLibrarySave(true);
-                }}
-              >
-                Save to library
-              </button>
-            </>
-          ) : (
-            <div className="none">
-              <b>↖</b>
-              <p>Click artwork on the sheet to resize, rotate, duplicate, or fill the sheet.</p>
-            </div>
-          )}
+          <BagsPropertiesPanel
+            selected={selected}
+            sheetWidth={sheetWidth}
+            sheetHeight={sheetHeight}
+            gap={gap}
+            artboardMarginEnabled={artboardMarginEnabled}
+            artboardMarginIn={artboardMarginIn}
+            onArtboardMarginChange={(enabled, value) => {
+              setArtboardMarginEnabled(enabled);
+              setArtboardMarginIn(value);
+            }}
+            onChange={(patch) => change(patch)}
+            onAlign={(mode) => alignSelection(mode as Parameters<typeof alignSelected>[2])}
+            onDistribute={distributeSelection}
+            onDuplicate={duplicate}
+            onRotate={rotate}
+            onFlipH={flipHorizontal}
+            onFlipV={flipVertical}
+            onRemoveBg={
+              selected && selected.kind !== "text" && !selected.assetId.startsWith("text-")
+                ? () => openBgRemoveForAsset(selected.assetId, selected.previewUrl)
+                : undefined
+            }
+            onUpscale={selected && selected.kind !== "text" ? () => void upscaleSelected() : undefined}
+            upscaling={upscaling}
+            onAutoFill={fillSheet}
+            onDelete={removeSelected}
+            onLayer={layerAction}
+            onGapChange={setGap}
+            round={round}
+          />
           <section className="summary">
             <p>
               <span>Printed area</span>

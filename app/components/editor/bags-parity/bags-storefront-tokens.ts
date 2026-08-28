@@ -16,6 +16,7 @@ export const BAGS_STOREFRONT_TOKENS = {
   drawerWidth: "320px",
   leftRailWidth: "64px",
   sidePanelWidth: "280px",
+  propertiesPanelWidth: "260px",
 } as const;
 
 export const BAGS_STOREFRONT_TOKEN_CSS = `
@@ -34,5 +35,6 @@ export const BAGS_STOREFRONT_TOKEN_CSS = `
   --bags-control:${BAGS_STOREFRONT_TOKENS.controlSize};
   --bags-rail-w:${BAGS_STOREFRONT_TOKENS.leftRailWidth};
   --bags-panel-w:${BAGS_STOREFRONT_TOKENS.sidePanelWidth};
+  --bags-props-w:${BAGS_STOREFRONT_TOKENS.propertiesPanelWidth};
 }
 `;

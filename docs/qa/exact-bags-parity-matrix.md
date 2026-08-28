@@ -13,8 +13,11 @@ Status key: **done** | **partial** | **pending** | **blocked**
 | Header qty stepper | Yes | `BagsGangSheetHeader` | partial |
 | Save & Add to Cart (blue) | Yes | Header primary | partial |
 | Save / Close | Yes | Header | partial |
-| Live USD price | Yes | Header | partial |
-| Customer account menu | Yes | Guest placeholder | partial |
+| Live USD price | Yes | Header + Welcome + save/cart via synced variant | partial |
+| Customer account menu | Yes | Storefront session (not localhost Guest) | partial |
+| Permanent left rail (desktop) | Yes | Home/Products/Uploads/Gallery/Canva/Dropbox/Settings | partial |
+| Uploads side panel | Yes | `BagsUploadsPanel` grid/list, progress, qty badges | partial |
+| Properties panel (desktop right) | Yes | `BagsPropertiesPanel` w/ fit check, upscale, auto fill | partial |
 | Sheet size selector (22.5 widths) | Yes | Toolbar + domain constants | done |
 | 22.5×24 never → 360 | Yes | `resolveGangSheetHeight()` | done |
 | Undo/redo | Yes | Toolbar | done |
