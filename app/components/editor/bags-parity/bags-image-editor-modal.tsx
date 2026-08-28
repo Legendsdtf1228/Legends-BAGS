@@ -141,94 +141,100 @@ export function BagsImageEditorModal(props: BagsImageEditorModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="bags-modal-head">
-          <h2 id="bags-image-editor-title">Image Editor — {sourceName}</h2>
+          <h2 id="bags-image-editor-title">Image Editor</h2>
           <button type="button" className="bags-icon-btn" onClick={onClose} aria-label="Close">
             ×
           </button>
         </header>
 
-        <div className="bags-modal-tabs" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`bags-modal-tab ${tab === t.id ? "active" : ""}`}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <div className="bags-image-editor-layout">
+          <nav className="bags-image-editor-nav" role="tablist" aria-label="Image editor tools">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                className={`bags-image-editor-nav-btn ${tab === t.id ? "active" : ""}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
 
-        <div className="bags-image-editor-body">
-          <div className="bags-image-editor-preview-col">
-            <div className="bags-image-editor-preview-controls">
-              <label>
-                Preview bg
-                <select
-                  value={previewBg}
-                  onChange={(e) => setPreviewBg(e.target.value as typeof previewBg)}
-                  aria-label="Preview background"
+          <div className="bags-image-editor-main">
+            <div className="bags-image-editor-body">
+              <div className="bags-image-editor-preview-col">
+                <div className="bags-image-editor-preview-controls">
+                  <label>
+                    Preview bg
+                    <select
+                      value={previewBg}
+                      onChange={(e) => setPreviewBg(e.target.value as typeof previewBg)}
+                      aria-label="Preview background"
+                    >
+                      {PREVIEW_BGS.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Zoom
+                    <input
+                      type="range"
+                      min={50}
+                      max={200}
+                      step={10}
+                      value={zoom}
+                      onChange={(e) => setZoom(+e.target.value)}
+                      aria-label="Preview zoom"
+                    />
+                    <span>{zoom}%</span>
+                  </label>
+                </div>
+                <div
+                  className={`bags-image-editor-preview bags-preview-bg-${previewBg}`}
+                  style={{ transform: `scale(${zoom / 100})` }}
                 >
-                  {PREVIEW_BGS.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Zoom
-                <input
-                  type="range"
-                  min={50}
-                  max={200}
-                  step={10}
-                  value={zoom}
-                  onChange={(e) => setZoom(+e.target.value)}
-                  aria-label="Preview zoom"
-                />
-                <span>{zoom}%</span>
-              </label>
-            </div>
-            <div
-              className={`bags-image-editor-preview bags-preview-bg-${previewBg}`}
-              style={{ transform: `scale(${zoom / 100})` }}
-            >
-              {rendering ? <p className="bags-modal-empty">Rendering preview…</p> : null}
-              {error ? <p className="gs-save-error">{error}</p> : null}
-              <img
-                src={displayUrl}
-                alt=""
-                style={{ filter: tab === "colors" || tab === "enhance" ? cssFilter : undefined }}
-                className={previewBg === "checkerboard" ? "checkerboard" : undefined}
-              />
-            </div>
-          </div>
+                  {rendering ? <p className="bags-modal-empty">Rendering preview…</p> : null}
+                  {error ? <p className="gs-save-error">{error}</p> : null}
+                  <img
+                    src={displayUrl}
+                    alt=""
+                    style={{ filter: tab === "colors" || tab === "enhance" ? cssFilter : undefined }}
+                    className={previewBg === "checkerboard" ? "checkerboard" : undefined}
+                  />
+                </div>
+              </div>
 
-          <div className="bags-image-editor-controls">
-            {tab === "enhance" ? (
-              <>
-                <p className="bags-modal-hint">Enhance artwork before placing on the sheet.</p>
-                {onRemoveBg ? (
-                  <button type="button" className="bags-btn bags-btn-secondary" onClick={onRemoveBg}>
-                    Remove background
-                  </button>
+              <div className="bags-image-editor-controls">
+                {tab === "enhance" ? (
+                  <>
+                    <p className="bags-modal-hint">Enhance artwork before placing on the sheet.</p>
+                    <div className="bags-image-editor-cards">
+                      {onRemoveBg ? (
+                        <button type="button" className="bags-image-editor-card" onClick={onRemoveBg}>
+                          <strong>Remove BG</strong>
+                          <span>Automatically remove the image background.</span>
+                        </button>
+                      ) : null}
+                      {onUpscale ? (
+                        <button
+                          type="button"
+                          className="bags-image-editor-card"
+                          onClick={onUpscale}
+                          disabled={upscaling}
+                        >
+                          <strong>{upscaling ? "Upscaling…" : "Upscale"}</strong>
+                          <span>Increase resolution for sharper print output.</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
                 ) : null}
-                {onUpscale ? (
-                  <button
-                    type="button"
-                    className="bags-btn bags-btn-secondary"
-                    onClick={onUpscale}
-                    disabled={upscaling}
-                  >
-                    {upscaling ? "Upscaling…" : "Upscale for print"}
-                  </button>
-                ) : null}
-              </>
-            ) : null}
 
             {tab === "halftone" ? (
               <>
@@ -371,12 +377,14 @@ export function BagsImageEditorModal(props: BagsImageEditorModalProps) {
                 </button>
               </>
             ) : null}
+              </div>
+            </div>
           </div>
         </div>
 
         <footer className="bags-modal-actions">
-          <button type="button" className="bags-btn bags-btn-secondary" onClick={onClose}>
-            Cancel
+          <button type="button" className="bags-btn bags-btn-secondary bags-btn-close-lg" onClick={onClose}>
+            Close
           </button>
           <button
             type="button"

@@ -1,4 +1,5 @@
 import { dpiQualityTier } from "../gang-sheet/dpi-quality";
+import { SelectionToolbarIcon } from "./bags-selection-toolbar-icons";
 
 export type BagsSelectionToolbarProps = {
   selected: {
@@ -62,10 +63,10 @@ function Num(props: {
 function ToolBtn(props: {
   label: string;
   title: string;
+  icon: Parameters<typeof SelectionToolbarIcon>[0]["name"];
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
-  children: React.ReactNode;
 }) {
   return (
     <button
@@ -76,7 +77,7 @@ function ToolBtn(props: {
       aria-label={props.label}
       disabled={props.disabled}
     >
-      {props.children}
+      <SelectionToolbarIcon name={props.icon} />
     </button>
   );
 }
@@ -100,8 +101,6 @@ export function BagsSelectionToolbar(props: BagsSelectionToolbarProps) {
     onCenterBoth,
     onSnapLeft,
     onSnapRight,
-    onSnapTop,
-    onSnapBottom,
     onDelete,
     onDuplicate,
     canUndo,
@@ -126,101 +125,53 @@ export function BagsSelectionToolbar(props: BagsSelectionToolbarProps) {
           <Num label="Width" value={selected.widthIn} onChange={(widthIn) => onChange({ widthIn })} />
           <Num label="Height" value={selected.heightIn} onChange={(heightIn) => onChange({ heightIn })} />
           <span className={`bags-sel-dpi bags-fitcheck-${dpiInfo?.tier ?? "unknown"}`} title={dpiInfo?.explanation}>
-            {selected.dpi ? `${Math.round(selected.dpi)} DPI · ${dpiInfo?.label ?? ""}` : "DPI —"}
+            {selected.dpi ? `${Math.round(selected.dpi)} DPI` : "DPI —"}
           </span>
         </>
       )}
 
       <div className="bags-sel-actions">
-        <ToolBtn label="Align left" title="Align left" onClick={() => onAlign("left")}>
-          ⫷
-        </ToolBtn>
-        <ToolBtn label="Align center" title="Align center horizontally" onClick={() => onAlign("center-h")}>
-          ⫿
-        </ToolBtn>
-        <ToolBtn label="Align right" title="Align right" onClick={() => onAlign("right")}>
-          ⫸
-        </ToolBtn>
-        <ToolBtn label="Align top" title="Align top" onClick={() => onAlign("top")}>
-          ⫠
-        </ToolBtn>
-        <ToolBtn label="Align middle" title="Align middle" onClick={() => onAlign("center-v")}>
-          ⫟
-        </ToolBtn>
-        <ToolBtn label="Align bottom" title="Align bottom" onClick={() => onAlign("bottom")}>
-          ⫡
-        </ToolBtn>
+        <ToolBtn label="Align left" title="Align left" icon="alignLeft" onClick={() => onAlign("left")} />
+        <ToolBtn label="Align center" title="Align center horizontally" icon="alignCenterH" onClick={() => onAlign("center-h")} />
+        <ToolBtn label="Align right" title="Align right" icon="alignRight" onClick={() => onAlign("right")} />
+        <ToolBtn label="Align top" title="Align top" icon="alignTop" onClick={() => onAlign("top")} />
+        <ToolBtn label="Align middle" title="Align middle" icon="alignMiddle" onClick={() => onAlign("center-v")} />
+        <ToolBtn label="Align bottom" title="Align bottom" icon="alignBottom" onClick={() => onAlign("bottom")} />
         <ToolBtn
           label="Distribute horizontally"
           title="Distribute horizontal spacing"
+          icon="distributeH"
           onClick={() => onDistribute("horizontal")}
           disabled={distributeDisabled}
-        >
-          ⋯
-        </ToolBtn>
+        />
         <ToolBtn
           label="Distribute vertically"
           title="Distribute vertical spacing"
+          icon="distributeV"
           onClick={() => onDistribute("vertical")}
           disabled={distributeDisabled}
-        >
-          ⋮
-        </ToolBtn>
-        <ToolBtn label="Layer forward" title="Bring forward" onClick={() => onLayer("forward")}>
-          ▴
-        </ToolBtn>
-        <ToolBtn label="Layer backward" title="Send backward" onClick={() => onLayer("backward")}>
-          ▾
-        </ToolBtn>
-        <ToolBtn label="Rotate counter-clockwise" title="Rotate 90° CCW" onClick={onRotateCcw}>
-          ↺
-        </ToolBtn>
-        <ToolBtn label="Rotate clockwise" title="Rotate 90° CW" onClick={onRotateCw}>
-          ↻
-        </ToolBtn>
-        <ToolBtn label="Flip horizontal" title="Flip horizontal" onClick={onFlipH}>
-          ⇋
-        </ToolBtn>
-        <ToolBtn label="Flip vertical" title="Flip vertical" onClick={onFlipV}>
-          ⇅
-        </ToolBtn>
-        <ToolBtn label="Stretch to width" title="Stretch to artboard width" onClick={onStretchWidth}>
-          W
-        </ToolBtn>
-        <ToolBtn label="Stretch to height" title="Stretch to artboard height" onClick={onStretchHeight}>
-          H
-        </ToolBtn>
-        <ToolBtn label="Center horizontally" title="Center horizontally" onClick={onCenterH}>
-          ↔
-        </ToolBtn>
-        <ToolBtn label="Center vertically" title="Center vertically" onClick={onCenterV}>
-          ↕
-        </ToolBtn>
-        <ToolBtn label="Center both" title="Center both axes" onClick={onCenterBoth}>
-          ⊕
-        </ToolBtn>
-        <ToolBtn label="Snap left" title="Snap left edge" onClick={onSnapLeft}>
-          ◧
-        </ToolBtn>
-        <ToolBtn label="Snap right" title="Snap right edge" onClick={onSnapRight}>
-          ◨
-        </ToolBtn>
-        <ToolBtn label="Duplicate" title="Duplicate" onClick={onDuplicate}>
-          ⧉
-        </ToolBtn>
+        />
+        <ToolBtn label="Layer forward" title="Bring forward" icon="layerForward" onClick={() => onLayer("forward")} />
+        <ToolBtn label="Layer backward" title="Send backward" icon="layerBackward" onClick={() => onLayer("backward")} />
+        <ToolBtn label="Rotate counter-clockwise" title="Rotate 90° CCW" icon="rotateCcw" onClick={onRotateCcw} />
+        <ToolBtn label="Rotate clockwise" title="Rotate 90° CW" icon="rotateCw" onClick={onRotateCw} />
+        <ToolBtn label="Flip horizontal" title="Flip horizontal" icon="flipH" onClick={onFlipH} />
+        <ToolBtn label="Flip vertical" title="Flip vertical" icon="flipV" onClick={onFlipV} />
+        <ToolBtn label="Stretch to width" title="Stretch to artboard width" icon="stretchW" onClick={onStretchWidth} />
+        <ToolBtn label="Stretch to height" title="Stretch to artboard height" icon="stretchH" onClick={onStretchHeight} />
+        <ToolBtn label="Center horizontally" title="Center horizontally" icon="centerH" onClick={onCenterH} />
+        <ToolBtn label="Center vertically" title="Center vertically" icon="centerV" onClick={onCenterV} />
+        <ToolBtn label="Center both" title="Center both axes" icon="centerBoth" onClick={onCenterBoth} />
+        <ToolBtn label="Snap left" title="Snap left edge" icon="snapLeft" onClick={onSnapLeft} />
+        <ToolBtn label="Snap right" title="Snap right edge" icon="snapRight" onClick={onSnapRight} />
+        <ToolBtn label="Duplicate" title="Duplicate" icon="duplicate" onClick={onDuplicate} />
         {onUndo ? (
-          <ToolBtn label="Undo" title="Undo (Ctrl+Z)" onClick={onUndo} disabled={!canUndo}>
-            ↶
-          </ToolBtn>
+          <ToolBtn label="Undo" title="Undo (Ctrl+Z)" icon="undo" onClick={onUndo} disabled={!canUndo} />
         ) : null}
         {onRedo ? (
-          <ToolBtn label="Redo" title="Redo (Ctrl+Y)" onClick={onRedo} disabled={!canRedo}>
-            ↷
-          </ToolBtn>
+          <ToolBtn label="Redo" title="Redo (Ctrl+Y)" icon="redo" onClick={onRedo} disabled={!canRedo} />
         ) : null}
-        <ToolBtn label="Delete" title="Delete" onClick={onDelete} danger>
-          ⌫
-        </ToolBtn>
+        <ToolBtn label="Delete" title="Delete" icon="delete" onClick={onDelete} danger />
       </div>
     </div>
   );

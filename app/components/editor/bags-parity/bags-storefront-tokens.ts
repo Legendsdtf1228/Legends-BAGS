@@ -1,9 +1,9 @@
 /** BAGS storefront editor design tokens — match live Build a Gang Sheet chrome. */
 export const BAGS_STOREFRONT_TOKENS = {
   headerHeight: "52px",
-  toolbarHeight: "44px",
-  bottomNavHeight: "56px",
-  selectionBarHeight: "40px",
+  toolbarHeight: "40px",
+  bottomNavHeight: "52px",
+  selectionBarHeight: "36px",
   primaryBlue: "#1a73e8",
   nestOrange: "#f97316",
   destructiveRed: "#d93025",
@@ -12,11 +12,16 @@ export const BAGS_STOREFRONT_TOKENS = {
   border: "#dadce0",
   text: "#202124",
   textMuted: "#5f6368",
-  controlSize: "32px",
+  controlSize: "30px",
   drawerWidth: "320px",
-  leftRailWidth: "64px",
-  sidePanelWidth: "280px",
-  propertiesPanelWidth: "260px",
+  leftRailWidth: "56px",
+  sidePanelWidth: "272px",
+  propertiesPanelWidth: "272px",
+  legendWidth: "120px",
+  modalWidth: "960px",
+  iconSize: "20px",
+  buttonRadius: "4px",
+  panelRadius: "4px",
 } as const;
 
 export const BAGS_STOREFRONT_TOKEN_CSS = `
@@ -36,5 +41,8 @@ export const BAGS_STOREFRONT_TOKEN_CSS = `
   --bags-rail-w:${BAGS_STOREFRONT_TOKENS.leftRailWidth};
   --bags-panel-w:${BAGS_STOREFRONT_TOKENS.sidePanelWidth};
   --bags-props-w:${BAGS_STOREFRONT_TOKENS.propertiesPanelWidth};
+  --bags-legend-w:${BAGS_STOREFRONT_TOKENS.legendWidth};
+  --bags-icon:${BAGS_STOREFRONT_TOKENS.iconSize};
+  --bags-btn-r:${BAGS_STOREFRONT_TOKENS.buttonRadius};
 }
 `;

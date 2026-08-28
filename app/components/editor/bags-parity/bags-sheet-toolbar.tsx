@@ -96,6 +96,8 @@ export function BagsSheetToolbar(props: BagsSheetToolbarProps) {
         <ToolbarIcon name="grid" />
       </button>
 
+      <div className="bags-toolbar-spacer" aria-hidden />
+
       <button type="button" className="bags-tool-btn bags-tool-nest" onClick={onAutoNest} title="Auto Nest">
         Auto Nest
       </button>
