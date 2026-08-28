@@ -48,10 +48,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   if (route.kind === "session") {
-    const customerKey = normalizeCustomerKey(
-      new URL(request.url).searchParams.get("customerKey"),
-    );
-    return createStorefrontSessionResponse(shop, customerKey);
+    const url = new URL(request.url);
+    const customerKey = normalizeCustomerKey(url.searchParams.get("customerKey"));
+    return createStorefrontSessionResponse(shop, customerKey, {
+      customerName: url.searchParams.get("customerName"),
+      customerEmail: url.searchParams.get("customerEmail"),
+    });
   }
 
   if (route.kind === "builder") {

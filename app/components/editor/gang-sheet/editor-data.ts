@@ -106,6 +106,18 @@ export const TEXT_STYLE_PRESETS = [
   { id: "number", label: "Jersey number", fontSize: 72, color: "#ffffff" },
 ] as const;
 
+export const NAME_SIZE_PRESETS = [
+  { id: "small", label: "Small", fontSize: 22, widthIn: 3.5, strokeWidth: 0 },
+  { id: "medium", label: "Medium", fontSize: 28, widthIn: 5, strokeWidth: 1 },
+  { id: "large", label: "Large", fontSize: 36, widthIn: 6.5, strokeWidth: 2 },
+] as const;
+
+export const NUMBER_SIZE_PRESETS = [
+  { id: "small", label: "Small", fontSize: 36, widthIn: 1.5, strokeWidth: 0 },
+  { id: "medium", label: "Medium", fontSize: 48, widthIn: 2, strokeWidth: 1 },
+  { id: "large", label: "Large", fontSize: 64, widthIn: 2.5, strokeWidth: 2 },
+] as const;
+
 export const NAMES_NUMBERS_PRESETS = [
   {
     id: "varsity",

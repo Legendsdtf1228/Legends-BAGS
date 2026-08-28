@@ -3,6 +3,7 @@ import {
   parseEditorLaunchParams,
   type BuilderLaunchContext,
 } from "../domain/builder/builder-launch-context";
+import { readStorefrontSessionClaims } from "./editor-auth.server";
 
 export type EditorLaunchPageContext = Omit<BuilderLaunchContext, "builderType"> & {
   designId: string;
@@ -40,6 +41,7 @@ export function mergeEditorLaunchFromUrl(
 } {
   const url = new URL(request.url);
   const launch = parseEditorLaunchParams(url.searchParams);
+  const session = readStorefrontSessionClaims(request);
 
   return {
     shop: launch?.shop || url.searchParams.get("shop") || fallbackShop,
@@ -57,8 +59,17 @@ export function mergeEditorLaunchFromUrl(
     designId: url.searchParams.get("designId") ?? "",
     designVersion: url.searchParams.get("designVersion") ?? "",
     parentOrigin: url.searchParams.get("parentOrigin") ?? "",
-    customerName: url.searchParams.get("lgs_customer_name")?.trim() || "",
-    customerEmail: url.searchParams.get("lgs_customer_email")?.trim() || "",
-    customerKey: url.searchParams.get("lgs_customer_key")?.trim() || "",
+    customerName:
+      url.searchParams.get("lgs_customer_name")?.trim() ||
+      session?.customerName?.trim() ||
+      "",
+    customerEmail:
+      url.searchParams.get("lgs_customer_email")?.trim() ||
+      session?.customerEmail?.trim() ||
+      "",
+    customerKey:
+      url.searchParams.get("lgs_customer_key")?.trim() ||
+      session?.customerKey?.trim() ||
+      "",
   };
 }

@@ -112,6 +112,29 @@ describe("builder-launch-context", () => {
     expect(url).toContain("shop_mode=1");
   });
 
+  it("preserves storefront customer params in editor URL", () => {
+    const url = buildEditorLaunchUrl(
+      "https://upload-by-size-production.up.railway.app",
+      {
+        shop: DEV_SHOP,
+        productId: "123",
+        productGid: "gid://shopify/Product/123",
+        variantId: "456",
+        variantGid: "gid://shopify/ProductVariant/456",
+        quantity: 1,
+        builderType: "gang_sheet",
+      },
+      {
+        lgs_customer_key: "gid://shopify/Customer/998877",
+        lgs_customer_name: "Alex Rivera",
+        lgs_customer_email: "alex@example.com",
+      },
+    );
+    expect(url).toContain("lgs_customer_key=gid%3A%2F%2Fshopify%2FCustomer%2F998877");
+    expect(url).toContain("lgs_customer_name=Alex+Rivera");
+    expect(url).toContain("lgs_customer_email=alex%40example.com");
+  });
+
   it("builds upload-by-size editor redirect URL", () => {
     const url = buildEditorLaunchUrl("https://upload-by-size-production.up.railway.app/", {
       shop: DEV_SHOP,

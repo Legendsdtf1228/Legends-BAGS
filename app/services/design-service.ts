@@ -5,7 +5,7 @@ import {
   buildUploadBySizeStateFromLines,
   nestAndRenderDesign,
 } from "../domain/design/pipeline";
-import { DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN } from "../domain/design/gang-sheet-sheet";
+import { DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN, resolveGangSheetVariantPriceCents } from "../domain/design/gang-sheet-sheet";
 import type { DesignStateV1 } from "../domain/design/types";
 import { DEFAULT_PRICE_PER_SQ_IN, DESIGN_STATE_SCHEMA_VERSION } from "../domain/design/types";
 import { buildGangSheetPricingSnapshot, buildPricingSnapshot } from "../domain/pricing";
@@ -68,9 +68,20 @@ async function gangSheetPricingForDesign(
 ) {
   const config = await prisma.shopConfig.findUnique({ where: { shop } });
   const binding = await resolveProductBinding(shop, productGid, variantGid);
+  const gangRows = productGid
+    ? await prisma.productBinding.findMany({
+        where: { shop, productGid, builderType: "gang_sheet" },
+        orderBy: { sheetHeightIn: "asc" },
+      })
+    : [];
+  const variantPriceCents = resolveGangSheetVariantPriceCents({
+    gangSheetVariants: gangRows,
+    sheetHeightIn: sheet?.maxHeightIn ?? binding?.sheetHeightIn ?? 24,
+    fallbackVariantPriceCents: binding?.variantPriceCents ?? null,
+  });
   return buildGangSheetPricingSnapshot(items, {
     pricePerSqIn: binding?.pricePerSqIn ?? config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
-    variantPriceCents: binding?.variantPriceCents ?? null,
+    variantPriceCents,
     sheetWidthIn: sheet?.widthIn,
     sheetHeightIn: sheet?.maxHeightIn,
   });

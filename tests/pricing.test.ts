@@ -86,7 +86,26 @@ describe("pricing", () => {
   it("uses variant price for empty gang sheet when configured", () => {
     expect(
       computeGangSheetEstimateUsd({
-        variantPriceCents: 2646,
+        variantPriceCents: 1700,
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+      }),
+    ).toBe(17);
+  });
+
+  it("22.5 × 24 bound variant shows $17 not area fallback", () => {
+    expect(
+      computeGangSheetEstimateUsd({
+        variantPriceCents: 1700,
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+        usedAreaSqIn: 0,
+      }),
+    ).toBe(17);
+    expect(
+      computeGangSheetEstimateUsd({
         pricePerSqIn: 0.049,
         sheetWidthIn: 22.5,
         sheetHeightIn: 24,

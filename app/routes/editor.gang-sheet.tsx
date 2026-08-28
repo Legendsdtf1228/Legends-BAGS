@@ -20,7 +20,7 @@ import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-
 import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
 import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
 import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
-import { BagsNamesNumbersContent, type NamesNumbersLayout, type NamesNumbersPresetId } from "../components/editor/bags-parity/bags-names-numbers-content";
+import { BagsNamesNumbersContent, type NamesNumbersSizePresetId, type NamesNumbersWorkflow } from "../components/editor/bags-parity/bags-names-numbers-content";
 import { BagsDesignPickerModal, type DesignPickerTab } from "../components/editor/bags-parity/bags-design-picker-modal";
 import { BagsWelcomeCenter, BagsWelcomeAction } from "../components/editor/bags-parity/bags-welcome-center";
 import type { BagsCustomerAccount } from "../components/editor/bags-parity/bags-gang-sheet-header";
@@ -44,6 +44,7 @@ import {
   GANG_SHEET_HEIGHTS,
   DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   gangSheetAreaPriceUsd,
+  normalizeArtboardMarginIn,
   resolveAllowedSheetHeights,
   resolveAllowedSheetWidths,
   resolveGangSheetVariantPriceCents,
@@ -78,7 +79,8 @@ import {
   FONT_OPTIONS,
   GALLERY_CATEGORIES,
   HELP_SHORTCUTS,
-  NAMES_NUMBERS_PRESETS,
+  NAME_SIZE_PRESETS,
+  NUMBER_SIZE_PRESETS,
   SHEET_TEMPLATES,
   TEXT_STYLE_PRESETS,
   type GalleryItem,
@@ -380,12 +382,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   );
 }
 
-function normalizeArtboardMarginIn(value: number | null | undefined): number {
-  if (value == null || !Number.isFinite(value)) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
-  if (Math.abs(value - 0.1) < 0.001) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
-  return value;
-}
-
 function pieceTransform(item: Pick<CanvasItem, "rotationDeg" | "flipX" | "flipY">) {
   return `rotate(${item.rotationDeg}deg) scaleX(${item.flipX ? -1 : 1}) scaleY(${item.flipY ? -1 : 1})`;
 }
@@ -449,8 +445,8 @@ export default function GangSheetEditor() {
   const [visualAid, setVisualAid] = useState<"checkerboard" | "gray" | "black" | "white" | "custom">("checkerboard");
   const [visualAidCustomColor, setVisualAidCustomColor] = useState("#c4c4c4");
   const [artboardMarginEnabled, setArtboardMarginEnabled] = useState(true);
-  const [artboardMarginIn, setArtboardMarginIn] = useState(
-    page.defaultSheet.artboardMarginIn ?? DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
+  const [artboardMarginIn, setArtboardMarginIn] = useState(() =>
+    normalizeArtboardMarginIn(page.defaultSheet.artboardMarginIn),
   );
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
@@ -467,9 +463,9 @@ export default function GangSheetEditor() {
   const [textFontSize, setTextFontSize] = useState(36);
   const [textFontFamily, setTextFontFamily] = useState("Arial");
   const [textColor, setTextColor] = useState("#111827");
-  const [rosterCsv, setRosterCsv] = useState("");
-  const [rosterIncludeNames, setRosterIncludeNames] = useState(true);
-  const [rosterIncludeNumbers, setRosterIncludeNumbers] = useState(true);
+  const [namesList, setNamesList] = useState("");
+  const [numbersList, setNumbersList] = useState("");
+  const [namesNumbersWorkflow, setNamesNumbersWorkflow] = useState<NamesNumbersWorkflow>("names");
   const [rosterNameFontFamily, setRosterNameFontFamily] = useState("Impact");
   const [rosterNumberFontFamily, setRosterNumberFontFamily] = useState("Impact");
   const [rosterNameFontSize, setRosterNameFontSize] = useState(28);
@@ -481,7 +477,6 @@ export default function GangSheetEditor() {
   const [rosterStrokeColor, setRosterStrokeColor] = useState("#111827");
   const [rosterTextColor, setRosterTextColor] = useState("#111827");
   const [rosterQuantity, setRosterQuantity] = useState(1);
-  const [rosterLayout, setRosterLayout] = useState<NamesNumbersLayout>("stacked");
   const [designPickerOpen, setDesignPickerOpen] = useState(false);
   const [designPickerTab, setDesignPickerTab] = useState<DesignPickerTab>("mine");
   const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
@@ -1407,19 +1402,20 @@ export default function GangSheetEditor() {
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
   }
 
-  function applyNamesNumbersPreset(presetId: NamesNumbersPresetId) {
-    const preset = NAMES_NUMBERS_PRESETS.find((p) => p.id === presetId);
+  function applyNameSizePreset(presetId: NamesNumbersSizePresetId) {
+    const preset = NAME_SIZE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
-    setRosterNameFontFamily(preset.nameFont);
-    setRosterNumberFontFamily(preset.numberFont);
-    setRosterNameFontSize(preset.nameSize);
-    setRosterNumberFontSize(preset.numberSize);
-    setRosterNameWidthIn(preset.nameWidthIn);
-    setRosterNumberWidthIn(preset.numberWidthIn);
+    setRosterNameFontSize(preset.fontSize);
+    setRosterNameWidthIn(preset.widthIn);
     setRosterNameStrokeWidth(preset.strokeWidth);
+  }
+
+  function applyNumberSizePreset(presetId: NamesNumbersSizePresetId) {
+    const preset = NUMBER_SIZE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setRosterNumberFontSize(preset.fontSize);
+    setRosterNumberWidthIn(preset.widthIn);
     setRosterNumberStrokeWidth(preset.strokeWidth);
-    setRosterStrokeColor(preset.strokeColor);
-    setRosterTextColor(preset.textColor);
   }
 
   function addTextToSheet(content?: string) {
@@ -1498,118 +1494,113 @@ export default function GangSheetEditor() {
     }
   }
 
-  function parseRoster(csv: string) {
-    return csv
+  function parseLineList(raw: string): string[] {
+    return raw
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split(/[,\t]/).map((p) => p.trim());
-        return { name: parts[0] ?? "", number: parts[1] ?? "" };
-      })
-      .filter((r) => r.name || r.number);
+      .filter(Boolean);
   }
 
-  function generateRoster() {
-    const rows = parseRoster(rosterCsv);
-    if (!rows.length) {
-      setError("Add roster rows — one name and number per line.");
-      return;
-    }
-    if (!rosterIncludeNames && !rosterIncludeNumbers) {
-      setError("Enable Add Names and/or Add Numbers.");
-      return;
-    }
-    const dupes = rows.filter(
-      (r, i) => rows.findIndex((x) => x.number && x.number === r.number) !== i,
-    );
-    if (dupes.length) {
-      setError(`Duplicate numbers found: ${dupes.map((d) => d.number).join(", ")}`);
+  function generateNames() {
+    const labels = parseLineList(namesList);
+    if (!labels.length) {
+      setError("Add at least one name — one per line.");
       return;
     }
     const next: CanvasItem[] = [...items];
     let z = nextZIndex(next);
-    rows.forEach((row, idx) => {
+    labels.forEach((label, idx) => {
       for (let copy = 0; copy < rosterQuantity; copy += 1) {
-        const nameLabel = row.name.trim();
-        const numberLabel = row.number.trim() ? `#${row.number.trim()}` : "";
-        const blockHeight =
-          rosterLayout === "stacked"
-            ? Math.max(rosterNameFontSize, rosterNumberFontSize) / 72 + 0.1
-            : Math.max(rosterNameFontSize, rosterNumberFontSize) / 72;
-        const yBase = 0.2 + (idx * rosterQuantity + copy) * (blockHeight + gap);
-
-        if (rosterIncludeNames && nameLabel) {
-          const nameH = Math.max(0.35, rosterNameFontSize / 72);
-          const nameW =
-            rosterLayout === "side-by-side"
-              ? Math.min(rosterNameWidthIn, sheetWidth * 0.62)
-              : Math.min(rosterNameWidthIn, sheetWidth - 0.4);
-          next.push({
-            assetId: `text-roster-name-${crypto.randomUUID()}`,
-            widthPx: 400,
-            heightPx: 80,
-            contentType: "image/svg+xml",
-            id: crypto.randomUUID(),
-            name: nameLabel,
-            previewUrl: textPreviewDataUrl(
-              nameLabel,
-              rosterNameFontSize,
-              rosterNameFontFamily,
-              rosterTextColor,
-              rosterNameStrokeWidth,
-              rosterStrokeColor,
-            ),
-            xIn: 0.2,
-            yIn: yBase,
-            widthIn: nameW,
-            heightIn: nameH,
-            rotationDeg: 0,
-            zIndex: z++,
-            kind: "text",
-            textContent: nameLabel,
-            fontSize: rosterNameFontSize,
-            fontFamily: rosterNameFontFamily,
-            textColor: rosterTextColor,
-          });
-        }
-
-        if (rosterIncludeNumbers && numberLabel) {
-          const numH = Math.max(0.35, rosterNumberFontSize / 72);
-          const numW = Math.min(rosterNumberWidthIn, sheetWidth - 0.4);
-          next.push({
-            assetId: `text-roster-number-${crypto.randomUUID()}`,
-            widthPx: 400,
-            heightPx: 80,
-            contentType: "image/svg+xml",
-            id: crypto.randomUUID(),
-            name: numberLabel,
-            previewUrl: textPreviewDataUrl(
-              numberLabel,
-              rosterNumberFontSize,
-              rosterNumberFontFamily,
-              rosterTextColor,
-              rosterNumberStrokeWidth,
-              rosterStrokeColor,
-            ),
-            xIn: rosterLayout === "side-by-side" ? sheetWidth * 0.66 : 0.2,
-            yIn: rosterLayout === "stacked" ? yBase + rosterNameFontSize / 72 + 0.05 : yBase,
-            widthIn: numW,
-            heightIn: numH,
-            rotationDeg: 0,
-            zIndex: z++,
-            kind: "text",
-            textContent: numberLabel,
-            fontSize: rosterNumberFontSize,
-            fontFamily: rosterNumberFontFamily,
-            textColor: rosterTextColor,
-          });
-        }
+        const nameH = Math.max(0.35, rosterNameFontSize / 72);
+        const nameW = Math.min(rosterNameWidthIn, sheetWidth - 0.4);
+        const yBase = 0.2 + (idx * rosterQuantity + copy) * (nameH + gap);
+        next.push({
+          assetId: `text-roster-name-${crypto.randomUUID()}`,
+          widthPx: 400,
+          heightPx: 80,
+          contentType: "image/svg+xml",
+          id: crypto.randomUUID(),
+          name: label,
+          previewUrl: textPreviewDataUrl(
+            label,
+            rosterNameFontSize,
+            rosterNameFontFamily,
+            rosterTextColor,
+            rosterNameStrokeWidth,
+            rosterStrokeColor,
+          ),
+          xIn: 0.2,
+          yIn: yBase,
+          widthIn: nameW,
+          heightIn: nameH,
+          rotationDeg: 0,
+          zIndex: z++,
+          kind: "text",
+          textContent: label,
+          fontSize: rosterNameFontSize,
+          fontFamily: rosterNameFontFamily,
+          textColor: rosterTextColor,
+        });
       }
     });
     pushHistory(next);
     selectItem(next.at(-1)?.id ?? null);
-    setMessage(`Generated ${rows.length} roster row${rows.length === 1 ? "" : "s"}.`);
+    setMessage(`Generated ${labels.length} name layer${labels.length === 1 ? "" : "s"}.`);
+    setSidebarTab("layers");
+    setMobileDrawer("sidebar");
+  }
+
+  function generateNumbers() {
+    const labels = parseLineList(numbersList);
+    if (!labels.length) {
+      setError("Add at least one number — one per line.");
+      return;
+    }
+    const dupes = labels.filter((n, i) => labels.indexOf(n) !== i);
+    if (dupes.length) {
+      setError(`Duplicate numbers found: ${[...new Set(dupes)].join(", ")}`);
+      return;
+    }
+    const next: CanvasItem[] = [...items];
+    let z = nextZIndex(next);
+    labels.forEach((raw, idx) => {
+      const label = raw.startsWith("#") ? raw : `#${raw}`;
+      for (let copy = 0; copy < rosterQuantity; copy += 1) {
+        const numH = Math.max(0.35, rosterNumberFontSize / 72);
+        const numW = Math.min(rosterNumberWidthIn, sheetWidth - 0.4);
+        const yBase = 0.2 + (idx * rosterQuantity + copy) * (numH + gap);
+        next.push({
+          assetId: `text-roster-number-${crypto.randomUUID()}`,
+          widthPx: 400,
+          heightPx: 80,
+          contentType: "image/svg+xml",
+          id: crypto.randomUUID(),
+          name: label,
+          previewUrl: textPreviewDataUrl(
+            label,
+            rosterNumberFontSize,
+            rosterNumberFontFamily,
+            rosterTextColor,
+            rosterNumberStrokeWidth,
+            rosterStrokeColor,
+          ),
+          xIn: 0.2,
+          yIn: yBase,
+          widthIn: numW,
+          heightIn: numH,
+          rotationDeg: 0,
+          zIndex: z++,
+          kind: "text",
+          textContent: label,
+          fontSize: rosterNumberFontSize,
+          fontFamily: rosterNumberFontFamily,
+          textColor: rosterTextColor,
+        });
+      }
+    });
+    pushHistory(next);
+    selectItem(next.at(-1)?.id ?? null);
+    setMessage(`Generated ${labels.length} number layer${labels.length === 1 ? "" : "s"}.`);
     setSidebarTab("layers");
     setMobileDrawer("sidebar");
   }
@@ -3197,11 +3188,15 @@ export default function GangSheetEditor() {
             </>
           ) : sidebarTab === "names" ? (
             <>
-              <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Roster generator</small></span></div>
-              <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+              <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Separate workflows</small></span></div>
+              <p className="sidebar-hint">Use the bottom nav Names &amp; Numbers modal for Add Names or Add Numbers with S/M/L presets.</p>
               <div className="sidebar-form">
-                <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
+                <button type="button" className="sidebar-upload-btn" onClick={() => { setNamesNumbersWorkflow("names"); setBottomNav("names-numbers"); }}>
+                  Add Names
+                </button>
+                <button type="button" className="sidebar-upload-btn" onClick={() => { setNamesNumbersWorkflow("numbers"); setBottomNav("names-numbers"); }}>
+                  Add Numbers
+                </button>
               </div>
             </>
           ) : sidebarTab === "layers" ? (
@@ -3631,12 +3626,12 @@ export default function GangSheetEditor() {
       {bottomNav === "names-numbers" ? (
         <BagsNamesNumbersModal open onClose={() => setBottomNav(null)}>
           <BagsNamesNumbersContent
-            rosterCsv={rosterCsv}
-            onRosterChange={setRosterCsv}
-            includeNames={rosterIncludeNames}
-            onIncludeNamesChange={setRosterIncludeNames}
-            includeNumbers={rosterIncludeNumbers}
-            onIncludeNumbersChange={setRosterIncludeNumbers}
+            workflow={namesNumbersWorkflow}
+            onWorkflowChange={setNamesNumbersWorkflow}
+            namesList={namesList}
+            onNamesListChange={setNamesList}
+            numbersList={numbersList}
+            onNumbersListChange={setNumbersList}
             nameFontFamily={rosterNameFontFamily}
             onNameFontFamilyChange={setRosterNameFontFamily}
             numberFontFamily={rosterNumberFontFamily}
@@ -3659,11 +3654,14 @@ export default function GangSheetEditor() {
             onTextColorChange={setRosterTextColor}
             quantity={rosterQuantity}
             onQuantityChange={setRosterQuantity}
-            layout={rosterLayout}
-            onLayoutChange={setRosterLayout}
-            onApplyPreset={applyNamesNumbersPreset}
-            onGenerate={() => {
-              generateRoster();
+            onApplyNamePreset={applyNameSizePreset}
+            onApplyNumberPreset={applyNumberSizePreset}
+            onGenerateNames={() => {
+              generateNames();
+              setBottomNav(null);
+            }}
+            onGenerateNumbers={() => {
+              generateNumbers();
               setBottomNav(null);
             }}
           />

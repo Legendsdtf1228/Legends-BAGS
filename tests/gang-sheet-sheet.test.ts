@@ -7,6 +7,7 @@ import {
   gangSheetAreaPriceUsd,
   gangSheetDesignSheet,
   isGangSheetHeightIn,
+  normalizeArtboardMarginIn,
   resolveAllowedSheetHeights,
   resolveAllowedSheetWidths,
   resolveGangSheetHeight,
@@ -112,5 +113,26 @@ describe("resolveGangSheetVariantPriceCents", () => {
         sheetHeightIn: 36,
       }),
     ).toBe(2500);
+  });
+
+  it("returns $17 for 22.5 × 24 when 24 in variant is bound", () => {
+    expect(
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: [{ sheetHeightIn: 24, variantPriceCents: 1700 }],
+        sheetHeightIn: 24,
+      }),
+    ).toBe(1700);
+  });
+});
+
+describe("normalizeArtboardMarginIn", () => {
+  it("defaults to 0.125 for null and legacy 0.1", () => {
+    expect(normalizeArtboardMarginIn(null)).toBe(0.125);
+    expect(normalizeArtboardMarginIn(0.1)).toBe(0.125);
+  });
+
+  it("preserves user-chosen margins", () => {
+    expect(normalizeArtboardMarginIn(0.2)).toBe(0.2);
+    expect(normalizeArtboardMarginIn(0.125)).toBe(0.125);
   });
 });

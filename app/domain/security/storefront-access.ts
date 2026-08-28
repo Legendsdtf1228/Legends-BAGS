@@ -6,6 +6,8 @@ export type StorefrontSessionClaims = {
   shop: string;
   exp: number;
   customerKey?: string | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
 };
 
 export const STOREFRONT_SESSION_COOKIE = "lgs_storefront_session";
@@ -20,13 +22,25 @@ function requireSecret(secret?: string): string {
 }
 
 function sessionPayload(claims: StorefrontSessionClaims): string {
-  return `${claims.shop}\n${claims.exp}\n${claims.customerKey ?? ""}`;
+  return [
+    claims.shop,
+    claims.exp,
+    claims.customerKey ?? "",
+    claims.customerName ?? "",
+    claims.customerEmail ?? "",
+  ].join("\n");
 }
 
 /** Issue a short-lived HMAC session for storefront editor API calls. */
 export function signStorefrontSession(
   shop: string,
-  options?: { ttlSeconds?: number; secret?: string; customerKey?: string | null },
+  options?: {
+    ttlSeconds?: number;
+    secret?: string;
+    customerKey?: string | null;
+    customerName?: string | null;
+    customerEmail?: string | null;
+  },
 ): { token: string; exp: number } {
   const exp =
     Math.floor(Date.now() / 1000) + (options?.ttlSeconds ?? DEFAULT_SESSION_TTL_SECONDS);
@@ -34,6 +48,8 @@ export function signStorefrontSession(
     shop,
     exp,
     customerKey: options?.customerKey ?? null,
+    customerName: options?.customerName?.trim() || null,
+    customerEmail: options?.customerEmail?.trim() || null,
   };
   const sig = createHmac("sha256", requireSecret(options?.secret))
     .update(sessionPayload(claims))
@@ -69,6 +85,8 @@ export function verifyStorefrontSession(
         shop: parsed.shop,
         exp: parsed.exp,
         customerKey: parsed.customerKey ?? null,
+        customerName: parsed.customerName ?? null,
+        customerEmail: parsed.customerEmail ?? null,
       }),
     )
     .digest("base64url");
@@ -82,6 +100,8 @@ export function verifyStorefrontSession(
     shop: parsed.shop,
     exp: parsed.exp,
     customerKey: parsed.customerKey ?? null,
+    customerName: parsed.customerName ?? null,
+    customerEmail: parsed.customerEmail ?? null,
   };
 }
 

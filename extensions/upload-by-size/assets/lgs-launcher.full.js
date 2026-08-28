@@ -332,6 +332,8 @@
       if (!url || !shop) return Promise.resolve(null);
       url.searchParams.set("shop", shop);
       if (customerKey) url.searchParams.set("customerKey", customerKey);
+      if (customerName) url.searchParams.set("customerName", customerName);
+      if (customerEmail) url.searchParams.set("customerEmail", customerEmail);
       return fetch(url.toString())
         .then(function (res) {
           return res.ok ? res.json() : null;

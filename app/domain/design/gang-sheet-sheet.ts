@@ -58,6 +58,13 @@ export function resolveGangSheetHeight(params: {
 /** Gang sheet design state stores canvas length in sheet.maxHeightIn. */
 export const DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN = 0.125;
 
+/** Migrate legacy 0.1″ default to BAGS 0.125″ unless the user chose another value. */
+export function normalizeArtboardMarginIn(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
+  if (Math.abs(value - 0.1) < 0.001) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
+  return value;
+}
+
 export function gangSheetDesignSheet(widthIn: number, heightIn: number) {
   return {
     widthIn,

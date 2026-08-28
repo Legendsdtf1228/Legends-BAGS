@@ -1,17 +1,21 @@
-import { useRef } from "react";
-import { FONT_OPTIONS, NAMES_NUMBERS_PRESETS } from "../gang-sheet/editor-data";
+import { useRef, useState } from "react";
+import {
+  FONT_OPTIONS,
+  NAME_SIZE_PRESETS,
+  NUMBER_SIZE_PRESETS,
+} from "../gang-sheet/editor-data";
 
-export type NamesNumbersLayout = "stacked" | "side-by-side";
+export type NamesNumbersWorkflow = "names" | "numbers";
 
-export type NamesNumbersPresetId = (typeof NAMES_NUMBERS_PRESETS)[number]["id"];
+export type NamesNumbersSizePresetId = "small" | "medium" | "large";
 
 export type BagsNamesNumbersContentProps = {
-  rosterCsv: string;
-  onRosterChange: (value: string) => void;
-  includeNames: boolean;
-  onIncludeNamesChange: (value: boolean) => void;
-  includeNumbers: boolean;
-  onIncludeNumbersChange: (value: boolean) => void;
+  workflow: NamesNumbersWorkflow;
+  onWorkflowChange: (workflow: NamesNumbersWorkflow) => void;
+  namesList: string;
+  onNamesListChange: (value: string) => void;
+  numbersList: string;
+  onNumbersListChange: (value: string) => void;
   nameFontFamily: string;
   onNameFontFamilyChange: (value: string) => void;
   numberFontFamily: string;
@@ -34,27 +38,27 @@ export type BagsNamesNumbersContentProps = {
   onTextColorChange: (value: string) => void;
   quantity: number;
   onQuantityChange: (value: number) => void;
-  layout: NamesNumbersLayout;
-  onLayoutChange: (layout: NamesNumbersLayout) => void;
-  onApplyPreset: (presetId: NamesNumbersPresetId) => void;
-  onGenerate: () => void;
+  onApplyNamePreset: (presetId: NamesNumbersSizePresetId) => void;
+  onApplyNumberPreset: (presetId: NamesNumbersSizePresetId) => void;
+  onGenerateNames: () => void;
+  onGenerateNumbers: () => void;
 };
 
-function parseRosterCsv(raw: string): number {
+function parseLineList(raw: string): string[] {
   return raw
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean).length;
+    .filter(Boolean);
 }
 
 export function BagsNamesNumbersContent(props: BagsNamesNumbersContentProps) {
   const {
-    rosterCsv,
-    onRosterChange,
-    includeNames,
-    onIncludeNamesChange,
-    includeNumbers,
-    onIncludeNumbersChange,
+    workflow,
+    onWorkflowChange,
+    namesList,
+    onNamesListChange,
+    numbersList,
+    onNumbersListChange,
     nameFontFamily,
     onNameFontFamilyChange,
     numberFontFamily,
@@ -77,235 +81,340 @@ export function BagsNamesNumbersContent(props: BagsNamesNumbersContentProps) {
     onTextColorChange,
     quantity,
     onQuantityChange,
-    layout,
-    onLayoutChange,
-    onApplyPreset,
-    onGenerate,
+    onApplyNamePreset,
+    onApplyNumberPreset,
+    onGenerateNames,
+    onGenerateNumbers,
   } = props;
 
   const csvInputRef = useRef<HTMLInputElement>(null);
-  const rowCount = parseRosterCsv(rosterCsv);
+  const [importTarget, setImportTarget] = useState<NamesNumbersWorkflow>("names");
+  const nameCount = parseLineList(namesList).length;
+  const numberCount = parseLineList(numbersList).length;
 
   function importCsvFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
-      onRosterChange(text.trim());
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (importTarget === "names") {
+        onNamesListChange(
+          lines
+            .map((line) => line.split(/[,\t]/)[0]?.trim() ?? line)
+            .filter(Boolean)
+            .join("\n"),
+        );
+      } else {
+        onNumbersListChange(
+          lines
+            .map((line) => {
+              const parts = line.split(/[,\t]/).map((p) => p.trim());
+              return parts.length > 1 ? parts[1] : parts[0];
+            })
+            .filter(Boolean)
+            .join("\n"),
+        );
+      }
     };
     reader.readAsText(file);
   }
 
   return (
     <div className="bags-names-form">
-      <p className="bags-names-lead">
-        Import or paste a roster (Name, Number) — one player per line. Names and numbers are placed as
-        separate text layers on the sheet.
-      </p>
+      <div className="bags-names-tabs" role="tablist" aria-label="Names and numbers workflow">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workflow === "names"}
+          className={workflow === "names" ? "bags-chip active" : "bags-chip"}
+          onClick={() => onWorkflowChange("names")}
+        >
+          Add Names
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={workflow === "numbers"}
+          className={workflow === "numbers" ? "bags-chip active" : "bags-chip"}
+          onClick={() => onWorkflowChange("numbers")}
+        >
+          Add Numbers
+        </button>
+      </div>
 
-      <fieldset className="bags-settings-group">
-        <legend>Roster CSV</legend>
-        <div className="bags-names-csv-actions">
-          <button type="button" className="bags-btn bags-btn-secondary" onClick={() => csvInputRef.current?.click()}>
-            Import CSV file
+      {workflow === "names" ? (
+        <>
+          <p className="bags-names-lead">
+            Enter player names — one per line. Use Small, Medium, or Large presets, then generate name
+            layers on the sheet.
+          </p>
+          <fieldset className="bags-settings-group">
+            <legend>Import names</legend>
+            <div className="bags-names-csv-actions">
+              <button
+                type="button"
+                className="bags-btn bags-btn-secondary"
+                onClick={() => {
+                  setImportTarget("names");
+                  csvInputRef.current?.click();
+                }}
+              >
+                Import CSV file
+              </button>
+            </div>
+            <label className="bags-field">
+              Names
+              <textarea
+                rows={6}
+                value={namesList}
+                placeholder={"Smith\nJones\nLee"}
+                onChange={(e) => onNamesListChange(e.target.value)}
+                aria-label="Player names"
+              />
+            </label>
+            <p className="bags-names-meta">
+              {nameCount} name{nameCount === 1 ? "" : "s"} detected
+            </p>
+          </fieldset>
+          <fieldset className="bags-settings-group">
+            <legend>Name size presets</legend>
+            <div className="bags-names-presets">
+              {NAME_SIZE_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="bags-chip"
+                  onClick={() => onApplyNamePreset(p.id)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <label className="bags-field">
+            Sets per name
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={quantity}
+              onChange={(e) => onQuantityChange(Math.max(1, Math.round(+e.target.value || 1)))}
+            />
+          </label>
+          <fieldset className="bags-settings-group">
+            <legend>Name settings</legend>
+            <label className="bags-field">
+              Font
+              <select value={nameFontFamily} onChange={(e) => onNameFontFamilyChange(e.target.value)}>
+                {FONT_OPTIONS.map((f) => (
+                  <option key={f.id} value={f.label}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="bags-names-grid">
+              <label className="bags-field">
+                Size (pt)
+                <input
+                  type="number"
+                  min={8}
+                  max={120}
+                  value={nameFontSize}
+                  onChange={(e) => onNameFontSizeChange(+e.target.value)}
+                />
+              </label>
+              <label className="bags-field">
+                Width (in)
+                <input
+                  type="number"
+                  min={0.5}
+                  step={0.1}
+                  value={nameWidthIn}
+                  onChange={(e) => onNameWidthInChange(+e.target.value)}
+                />
+              </label>
+              <label className="bags-field">
+                Stroke (pt)
+                <input
+                  type="number"
+                  min={0}
+                  max={12}
+                  value={nameStrokeWidth}
+                  onChange={(e) => onNameStrokeWidthChange(+e.target.value)}
+                />
+              </label>
+            </div>
+          </fieldset>
+          <fieldset className="bags-settings-group">
+            <legend>Colors</legend>
+            <label className="bags-field">
+              Fill color
+              <input type="color" value={textColor} onChange={(e) => onTextColorChange(e.target.value)} />
+            </label>
+            <label className="bags-field">
+              Stroke color
+              <input
+                type="color"
+                value={strokeColor}
+                onChange={(e) => onStrokeColorChange(e.target.value)}
+              />
+            </label>
+          </fieldset>
+          <button
+            type="button"
+            className="bags-btn bags-btn-primary bags-names-generate"
+            onClick={onGenerateNames}
+          >
+            Generate names on sheet
           </button>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,text/csv,text/plain"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) importCsvFile(file);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        <label className="bags-field">
-          Players
-          <textarea
-            rows={6}
-            value={rosterCsv}
-            placeholder={"Name, Number\nSmith, 12\nJones, 7\nLee, 23"}
-            onChange={(e) => onRosterChange(e.target.value)}
-            aria-label="Roster CSV"
-          />
-        </label>
-        <p className="bags-names-meta">{rowCount} row{rowCount === 1 ? "" : "s"} detected</p>
-      </fieldset>
-
-      <fieldset className="bags-settings-group">
-        <legend>Presets</legend>
-        <div className="bags-names-presets">
-          {NAMES_NUMBERS_PRESETS.map((p) => (
-            <button key={p.id} type="button" className="bags-chip" onClick={() => onApplyPreset(p.id)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </fieldset>
-
-      <label className="bags-field">
-        Sets per player
-        <input
-          type="number"
-          min={1}
-          max={99}
-          value={quantity}
-          onChange={(e) => onQuantityChange(Math.max(1, Math.round(+e.target.value || 1)))}
-        />
-      </label>
-
-      <fieldset className="bags-settings-group">
-        <legend>Add Names</legend>
-        <label className="bags-check">
-          <input type="checkbox" checked={includeNames} onChange={(e) => onIncludeNamesChange(e.target.checked)} />
-          Include player names
-        </label>
-        <label className="bags-field">
-          Font
-          <select
-            value={nameFontFamily}
-            disabled={!includeNames}
-            onChange={(e) => onNameFontFamilyChange(e.target.value)}
+        </>
+      ) : (
+        <>
+          <p className="bags-names-lead">
+            Enter jersey numbers — one per line. Use Small, Medium, or Large presets, then generate
+            number layers on the sheet.
+          </p>
+          <fieldset className="bags-settings-group">
+            <legend>Import numbers</legend>
+            <div className="bags-names-csv-actions">
+              <button
+                type="button"
+                className="bags-btn bags-btn-secondary"
+                onClick={() => {
+                  setImportTarget("numbers");
+                  csvInputRef.current?.click();
+                }}
+              >
+                Import CSV file
+              </button>
+            </div>
+            <label className="bags-field">
+              Numbers
+              <textarea
+                rows={6}
+                value={numbersList}
+                placeholder={"12\n7\n23"}
+                onChange={(e) => onNumbersListChange(e.target.value)}
+                aria-label="Jersey numbers"
+              />
+            </label>
+            <p className="bags-names-meta">
+              {numberCount} number{numberCount === 1 ? "" : "s"} detected
+            </p>
+          </fieldset>
+          <fieldset className="bags-settings-group">
+            <legend>Number size presets</legend>
+            <div className="bags-names-presets">
+              {NUMBER_SIZE_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="bags-chip"
+                  onClick={() => onApplyNumberPreset(p.id)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <label className="bags-field">
+            Sets per number
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={quantity}
+              onChange={(e) => onQuantityChange(Math.max(1, Math.round(+e.target.value || 1)))}
+            />
+          </label>
+          <fieldset className="bags-settings-group">
+            <legend>Number settings</legend>
+            <label className="bags-field">
+              Font
+              <select
+                value={numberFontFamily}
+                onChange={(e) => onNumberFontFamilyChange(e.target.value)}
+              >
+                {FONT_OPTIONS.map((f) => (
+                  <option key={f.id} value={f.label}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="bags-names-grid">
+              <label className="bags-field">
+                Size (pt)
+                <input
+                  type="number"
+                  min={8}
+                  max={120}
+                  value={numberFontSize}
+                  onChange={(e) => onNumberFontSizeChange(+e.target.value)}
+                />
+              </label>
+              <label className="bags-field">
+                Width (in)
+                <input
+                  type="number"
+                  min={0.5}
+                  step={0.1}
+                  value={numberWidthIn}
+                  onChange={(e) => onNumberWidthInChange(+e.target.value)}
+                />
+              </label>
+              <label className="bags-field">
+                Stroke (pt)
+                <input
+                  type="number"
+                  min={0}
+                  max={12}
+                  value={numberStrokeWidth}
+                  onChange={(e) => onNumberStrokeWidthChange(+e.target.value)}
+                />
+              </label>
+            </div>
+          </fieldset>
+          <fieldset className="bags-settings-group">
+            <legend>Colors</legend>
+            <label className="bags-field">
+              Fill color
+              <input type="color" value={textColor} onChange={(e) => onTextColorChange(e.target.value)} />
+            </label>
+            <label className="bags-field">
+              Stroke color
+              <input
+                type="color"
+                value={strokeColor}
+                onChange={(e) => onStrokeColorChange(e.target.value)}
+              />
+            </label>
+          </fieldset>
+          <button
+            type="button"
+            className="bags-btn bags-btn-primary bags-names-generate"
+            onClick={onGenerateNumbers}
           >
-            {FONT_OPTIONS.map((f) => (
-              <option key={f.id} value={f.label}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="bags-names-grid">
-          <label className="bags-field">
-            Size (pt)
-            <input
-              type="number"
-              min={8}
-              max={120}
-              disabled={!includeNames}
-              value={nameFontSize}
-              onChange={(e) => onNameFontSizeChange(+e.target.value)}
-            />
-          </label>
-          <label className="bags-field">
-            Width (in)
-            <input
-              type="number"
-              min={0.5}
-              step={0.1}
-              disabled={!includeNames}
-              value={nameWidthIn}
-              onChange={(e) => onNameWidthInChange(+e.target.value)}
-            />
-          </label>
-          <label className="bags-field">
-            Stroke (pt)
-            <input
-              type="number"
-              min={0}
-              max={12}
-              disabled={!includeNames}
-              value={nameStrokeWidth}
-              onChange={(e) => onNameStrokeWidthChange(+e.target.value)}
-            />
-          </label>
-        </div>
-      </fieldset>
+            Generate numbers on sheet
+          </button>
+        </>
+      )}
 
-      <fieldset className="bags-settings-group">
-        <legend>Add Numbers</legend>
-        <label className="bags-check">
-          <input
-            type="checkbox"
-            checked={includeNumbers}
-            onChange={(e) => onIncludeNumbersChange(e.target.checked)}
-          />
-          Include jersey numbers
-        </label>
-        <label className="bags-field">
-          Font
-          <select
-            value={numberFontFamily}
-            disabled={!includeNumbers}
-            onChange={(e) => onNumberFontFamilyChange(e.target.value)}
-          >
-            {FONT_OPTIONS.map((f) => (
-              <option key={f.id} value={f.label}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="bags-names-grid">
-          <label className="bags-field">
-            Size (pt)
-            <input
-              type="number"
-              min={8}
-              max={120}
-              disabled={!includeNumbers}
-              value={numberFontSize}
-              onChange={(e) => onNumberFontSizeChange(+e.target.value)}
-            />
-          </label>
-          <label className="bags-field">
-            Width (in)
-            <input
-              type="number"
-              min={0.5}
-              step={0.1}
-              disabled={!includeNumbers}
-              value={numberWidthIn}
-              onChange={(e) => onNumberWidthInChange(+e.target.value)}
-            />
-          </label>
-          <label className="bags-field">
-            Stroke (pt)
-            <input
-              type="number"
-              min={0}
-              max={12}
-              disabled={!includeNumbers}
-              value={numberStrokeWidth}
-              onChange={(e) => onNumberStrokeWidthChange(+e.target.value)}
-            />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset className="bags-settings-group">
-        <legend>Layout &amp; colors</legend>
-        <label className="bags-field">
-          Fill color
-          <input type="color" value={textColor} onChange={(e) => onTextColorChange(e.target.value)} />
-        </label>
-        <label className="bags-field">
-          Stroke color
-          <input type="color" value={strokeColor} onChange={(e) => onStrokeColorChange(e.target.value)} />
-        </label>
-        <label className="bags-radio">
-          <input
-            type="radio"
-            name="names-layout"
-            checked={layout === "stacked"}
-            onChange={() => onLayoutChange("stacked")}
-          />
-          Stacked — number below name
-        </label>
-        <label className="bags-radio">
-          <input
-            type="radio"
-            name="names-layout"
-            checked={layout === "side-by-side"}
-            onChange={() => onLayoutChange("side-by-side")}
-          />
-          Side by side — name left, number right
-        </label>
-      </fieldset>
-
-      <button type="button" className="bags-btn bags-btn-primary bags-names-generate" onClick={onGenerate}>
-        Generate on sheet
-      </button>
+      <input
+        ref={csvInputRef}
+        type="file"
+        accept=".csv,text/csv,text/plain"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) importCsvFile(file);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }
