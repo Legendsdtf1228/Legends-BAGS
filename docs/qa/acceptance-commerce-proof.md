@@ -41,8 +41,10 @@ Starting `main` commit: `1a12f19` (Merge PR #10 — editor modern parity)
 | Assign without variant GID | Auto-resolves single-variant products; multi-variant requires picker |
 | UBS launcher error | Storefront always uses app proxy; ignores stale tunnel URLs in theme settings |
 | Gang sheet 24→360 bug | Separated roll max (360) from canvas height; `resolveGangSheetHeight()` + 45 regression tests |
-| Setup tunnel docs | Setup/README now document app-proxy-first; Editor base URL optional |
-| Unpublished dev product | Setup → Publish dev test products to Online Store (+ `write_publications` scope) |
+| Setup publish scope error | Added `read_publications` + `write_publications`; reauth required |
+| Setup stack traces | Merchant-friendly `BagsAdminErrorBoundary` with reference ID + Retry |
+| UBS button label | Appearance labels apply to gang sheet block only |
+| Saved design disabled on welcome return | Reload library on welcome; loading/error/retry/empty states |
 
 
 This sprint requires **browser-verified** end-to-end checkout for both builders. Automated tests alone do not satisfy completion.

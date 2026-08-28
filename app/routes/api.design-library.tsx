@@ -15,12 +15,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const search = url.searchParams.get("search") ?? undefined;
   const sort = (url.searchParams.get("sort") as "recent" | "name") || "recent";
   const includeArchived = url.searchParams.get("archived") === "1";
+  const workflow = url.searchParams.get("workflow") as "upload_by_size" | "gang_sheet" | null;
+  const productGid = url.searchParams.get("productGid")?.trim() || undefined;
   const rows = await listDesignLibrary({
     shop: ctx.shop,
     customerKey: ctx.customerKey,
     search,
     sort,
     includeArchived,
+    productGid,
+    workflow: workflow ?? undefined,
   });
   return Response.json({ designs: rows });
 }

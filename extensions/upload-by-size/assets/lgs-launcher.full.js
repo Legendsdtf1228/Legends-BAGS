@@ -314,7 +314,7 @@
     }
 
     function applyAppearanceLabels(appearance) {
-      if (!appearance) return;
+      if (!appearance || builderType !== "gang_sheet") return;
       if (openBtn) {
         openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build your gang sheet");
         openBtn.setAttribute("data-label-edit", appearance.launcherEditLabel || "Edit design");

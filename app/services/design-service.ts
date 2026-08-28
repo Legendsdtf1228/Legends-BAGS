@@ -640,6 +640,8 @@ export async function saveUploadBySizeNewVersion(params: {
 export async function listDesignLibrary(params: {
   shop: string;
   customerKey?: string | null;
+  productGid?: string;
+  workflow?: "upload_by_size" | "gang_sheet";
   search?: string;
   sort?: "recent" | "name";
   includeArchived?: boolean;
@@ -653,6 +655,9 @@ export async function listDesignLibrary(params: {
       : { not: null },
     ...(params.includeArchived ? {} : { archived: false }),
     ...(params.customerKey ? { customerKey: params.customerKey } : {}),
+    ...(params.productGid
+      ? { OR: [{ productGid: params.productGid }, { productGid: null }] }
+      : {}),
   };
 
   const rows = await prisma.design.findMany({
@@ -661,7 +666,7 @@ export async function listDesignLibrary(params: {
     take: params.limit ?? 50,
   });
 
-  return Promise.all(
+  const designs = await Promise.all(
     rows.map(async (d) => {
       const v = await prisma.designVersion.findUnique({
         where: { designId_version: { designId: d.id, version: d.currentVersion } },
@@ -712,6 +717,10 @@ export async function listDesignLibrary(params: {
       };
     }),
   );
+  if (params.workflow) {
+    return designs.filter((d) => d.workflow === params.workflow);
+  }
+  return designs;
 }
 
 export async function createStaffSheet(params: {

@@ -413,6 +413,9 @@ export default function GangSheetEditor() {
   const [rosterCsv, setRosterCsv] = useState("");
   const [rosterFontSize, setRosterFontSize] = useState(24);
   const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState("");
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
   const [librarySort, setLibrarySort] = useState<"recent" | "name">("recent");
   const [libraryIncludeArchived, setLibraryIncludeArchived] = useState(false);
@@ -532,9 +535,13 @@ export default function GangSheetEditor() {
     const draft = readDraft(page.shop);
     setHasStoredDraft(Boolean(draft?.items.length));
     if (draft?.items.length && !page.designId) setDraftOffer(draft);
-    void refreshLibrary();
     void refreshGallery();
   }, [page.shop, page.designId]);
+
+  useEffect(() => {
+    if (screen !== "welcome") return;
+    void refreshLibrary();
+  }, [screen, page.shop, page.productGid, librarySearch, librarySort, libraryIncludeArchived]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1481,16 +1488,34 @@ export default function GangSheetEditor() {
   }
 
   async function refreshLibrary(includeArchived = libraryIncludeArchived) {
+    setLibraryLoading(true);
+    setLibraryError("");
     try {
       const q = librarySearch.trim();
-      const res = await fetch(
-        `/api/design-library?sort=${librarySort}${q ? `&search=${encodeURIComponent(q)}` : ""}${includeArchived ? "&archived=1" : ""}`,
-        { credentials: "include", headers: { "X-LGS-Shop": page.shop } },
-      );
-      const json = (await res.json()) as { designs?: LibraryDesign[] };
-      if (res.ok && json.designs) setSavedDesigns(json.designs);
+      const params = new URLSearchParams({
+        sort: librarySort,
+        workflow: "gang_sheet",
+      });
+      if (q) params.set("search", q);
+      if (includeArchived) params.set("archived", "1");
+      if (page.productGid) params.set("productGid", page.productGid);
+      const res = await fetch(`/api/design-library?${params.toString()}`, {
+        credentials: "include",
+        headers: { "X-LGS-Shop": page.shop },
+      });
+      const json = (await res.json()) as { designs?: LibraryDesign[]; error?: string };
+      if (!res.ok) {
+        setSavedDesigns([]);
+        setLibraryError(json.error || "Could not load saved designs.");
+        return;
+      }
+      setSavedDesigns(json.designs ?? []);
     } catch {
-      /* offline */
+      setSavedDesigns([]);
+      setLibraryError("Could not load saved designs. Check your connection and try again.");
+    } finally {
+      setLibraryLoading(false);
+      setLibraryLoaded(true);
     }
   }
 
@@ -2112,7 +2137,23 @@ export default function GangSheetEditor() {
                   <strong>Start from a template</strong>
                   <span>Pick a preset sheet layout and open the editor.</span>
                 </button>
-                {savedDesigns.length ? (
+                {libraryLoading ? (
+                  <button type="button" className="welcome-opt" disabled aria-busy="true">
+                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
+                    <strong>Open saved design</strong>
+                    <span>Loading your saved gang sheets…</span>
+                  </button>
+                ) : libraryError ? (
+                  <button
+                    type="button"
+                    className="welcome-opt"
+                    onClick={() => void refreshLibrary()}
+                  >
+                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
+                    <strong>Open saved design</strong>
+                    <span>{libraryError} Tap to retry.</span>
+                  </button>
+                ) : savedDesigns.length ? (
                   <button
                     type="button"
                     className="welcome-opt"
@@ -2125,10 +2166,16 @@ export default function GangSheetEditor() {
                     </span>
                   </button>
                 ) : (
-                  <button type="button" className="welcome-opt" disabled>
+                  <button type="button" className="welcome-opt" disabled={!libraryLoaded}>
                     <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
                     <strong>Open saved design</strong>
-                    <span>Save a design from the editor to build your library.</span>
+                    <span>
+                      {libraryLoaded
+                        ? page.productGid
+                          ? "No saved gang sheets for this product yet. Save from the canvas to build your library."
+                          : "Save a design from the editor to build your library."
+                        : "Checking your saved designs…"}
+                    </span>
                   </button>
                 )}
                 {hasStoredDraft ? (
