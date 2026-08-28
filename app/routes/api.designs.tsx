@@ -9,10 +9,12 @@ import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
 import { assertCustomerApiContext } from "../domain/security/test-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
+import { createRequestId, jsonError, jsonOk } from "../lib/request-context.server";
 
 export async function action({ request }: ActionFunctionArgs) {
+  const requestId = createRequestId();
   if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return jsonError("Method not allowed", 405, requestId);
   }
   const ctx = assertCustomerApiContext(request);
   const shop = ctx.shop;
@@ -33,20 +35,23 @@ export async function action({ request }: ActionFunctionArgs) {
     design: { id: string; currentVersion: number; name: string | null },
     state: DesignStateV1,
   ) {
-    return Response.json({
-      designId: design.id,
-      version: design.currentVersion,
-      status: "draft",
-      state,
-      name: design.name,
-      cartProperties: buildCartLineProperties({
-        shop,
+    return jsonOk(
+      {
         designId: design.id,
         version: design.currentVersion,
+        status: "draft",
         state,
-        designName: design.name,
-      }),
-    });
+        name: design.name,
+        cartProperties: buildCartLineProperties({
+          shop,
+          designId: design.id,
+          version: design.currentVersion,
+          state,
+          designName: design.name,
+        }),
+      },
+      requestId,
+    );
   }
 
   if (body.uploads?.length) {
@@ -64,7 +69,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return respond(design, state);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Create failed";
-      return Response.json({ error: message }, { status: 400 });
+      return jsonError(message, 400, requestId);
     }
   }
 
@@ -90,12 +95,12 @@ export async function action({ request }: ActionFunctionArgs) {
       return respond(design, state);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Create failed";
-      return Response.json({ error: message }, { status: 400 });
+      return jsonError(message, 400, requestId);
     }
   }
 
   if (!body.assetId || !body.size) {
-    return Response.json({ error: "assetId and size required" }, { status: 400 });
+    return jsonError("assetId and size required", 400, requestId);
   }
 
   try {
@@ -119,6 +124,6 @@ export async function action({ request }: ActionFunctionArgs) {
     return respond(design, state);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Create failed";
-    return Response.json({ error: message }, { status: 400 });
+    return jsonError(message, 400, requestId);
   }
 }

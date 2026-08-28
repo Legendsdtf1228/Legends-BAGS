@@ -44,4 +44,26 @@ describe("cart line properties", () => {
     expect(props[CART_DESIGN_NAME_PROPERTY]).toBe("Team Sheet");
     expect(props._lgs_price_ref).toBeTruthy();
   });
+
+  it("builds upload-by-size cart properties", () => {
+    const ubsState: DesignStateV1 = {
+      schemaVersion: 1,
+      workflow: "upload_by_size",
+      sheet: { widthIn: 8, maxHeightIn: 10, imageMarginIn: 0, artboardMarginIn: 0 },
+      items: [{ assetId: "a1", widthIn: 8, heightIn: 10, quantity: 3, rotationDeg: 0, xIn: 0, yIn: 0 }],
+      pricing: { currency: "USD", pricePerSqIn: 0.05, areaSqIn: 80, totalCents: 400 },
+      layout: "manual",
+    };
+    const props = buildCartLineProperties({
+      shop: "legends-bags-in2lwdll.myshopify.com",
+      designId: "des_ubs",
+      version: 1,
+      state: ubsState,
+      designName: "Custom decal",
+    });
+    expect(props._lgs_builder_type).toBe("upload_by_size");
+    expect(props._lgs_sheet_width).toBe("8");
+    expect(props._lgs_sheet_height).toBe("10");
+    expect(props[CART_PIECE_COUNT_PROPERTY]).toBe("3");
+  });
 });

@@ -4,6 +4,7 @@ import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { enqueueRenderJob, processNextRenderJob } from "../services/design-service";
+import { importRecentShopifyOrders } from "../services/shopify-order-sync.server";
 import { shopifyOrderAdminUrl } from "../lib/shopify-admin-links";
 import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
 
@@ -91,6 +92,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const paged = rows.slice((page - 1) * pageSize, page * pageSize);
   const store = session.shop.replace(".myshopify.com", "");
+  const shopConfig = await prisma.shopConfig.findUnique({ where: { shop: session.shop } });
 
   return {
     q,
@@ -102,14 +104,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     total: rows.length,
     shop: session.shop,
     adminStore: store,
+    lastOrderSyncAt: shopConfig?.lastOrderSyncAt?.toISOString() ?? null,
+    lastOrderSyncError: shopConfig?.lastOrderSyncError ?? null,
     rows: paged,
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
+
+  if (intent === "import-orders") {
+    try {
+      const result = await importRecentShopifyOrders({ shop: session.shop, admin });
+      return { imported: result.imported, skipped: result.skipped };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Order import failed";
+      await prisma.shopConfig.upsert({
+        where: { shop: session.shop },
+        create: { shop: session.shop, lastOrderSyncError: message },
+        update: { lastOrderSyncError: message },
+      });
+      return { error: message };
+    }
+  }
 
   if (intent === "retry-render") {
     const designId = String(form.get("designId") || "");
@@ -132,8 +151,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function OrdersPage() {
-  const { rows, q, builder, payment, render, page, pageCount, total, adminStore } =
-    useLoaderData<typeof loader>();
+  const {
+    rows,
+    q,
+    builder,
+    payment,
+    render,
+    page,
+    pageCount,
+    total,
+    adminStore,
+    lastOrderSyncAt,
+    lastOrderSyncError,
+  } = useLoaderData<typeof loader>();
 
   return (
     <>
@@ -176,7 +206,19 @@ export default function OrdersPage() {
 
           <p className="bags-admin-muted" style={{ marginTop: 0 }}>
             {total} order line{total === 1 ? "" : "s"}
+            {lastOrderSyncAt
+              ? ` · Last import ${new Date(lastOrderSyncAt).toLocaleString()}`
+              : " · Import recent orders to backfill missed webhooks"}
           </p>
+          {lastOrderSyncError ? (
+            <p style={{ color: "#b42318", margin: "0 0 12px" }}>{lastOrderSyncError}</p>
+          ) : null}
+          <Form method="post" style={{ marginBottom: 16 }}>
+            <input type="hidden" name="intent" value="import-orders" />
+            <button type="submit" className="bags-admin-btn secondary">
+              Import recent orders
+            </button>
+          </Form>
 
           {rows.length === 0 ? (
             <p className="bags-admin-muted">
