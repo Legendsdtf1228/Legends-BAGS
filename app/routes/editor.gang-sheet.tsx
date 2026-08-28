@@ -26,6 +26,7 @@ import {
   QualityStatusButton,
   type QualityDisplayPrefs,
 } from "../components/editor/gang-sheet/quality-inspector";
+import { SheetShrinkDialog } from "../components/editor/gang-sheet/sheet-shrink-dialog";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
@@ -39,6 +40,7 @@ import {
   findOobIds,
   findOverlappingIds,
   inside,
+  scaleItemsToSheet,
   isTypingTarget,
   nextZIndex,
   NUDGE_IN,
@@ -53,7 +55,6 @@ import {
 import {
   FONT_OPTIONS,
   GALLERY_CATEGORIES,
-  GALLERY_ITEMS,
   HELP_SHORTCUTS,
   SHEET_TEMPLATES,
   TEXT_STYLE_PRESETS,
@@ -395,8 +396,15 @@ export default function GangSheetEditor() {
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>(GALLERY_ITEMS);
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [galleryCategories, setGalleryCategories] = useState<string[]>([...GALLERY_CATEGORIES]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryError, setGalleryError] = useState("");
+  const [shrinkPrompt, setShrinkPrompt] = useState<{
+    w: number;
+    h: number;
+    affectedCount: number;
+  } | null>(null);
   const [textContent, setTextContent] = useState("Your text");
   const [textFontSize, setTextFontSize] = useState(36);
   const [textFontFamily, setTextFontFamily] = useState("Arial");
@@ -426,6 +434,7 @@ export default function GangSheetEditor() {
   const [mobileDrawer, setMobileDrawer] = useState<"sidebar" | "properties" | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveDialogError, setSaveDialogError] = useState("");
+  const [saveDialogRequestId, setSaveDialogRequestId] = useState("");
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -498,6 +507,7 @@ export default function GangSheetEditor() {
       return;
     }
     setSaveDialogError("");
+    setSaveDialogRequestId("");
     setShowSaveDialog(true);
   }
 
@@ -751,15 +761,34 @@ export default function GangSheetEditor() {
     }
   }
 
-  function applySheetSize(w: number, h: number) {
+  function commitSheetSize(w: number, h: number, mode: "clamp" | "scale") {
+    if (itemsRef.current.length) {
+      const next =
+        mode === "scale"
+          ? scaleItemsToSheet(itemsRef.current, sheetWidth, sheetHeight, w, h)
+          : itemsRef.current.map((i) => inside({ ...i }, w, h));
+      pushHistory(next);
+    }
     setSheetWidth(w);
     setSheetHeight(h);
-    if (itemsRef.current.length) {
-      pushHistory(
-        itemsRef.current.map((i) => inside({ ...i }, w, h)),
-      );
-    }
     setSaved(false);
+    setShrinkPrompt(null);
+  }
+
+  function requestSheetSize(w: number, h: number) {
+    if (w === sheetWidth && h === sheetHeight) return;
+    const growing = w >= sheetWidth && h >= sheetHeight;
+    if (!itemsRef.current.length || growing) {
+      commitSheetSize(w, h, "clamp");
+      return;
+    }
+    const clamped = itemsRef.current.map((i) => inside({ ...i }, w, h));
+    const affected = findOobIds(clamped, w, h).size;
+    setShrinkPrompt({ w, h, affectedCount: affected });
+  }
+
+  function applySheetSize(w: number, h: number) {
+    requestSheetSize(w, h);
   }
 
   function fitToViewport(mode: "width" | "sheet" = "sheet") {
@@ -1420,6 +1449,8 @@ export default function GangSheetEditor() {
   }, [galleryCategory, gallerySearch, galleryItems]);
 
   async function refreshGallery() {
+    setGalleryLoading(true);
+    setGalleryError("");
     try {
       const params = new URLSearchParams();
       if (galleryCategory !== "All") params.set("category", galleryCategory);
@@ -1431,13 +1462,20 @@ export default function GangSheetEditor() {
       const json = (await res.json()) as {
         categories?: string[];
         items?: GalleryItem[];
+        error?: string;
       };
-      if (res.ok && json.items) {
-        setGalleryItems(json.items);
-        if (json.categories?.length) setGalleryCategories(json.categories);
+      if (!res.ok) {
+        setGalleryItems([]);
+        setGalleryError(json.error || "Could not load gallery artwork.");
+        return;
       }
+      setGalleryItems(json.items ?? []);
+      if (json.categories?.length) setGalleryCategories(json.categories);
     } catch {
-      /* fallback to seed data */
+      setGalleryItems([]);
+      setGalleryError("Could not load gallery artwork. Check your connection and try again.");
+    } finally {
+      setGalleryLoading(false);
     }
   }
 
@@ -1772,6 +1810,7 @@ export default function GangSheetEditor() {
     setSaving(true);
     setError("");
     setSaveDialogError("");
+    setSaveDialogRequestId("");
     try {
       const resolved: Array<{
         assetId: string;
@@ -1848,9 +1887,13 @@ export default function GangSheetEditor() {
         name?: string | null;
         cartProperties?: Record<string, string>;
         error?: string;
+        requestId?: string;
         state?: { pricing: { totalCents: number } };
       };
-      if (!res.ok || !json.designId) throw new Error(json.error || "Could not save design");
+      if (!res.ok || !json.designId) {
+        setSaveDialogRequestId(json.requestId ?? "");
+        throw new Error(json.error || "Could not save design");
+      }
       setSaved(true);
       setDirty(false);
       setEditingDesignId(json.designId);
@@ -2801,18 +2844,37 @@ export default function GangSheetEditor() {
         }}
         sheetWidth={sheetWidth}
         sheetHeight={sheetHeight}
+        quantity={page.quantity ?? 1}
+        artworkCount={items.length}
         estimateUsd={estimate}
         overlapCount={overlappingIds.size}
         oobCount={oobIds.size}
         lowDpiCount={lowDpiCount}
+        qualitySummary={qualitySummary}
         previewUrl={savePreviewUrl}
         saving={saving}
         error={saveDialogError}
+        requestId={saveDialogRequestId}
         onCancel={() => {
           if (!saving) setShowSaveDialog(false);
         }}
         onSaveOnly={() => void save({ addToCart: false, closeDialog: true })}
         onSaveAndCart={() => void save({ addToCart: true, closeDialog: true })}
+      />
+      <SheetShrinkDialog
+        open={Boolean(shrinkPrompt)}
+        currentWidth={sheetWidth}
+        currentHeight={sheetHeight}
+        nextWidth={shrinkPrompt?.w ?? sheetWidth}
+        nextHeight={shrinkPrompt?.h ?? sheetHeight}
+        affectedCount={shrinkPrompt?.affectedCount ?? 0}
+        onCancel={() => setShrinkPrompt(null)}
+        onResizeOnly={() => {
+          if (shrinkPrompt) commitSheetSize(shrinkPrompt.w, shrinkPrompt.h, "clamp");
+        }}
+        onScaleToFit={() => {
+          if (shrinkPrompt) commitSheetSize(shrinkPrompt.w, shrinkPrompt.h, "scale");
+        }}
       />
       <GangSheetCommandBar
         designName={designName}
@@ -2826,7 +2888,7 @@ export default function GangSheetEditor() {
         sheetHeight={sheetHeight}
         sheetWidths={SHEET_WIDTHS}
         sheetHeights={SHEET_HEIGHTS}
-        onSheetSizeChange={applySheetSize}
+        onSheetSizeChange={requestSheetSize}
         estimateUsd={estimate}
         zoomLabel={zoomLabel}
         onZoomOut={() => {
@@ -3013,23 +3075,38 @@ export default function GangSheetEditor() {
           ) : sidebarTab === "gallery" ? (
             <>
               <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
+              <p className="panel-lead">Artwork from your shop&apos;s Gallery Settings — not sample placeholders.</p>
               <div className="sidebar-tools">
                 <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
+                <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
+                  <ToolbarIcon name="refresh" />
+                </button>
               </div>
               <div className="chip-row">
                 {galleryCategories.map((cat) => (
                   <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
                 ))}
               </div>
-              <div className="pool-grid">
-                {filteredGallery.map((g) => (
-                  <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
-                    <img src={g.thumb} alt="" />
-                    <span>{g.name}</span>
-                    <em>{g.widthIn}×{g.heightIn}″</em>
-                  </button>
-                ))}
-              </div>
+              {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
+              {galleryError ? (
+                <p className="gs-save-error" style={{ margin: "0 16px 12px" }}>
+                  {galleryError}{" "}
+                  <button type="button" className="gs-ghost-btn" onClick={() => void refreshGallery()}>Retry</button>
+                </p>
+              ) : null}
+              {!galleryLoading && !filteredGallery.length ? (
+                <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
+              ) : (
+                <div className="pool-grid">
+                  {filteredGallery.map((g) => (
+                    <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
+                      <img src={g.thumb} alt="" />
+                      <span>{g.name}</span>
+                      <em>{g.widthIn}×{g.heightIn}″</em>
+                    </button>
+                  ))}
+                </div>
+              )}
             </>
           ) : sidebarTab === "text" ? (
             <>

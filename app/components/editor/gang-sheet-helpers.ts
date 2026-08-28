@@ -70,6 +70,31 @@ export function inside<T extends RectIn & { widthIn: number; heightIn: number }>
   };
 }
 
+/** Uniformly scale artwork to fit a smaller sheet (undoable via editor history). */
+export function scaleItemsToSheet<T extends RectIn>(
+  items: T[],
+  fromW: number,
+  fromH: number,
+  toW: number,
+  toH: number,
+): T[] {
+  if (!items.length || fromW <= 0 || fromH <= 0) return items;
+  const s = Math.min(toW / fromW, toH / fromH, 1);
+  return items.map((i) =>
+    inside(
+      {
+        ...i,
+        xIn: i.xIn * s,
+        yIn: i.yIn * s,
+        widthIn: i.widthIn * s,
+        heightIn: i.heightIn * s,
+      },
+      toW,
+      toH,
+    ),
+  );
+}
+
 export function aabbOverlap(a: RectIn, b: RectIn, eps = 1e-6): boolean {
   return !(
     a.xIn + a.widthIn <= b.xIn + eps ||
