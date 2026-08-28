@@ -9,12 +9,11 @@
   }
 
   function resolveScriptBase(root) {
-    var base = (root.getAttribute("data-editor-base") || "").replace(/\/$/, "");
-    if (base) return base;
     if (isStorefrontRoot(root)) {
       return window.location.origin.replace(/\/$/, "") + "/apps/legends-bags";
     }
-    return "";
+    var base = (root.getAttribute("data-editor-base") || "").replace(/\/$/, "");
+    return base;
   }
 
   function bootAll() {
@@ -53,15 +52,21 @@
   s.async = true;
   s.onload = bootAll;
   s.onerror = function () {
-    console.error("[Legends BAGS] Could not load launcher from " + s.src);
-    roots.forEach(function (root) {
-      var status = root.querySelector("[data-lgs-status]");
-      if (status) {
-        status.hidden = false;
-        status.textContent = "Could not load the design editor. Check that Legends BAGS is installed.";
-        status.classList.add("lgs-status--error");
-      }
-    });
+    if (!isStorefrontRoot(roots[0])) {
+      console.error("[Legends BAGS] Could not load launcher from " + s.src);
+      roots.forEach(function (root) {
+        var status = root.querySelector("[data-lgs-status]");
+        if (status) {
+          status.hidden = false;
+          status.textContent = "Could not load the design editor. Check that Legends BAGS is installed.";
+          status.classList.add("lgs-status--error");
+        }
+      });
+      return;
+    }
+    var fallback = window.location.origin.replace(/\/$/, "") + "/apps/legends-bags/lgs-launcher.full.js";
+    if (s.src === fallback) return;
+    s.src = fallback;
   };
   document.head.appendChild(s);
 })();

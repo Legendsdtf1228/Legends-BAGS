@@ -14,6 +14,7 @@ import { signDesignAccess } from "../domain/security/design-access";
 import { buildCartLineProperties } from "../domain/shopify/line-properties";
 import type { DesignStateV1 } from "../domain/design/types";
 import type { SizeInput } from "../domain/pricing";
+import { createRequestId, jsonError, jsonOk } from "../lib/request-context.server";
 
 function designResponse(
   shop: string,
@@ -79,14 +80,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  const requestId = createRequestId();
   if (request.method !== "PUT" && request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return jsonError("Method not allowed", 405, requestId);
   }
   const ctx = assertCustomerApiContext(request);
   const shop = ctx.shop;
   const customerKey = ctx.customerKey;
   const designId = params.designId;
-  if (!designId) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!designId) return jsonError("Not found", 404, requestId);
 
   const body = (await request.json()) as {
     intent?: string;
@@ -106,7 +108,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (body.intent === "validate") {
     try {
       const v = body.designVersion;
-      if (!v) return Response.json({ error: "designVersion required" }, { status: 400 });
+      if (!v) return jsonError("designVersion required", 400, requestId);
       const result = await validateDesignForCheckout({
         shop,
         designId,
@@ -115,15 +117,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
         variantGid: body.variantGidValidate,
         priceRef: body.priceRef,
       });
-      return Response.json({
-        ok: true,
-        designId: result.design.id,
-        version: result.versionRow.version,
-        priceCents: result.versionRow.priceCents,
-      });
+      return jsonOk(
+        {
+          ok: true,
+          designId: result.design.id,
+          version: result.versionRow.version,
+          priceCents: result.versionRow.priceCents,
+        },
+        requestId,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Validation failed";
-      return Response.json({ error: message }, { status: 400 });
+      return jsonError(message, 400, requestId);
     }
   }
 
@@ -140,7 +145,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         saveToLibrary: body.saveToLibrary,
         customerKey,
       });
-      return Response.json(designResponse(shop, design, state, version));
+      return jsonOk(designResponse(shop, design, state, version), requestId);
     }
 
     if (body.uploads?.length) {
@@ -154,13 +159,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
         saveToLibrary: body.saveToLibrary,
         customerKey,
       });
-      return Response.json(designResponse(shop, design, state, version));
+      return jsonOk(designResponse(shop, design, state, version), requestId);
     }
 
-    return Response.json({ error: "No update payload" }, { status: 400 });
+    return jsonError("No update payload", 400, requestId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Save failed";
     const status = message.includes("not found") ? 404 : 400;
-    return Response.json({ error: message }, { status });
+    return jsonError(message, status, requestId);
   }
 }

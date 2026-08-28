@@ -1,3 +1,4 @@
+import type { QualitySummary } from "./dpi-quality";
 import { ToolbarIcon } from "./editor-toolbar-icons";
 
 export type GangSheetSaveDialogProps = {
@@ -6,13 +7,17 @@ export type GangSheetSaveDialogProps = {
   onDesignNameChange: (name: string) => void;
   sheetWidth: number;
   sheetHeight: number;
+  quantity: number;
+  artworkCount: number;
   estimateUsd: number;
   overlapCount: number;
   oobCount: number;
   lowDpiCount: number;
+  qualitySummary: QualitySummary;
   previewUrl?: string | null;
   saving: boolean;
   error?: string;
+  requestId?: string;
   onCancel: () => void;
   onSaveOnly: () => void;
   onSaveAndCart: () => void;
@@ -26,13 +31,17 @@ export function GangSheetSaveDialog(props: GangSheetSaveDialogProps) {
     onDesignNameChange,
     sheetWidth,
     sheetHeight,
+    quantity,
+    artworkCount,
     estimateUsd,
     overlapCount,
     oobCount,
     lowDpiCount,
+    qualitySummary,
     previewUrl,
     saving,
     error,
+    requestId,
     onCancel,
     onSaveOnly,
     onSaveAndCart,
@@ -86,8 +95,31 @@ export function GangSheetSaveDialog(props: GangSheetSaveDialogProps) {
                 </dd>
               </div>
               <div>
-                <dt>Estimated price</dt>
+                <dt>Quantity</dt>
+                <dd>{quantity}</dd>
+              </div>
+              <div>
+                <dt>Artwork on sheet</dt>
+                <dd>{artworkCount} piece{artworkCount === 1 ? "" : "s"}</dd>
+              </div>
+              <div>
+                <dt>Verified price</dt>
                 <dd>${estimateUsd.toFixed(2)}</dd>
+              </div>
+            </dl>
+
+            <dl className="gs-save-summary gs-save-quality-summary">
+              <div>
+                <dt>DPI excellent</dt>
+                <dd>{qualitySummary.excellent}</dd>
+              </div>
+              <div>
+                <dt>DPI good</dt>
+                <dd>{qualitySummary.good}</dd>
+              </div>
+              <div>
+                <dt>DPI low/poor</dt>
+                <dd>{qualitySummary.low + qualitySummary.poor + qualitySummary.unknown}</dd>
               </div>
             </dl>
 
@@ -110,6 +142,7 @@ export function GangSheetSaveDialog(props: GangSheetSaveDialogProps) {
             {error ? (
               <p className="gs-save-error" role="alert">
                 {error}
+                {requestId ? ` Reference: ${requestId}` : ""}
               </p>
             ) : null}
           </div>
