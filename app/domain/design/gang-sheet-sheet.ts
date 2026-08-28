@@ -109,6 +109,12 @@ export type GangSheetVariantPriceBinding = {
   variantPriceCents?: number | null;
 };
 
+/** Normalize sheet height for stable variant lookup (DB floats vs UI integers). */
+export function normalizeSheetHeightIn(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * 1000) / 1000;
+}
+
 /** Resolve configured flat variant price for the active sheet height. */
 export function resolveGangSheetVariantPriceCents(params: {
   gangSheetVariants?: GangSheetVariantPriceBinding[];
@@ -116,7 +122,11 @@ export function resolveGangSheetVariantPriceCents(params: {
   fallbackVariantPriceCents?: number | null;
 }): number | null {
   const { gangSheetVariants = [], sheetHeightIn, fallbackVariantPriceCents } = params;
-  const byHeight = gangSheetVariants.find((v) => v.sheetHeightIn === sheetHeightIn);
+  const targetHeight = normalizeSheetHeightIn(sheetHeightIn);
+  const byHeight = gangSheetVariants.find((v) => {
+    const h = normalizeSheetHeightIn(v.sheetHeightIn);
+    return h != null && targetHeight != null && h === targetHeight;
+  });
   if (byHeight?.variantPriceCents != null && byHeight.variantPriceCents >= 0) {
     return byHeight.variantPriceCents;
   }

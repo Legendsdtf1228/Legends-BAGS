@@ -74,8 +74,28 @@ async function gangSheetPricingForDesign(
         orderBy: { sheetHeightIn: "asc" },
       })
     : [];
+  const resolvedProductGid =
+    productGid ??
+    (
+      await prisma.productBinding.findFirst({
+        where: { shop, builderType: "gang_sheet" },
+        orderBy: { updatedAt: "desc" },
+        select: { productGid: true },
+      })
+    )?.productGid;
+  const catalogRows = resolvedProductGid
+    ? gangRows.length && gangRows[0]?.productGid === resolvedProductGid
+      ? gangRows
+      : await prisma.productBinding.findMany({
+          where: { shop, productGid: resolvedProductGid, builderType: "gang_sheet" },
+          orderBy: { sheetHeightIn: "asc" },
+        })
+    : gangRows;
   const variantPriceCents = resolveGangSheetVariantPriceCents({
-    gangSheetVariants: gangRows,
+    gangSheetVariants: catalogRows.map((row) => ({
+      sheetHeightIn: row.sheetHeightIn,
+      variantPriceCents: row.variantPriceCents,
+    })),
     sheetHeightIn: sheet?.maxHeightIn ?? binding?.sheetHeightIn ?? 24,
     fallbackVariantPriceCents: binding?.variantPriceCents ?? null,
   });

@@ -14,6 +14,8 @@ import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-shee
 import { BagsGangSheetHeader } from "../components/editor/bags-parity/bags-gang-sheet-header";
 import { BagsSheetToolbar } from "../components/editor/bags-parity/bags-sheet-toolbar";
 import { BagsBottomNav, type BagsBottomNavTab } from "../components/editor/bags-parity/bags-bottom-nav";
+import { BagsLeftRail, isBagsLeftRailPanelTab, type BagsLeftRailTab } from "../components/editor/bags-parity/bags-left-rail";
+import { BagsProductsPanel } from "../components/editor/bags-parity/bags-products-panel";
 import { BagsActiveSheetsDrawer } from "../components/editor/bags-parity/bags-active-sheets-drawer";
 import { BagsAddImageModal, type AddImageTab } from "../components/editor/bags-parity/bags-add-image-modal";
 import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-editor-settings-drawer";
@@ -174,6 +176,7 @@ type PoolItem = {
 type SidebarTab =
   | "uploads"
   | "gallery"
+  | "products"
   | "text"
   | "names"
   | "auto"
@@ -353,7 +356,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return data(
     {
       shop: launch.shop,
-      productGid: launch.productGid,
+      productGid: launch.productGid || editorConfig?.resolvedProductGid || "",
       variantId: launch.variantId,
       designId: launch.designId,
       designVersion: launch.designVersion,
@@ -439,6 +442,8 @@ export default function GangSheetEditor() {
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
   const [sheetQuantity, setSheetQuantity] = useState(page.quantity ?? 1);
   const [bottomNav, setBottomNav] = useState<BagsBottomNavTab | null>(null);
+  const [leftRailTab, setLeftRailTab] = useState<BagsLeftRailTab>("uploads");
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
   const [addImageOpen, setAddImageOpen] = useState(false);
   const [addImageTab, setAddImageTab] = useState<AddImageTab>("recent");
   const [sheetsDrawerCollapsed, setSheetsDrawerCollapsed] = useState(false);
@@ -879,7 +884,9 @@ export default function GangSheetEditor() {
 
   function openCanvas(options?: { tab?: SidebarTab; pickUpload?: boolean }) {
     setScreen("canvas");
-    setSidebarTab(options?.tab ?? "uploads");
+    const tab = options?.tab ?? "uploads";
+    setSidebarTab(tab);
+    setLeftRailTab(tab === "products" ? "products" : tab === "gallery" ? "gallery" : "uploads");
     setMobileDrawer("sidebar");
     setMessage("");
     setShowFirstTip(true);
@@ -887,6 +894,38 @@ export default function GangSheetEditor() {
       window.setTimeout(() => sidebarUploadRef.current?.click(), 50);
     }
   }
+
+  function handleLeftRail(tab: BagsLeftRailTab) {
+    if (tab === "home") {
+      setScreen("welcome");
+      return;
+    }
+    if (tab === "settings") {
+      setLeftRailTab("settings");
+      setSettingsDrawerOpen(true);
+      setBottomNav(null);
+      return;
+    }
+    if (tab === "canva") {
+      setLeftRailTab("canva");
+      setAddImageTab("canva");
+      setAddImageOpen(true);
+      return;
+    }
+    if (tab === "dropbox") {
+      setLeftRailTab("dropbox");
+      setAddImageTab("uploads");
+      setAddImageOpen(true);
+      return;
+    }
+    setLeftRailTab(tab);
+    if (tab === "products") setSidebarTab("products");
+    if (tab === "uploads") setSidebarTab("uploads");
+    if (tab === "gallery") setSidebarTab("gallery");
+    setMobileDrawer("sidebar");
+  }
+
+  const desktopSidePanelOpen = isBagsLeftRailPanelTab(leftRailTab);
 
   function commitSheetSize(w: number, h: number, mode: "clamp" | "scale") {
     if (itemsRef.current.length) {
@@ -3038,8 +3077,16 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className="workspace bags-parity-workspace">
-        <aside className="sidebar-panel" hidden aria-hidden>
+      <div className={`workspace bags-parity-workspace${desktopSidePanelOpen ? " has-side-panel" : ""}`}>
+        <BagsLeftRail
+          active={leftRailTab}
+          onSelect={handleLeftRail}
+          uploadCount={uploadPool.length}
+        />
+        <aside
+          className={`sidebar-panel bags-parity-sidebar ${desktopSidePanelOpen ? "open" : ""} ${mobileDrawer === "sidebar" ? "mobile-open" : ""}`}
+          aria-hidden={!desktopSidePanelOpen && mobileDrawer !== "sidebar"}
+        >
           <button
             type="button"
             className="mobile-drawer-close"
@@ -3048,7 +3095,19 @@ export default function GangSheetEditor() {
           >
             ×
           </button>
-          {sidebarTab === "uploads" ? (
+          {sidebarTab === "products" ? (
+            <BagsProductsPanel
+              sheetWidth={sheetWidth}
+              activeHeight={sheetHeight}
+              variants={page.gangSheetVariants.map((v) => ({
+                sheetHeightIn: v.sheetHeightIn,
+                variantPriceCents: v.variantPriceCents,
+                variantTitle: v.variantTitle ?? null,
+              }))}
+              pricePerSqIn={page.pricePerSqIn}
+              onSelectHeight={(heightIn) => requestSheetSize(sheetWidth, heightIn)}
+            />
+          ) : sidebarTab === "uploads" ? (
             <>
               <div className="heading">
                 <span>
@@ -3606,8 +3665,11 @@ export default function GangSheetEditor() {
         onStartOver={clearSheet}
       />
       <BagsEditorSettingsDrawer
-        open={bottomNav === "settings"}
-        onClose={() => setBottomNav(null)}
+        open={bottomNav === "settings" || settingsDrawerOpen}
+        onClose={() => {
+          setBottomNav(null);
+          setSettingsDrawerOpen(false);
+        }}
         snapEnabled={snapEnabled}
         onSnapChange={setSnapEnabled}
         qualityPrefs={qualityPrefs}

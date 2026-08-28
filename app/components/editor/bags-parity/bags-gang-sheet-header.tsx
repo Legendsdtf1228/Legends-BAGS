@@ -18,6 +18,7 @@ export type BagsGangSheetHeaderProps = {
   customer?: BagsCustomerAccount | null;
   onSwitchAccount?: () => void;
   onMyDesigns?: () => void;
+  logoLabel?: string;
 };
 
 export function BagsGangSheetHeader(props: BagsGangSheetHeaderProps) {
@@ -33,6 +34,7 @@ export function BagsGangSheetHeader(props: BagsGangSheetHeaderProps) {
     customer,
     onSwitchAccount,
     onMyDesigns,
+    logoLabel = "L",
   } = props;
 
   const display = customer ?? { name: "Guest", email: "", avatarInitials: "G" };
@@ -48,6 +50,9 @@ export function BagsGangSheetHeader(props: BagsGangSheetHeaderProps) {
   return (
     <header className="bags-parity-header" role="banner">
       <div className="bags-parity-header-left">
+        <span className="bags-parity-logo" aria-hidden>
+          {logoLabel.slice(0, 1).toUpperCase()}
+        </span>
         <div className="bags-parity-qty">
           <span className="bags-parity-qty-label">Qty</span>
           <StepperField

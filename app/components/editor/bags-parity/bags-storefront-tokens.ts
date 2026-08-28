@@ -14,6 +14,8 @@ export const BAGS_STOREFRONT_TOKENS = {
   textMuted: "#5f6368",
   controlSize: "32px",
   drawerWidth: "320px",
+  leftRailWidth: "64px",
+  sidePanelWidth: "280px",
 } as const;
 
 export const BAGS_STOREFRONT_TOKEN_CSS = `
@@ -30,5 +32,7 @@ export const BAGS_STOREFRONT_TOKEN_CSS = `
   --bags-text:${BAGS_STOREFRONT_TOKENS.text};
   --bags-muted:${BAGS_STOREFRONT_TOKENS.textMuted};
   --bags-control:${BAGS_STOREFRONT_TOKENS.controlSize};
+  --bags-rail-w:${BAGS_STOREFRONT_TOKENS.leftRailWidth};
+  --bags-panel-w:${BAGS_STOREFRONT_TOKENS.sidePanelWidth};
 }
 `;

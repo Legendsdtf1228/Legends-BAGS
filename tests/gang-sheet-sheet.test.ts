@@ -123,6 +123,15 @@ describe("resolveGangSheetVariantPriceCents", () => {
       }),
     ).toBe(1700);
   });
+
+  it("matches variant price when DB height is a float", () => {
+    expect(
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: [{ sheetHeightIn: 24.0001, variantPriceCents: 1700 }],
+        sheetHeightIn: 24,
+      }),
+    ).toBe(1700);
+  });
 });
 
 describe("normalizeArtboardMarginIn", () => {

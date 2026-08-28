@@ -20,6 +20,7 @@ export type EditorBindingConfig = {
   sheetHeightIn: number | null;
   imageMarginIn: number | null;
   artboardMarginIn: number | null;
+  variantTitle?: string | null;
 };
 
 export type EditorPageConfig = {
@@ -30,7 +31,19 @@ export type EditorPageConfig = {
   appearance: ShopAppearance;
   binding: EditorBindingConfig | null;
   gangSheetVariants: EditorBindingConfig[];
+  /** Product used for gang sheet variant catalog (from URL or shop default). */
+  resolvedProductGid: string | null;
 };
+
+async function resolveGangSheetProductGid(shop: string, productGid?: string): Promise<string | null> {
+  if (productGid?.trim()) return productGid.trim();
+  const primary = await prisma.productBinding.findFirst({
+    where: { shop, builderType: "gang_sheet" },
+    orderBy: { updatedAt: "desc" },
+    select: { productGid: true },
+  });
+  return primary?.productGid ?? null;
+}
 
 function toVariantGid(variantId: string | undefined): string | undefined {
   if (!variantId) return undefined;
@@ -68,6 +81,7 @@ function mapBinding(row: NonNullable<Awaited<ReturnType<typeof resolveProductBin
     sheetHeightIn: row.sheetHeightIn,
     imageMarginIn: row.imageMarginIn,
     artboardMarginIn: row.artboardMarginIn,
+    variantTitle: row.variantTitle,
   };
 }
 
@@ -77,13 +91,14 @@ export async function loadEditorPageConfig(
   variantId?: string,
 ): Promise<EditorPageConfig> {
   const variantGid = toVariantGid(variantId);
+  const resolvedProductGid = await resolveGangSheetProductGid(shop, productGid);
   const [config, binding, appearance, gangRows] = await Promise.all([
     ensureShopConfig(shop),
-    resolveProductBinding(shop, productGid, variantGid),
+    resolveProductBinding(shop, resolvedProductGid ?? productGid, variantGid),
     getShopAppearance(shop),
-    productGid
+    resolvedProductGid
       ? prisma.productBinding.findMany({
-          where: { shop, productGid, builderType: "gang_sheet" },
+          where: { shop, productGid: resolvedProductGid, builderType: "gang_sheet" },
           orderBy: { sheetHeightIn: "asc" },
         })
       : Promise.resolve([]),
@@ -120,5 +135,6 @@ export async function loadEditorPageConfig(
     appearance,
     binding: binding ? mapBinding(binding) : null,
     gangSheetVariants,
+    resolvedProductGid,
   };
 }
