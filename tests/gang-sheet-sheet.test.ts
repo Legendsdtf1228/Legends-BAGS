@@ -10,6 +10,7 @@ import {
   resolveAllowedSheetHeights,
   resolveAllowedSheetWidths,
   resolveGangSheetHeight,
+  resolveGangSheetVariantPriceCents,
 } from "../app/domain/design/gang-sheet-sheet";
 
 describe("resolveGangSheetHeight", () => {
@@ -97,5 +98,19 @@ describe("isGangSheetHeightIn", () => {
   it("rejects roll max as canvas height", () => {
     expect(isGangSheetHeightIn(360)).toBe(false);
     expect(isGangSheetHeightIn(24)).toBe(true);
+  });
+});
+
+describe("resolveGangSheetVariantPriceCents", () => {
+  it("matches price by active sheet height", () => {
+    expect(
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: [
+          { sheetHeightIn: 24, variantPriceCents: 1700 },
+          { sheetHeightIn: 36, variantPriceCents: 2500 },
+        ],
+        sheetHeightIn: 36,
+      }),
+    ).toBe(2500);
   });
 });

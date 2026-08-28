@@ -5,6 +5,7 @@ import {
   buildUploadBySizeStateFromLines,
   nestAndRenderDesign,
 } from "../domain/design/pipeline";
+import { DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN } from "../domain/design/gang-sheet-sheet";
 import type { DesignStateV1 } from "../domain/design/types";
 import { DEFAULT_PRICE_PER_SQ_IN, DESIGN_STATE_SCHEMA_VERSION } from "../domain/design/types";
 import { buildGangSheetPricingSnapshot, buildPricingSnapshot } from "../domain/pricing";
@@ -63,12 +64,15 @@ async function gangSheetPricingForDesign(
   items: DesignStateV1["items"],
   productGid?: string,
   variantGid?: string,
+  sheet?: DesignStateV1["sheet"],
 ) {
   const config = await prisma.shopConfig.findUnique({ where: { shop } });
   const binding = await resolveProductBinding(shop, productGid, variantGid);
   return buildGangSheetPricingSnapshot(items, {
     pricePerSqIn: binding?.pricePerSqIn ?? config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
     variantPriceCents: binding?.variantPriceCents ?? null,
+    sheetWidthIn: sheet?.widthIn,
+    sheetHeightIn: sheet?.maxHeightIn,
   });
 }
 
@@ -409,6 +413,7 @@ export async function createGangSheetDesign(params: {
     normalizedItems,
     params.productGid,
     params.variantGid,
+    params.sheet,
   );
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
@@ -515,6 +520,7 @@ export async function saveGangSheetNewVersion(params: {
     normalizedItems,
     params.productGid ?? existing.productGid ?? undefined,
     params.variantGid ?? existing.variantGid ?? undefined,
+    params.sheet,
   );
 
   const state: DesignStateV1 = {
@@ -687,6 +693,7 @@ export async function listDesignLibrary(params: {
               state.items,
               d.productGid ?? undefined,
               d.variantGid ?? undefined,
+              state.sheet,
             );
             priceCents = pricing.totalCents;
           }
@@ -744,7 +751,7 @@ export async function createStaffSheet(params: {
     widthIn: params.sheetWidthIn ?? config?.sheetWidthIn ?? 22.5,
     maxHeightIn: params.sheetHeightIn ?? 24,
     imageMarginIn: config?.imageMarginIn ?? 0.15,
-    artboardMarginIn: config?.artboardMarginIn ?? 0.1,
+    artboardMarginIn: config?.artboardMarginIn ?? DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   };
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,

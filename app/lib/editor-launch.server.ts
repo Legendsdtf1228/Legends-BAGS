@@ -36,6 +36,7 @@ export function mergeEditorLaunchFromUrl(
   parentOrigin: string;
   customerName: string;
   customerEmail: string;
+  customerKey: string;
 } {
   const url = new URL(request.url);
   const launch = parseEditorLaunchParams(url.searchParams);
@@ -58,5 +59,6 @@ export function mergeEditorLaunchFromUrl(
     parentOrigin: url.searchParams.get("parentOrigin") ?? "",
     customerName: url.searchParams.get("lgs_customer_name")?.trim() || "",
     customerEmail: url.searchParams.get("lgs_customer_email")?.trim() || "",
+    customerKey: url.searchParams.get("lgs_customer_key")?.trim() || "",
   };
 }

@@ -114,42 +114,55 @@ export function buildPricingSnapshot(
   };
 }
 
-/** Live gang-sheet estimate — variant price when bound, else printed or full-sheet area. */
+/** Live gang-sheet estimate — flat variant price or full-sheet area, never printed-area sq-in. */
 export function computeGangSheetEstimateUsd(params: {
   variantPriceCents?: number | null;
   pricePerSqIn: number;
   sheetWidthIn: number;
   sheetHeightIn: number;
-  usedAreaSqIn: number;
+  /** Ignored for gang sheets — kept for call-site compatibility. */
+  usedAreaSqIn?: number;
 }): number {
   if (params.variantPriceCents != null && params.variantPriceCents >= 0) {
     return params.variantPriceCents / 100;
   }
-  const billableArea =
-    params.usedAreaSqIn > 0
-      ? params.usedAreaSqIn
-      : params.sheetWidthIn * params.sheetHeightIn;
+  const billableArea = params.sheetWidthIn * params.sheetHeightIn;
   return Math.round(billableArea * params.pricePerSqIn * 100) / 100;
 }
 
-/** Gang sheet products may use a fixed Shopify variant price instead of area pricing. */
+/** Gang sheet products use a fixed Shopify variant price or full-sheet area — not printed-area pricing. */
 export function buildGangSheetPricingSnapshot(
   items: DesignItem[],
   options: {
     pricePerSqIn?: number;
     variantPriceCents?: number | null;
+    sheetWidthIn?: number;
+    sheetHeightIn?: number;
   },
 ): PricingSnapshot {
-  const areaSqIn = computePrintedAreaSqIn(items);
+  const printedAreaSqIn = computePrintedAreaSqIn(items);
+  const pricePerSqIn = options.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN;
   if (options.variantPriceCents != null && options.variantPriceCents >= 0) {
     return {
       currency: "USD",
-      pricePerSqIn: options.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
-      areaSqIn,
+      pricePerSqIn,
+      areaSqIn: printedAreaSqIn,
       totalCents: options.variantPriceCents,
     };
   }
-  return buildPricingSnapshot(items, options.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN);
+  const billableArea =
+    options.sheetWidthIn != null &&
+    options.sheetHeightIn != null &&
+    options.sheetWidthIn > 0 &&
+    options.sheetHeightIn > 0
+      ? options.sheetWidthIn * options.sheetHeightIn
+      : printedAreaSqIn;
+  return {
+    currency: "USD",
+    pricePerSqIn,
+    areaSqIn: billableArea,
+    totalCents: computePriceCents(billableArea, pricePerSqIn),
+  };
 }
 
 /** Server-side verification: recomputed total must match client claim within 0¢ (exact). */

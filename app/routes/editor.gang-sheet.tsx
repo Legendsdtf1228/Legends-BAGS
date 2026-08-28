@@ -20,7 +20,7 @@ import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-
 import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
 import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
 import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
-import { BagsNamesNumbersContent, type NamesNumbersLayout } from "../components/editor/bags-parity/bags-names-numbers-content";
+import { BagsNamesNumbersContent, type NamesNumbersLayout, type NamesNumbersPresetId } from "../components/editor/bags-parity/bags-names-numbers-content";
 import { BagsDesignPickerModal, type DesignPickerTab } from "../components/editor/bags-parity/bags-design-picker-modal";
 import { BagsWelcomeCenter, BagsWelcomeAction } from "../components/editor/bags-parity/bags-welcome-center";
 import type { BagsCustomerAccount } from "../components/editor/bags-parity/bags-gang-sheet-header";
@@ -46,6 +46,7 @@ import {
   gangSheetAreaPriceUsd,
   resolveAllowedSheetHeights,
   resolveAllowedSheetWidths,
+  resolveGangSheetVariantPriceCents,
 } from "../domain/design/gang-sheet-sheet";
 import { computeGangSheetEstimateUsd } from "../domain/pricing";
 import {
@@ -77,6 +78,7 @@ import {
   FONT_OPTIONS,
   GALLERY_CATEGORIES,
   HELP_SHORTCUTS,
+  NAMES_NUMBERS_PRESETS,
   SHEET_TEMPLATES,
   TEXT_STYLE_PRESETS,
   type GalleryItem,
@@ -372,9 +374,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
       customerName: launch.customerName,
       customerEmail: launch.customerEmail,
+      customerKey: launch.customerKey,
     },
     { headers },
   );
+}
+
+function normalizeArtboardMarginIn(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
+  if (Math.abs(value - 0.1) < 0.001) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
+  return value;
 }
 
 function pieceTransform(item: Pick<CanvasItem, "rotationDeg" | "flipX" | "flipY">) {
@@ -459,12 +468,19 @@ export default function GangSheetEditor() {
   const [textFontFamily, setTextFontFamily] = useState("Arial");
   const [textColor, setTextColor] = useState("#111827");
   const [rosterCsv, setRosterCsv] = useState("");
-  const [rosterFontSize, setRosterFontSize] = useState(24);
+  const [rosterIncludeNames, setRosterIncludeNames] = useState(true);
+  const [rosterIncludeNumbers, setRosterIncludeNumbers] = useState(true);
   const [rosterNameFontFamily, setRosterNameFontFamily] = useState("Impact");
   const [rosterNumberFontFamily, setRosterNumberFontFamily] = useState("Impact");
   const [rosterNameFontSize, setRosterNameFontSize] = useState(28);
   const [rosterNumberFontSize, setRosterNumberFontSize] = useState(36);
+  const [rosterNameWidthIn, setRosterNameWidthIn] = useState(5);
+  const [rosterNumberWidthIn, setRosterNumberWidthIn] = useState(2);
+  const [rosterNameStrokeWidth, setRosterNameStrokeWidth] = useState(0);
+  const [rosterNumberStrokeWidth, setRosterNumberStrokeWidth] = useState(0);
+  const [rosterStrokeColor, setRosterStrokeColor] = useState("#111827");
   const [rosterTextColor, setRosterTextColor] = useState("#111827");
+  const [rosterQuantity, setRosterQuantity] = useState(1);
   const [rosterLayout, setRosterLayout] = useState<NamesNumbersLayout>("stacked");
   const [designPickerOpen, setDesignPickerOpen] = useState(false);
   const [designPickerTab, setDesignPickerTab] = useState<DesignPickerTab>("mine");
@@ -535,13 +551,27 @@ export default function GangSheetEditor() {
     () => resolveAllowedSheetHeights(page.gangSheetVariants),
     [page.gangSheetVariants],
   );
+  const activeVariantPriceCents = useMemo(
+    () =>
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: page.gangSheetVariants,
+        sheetHeightIn: sheetHeight,
+        fallbackVariantPriceCents: page.variantPriceCents,
+      }),
+    [page.gangSheetVariants, page.variantPriceCents, sheetHeight],
+  );
+
   const storefrontCustomer = useMemo<BagsCustomerAccount | null>(() => {
     const name = page.customerName?.trim();
     const email = page.customerEmail?.trim();
+    const key = page.customerKey?.trim();
+    const isLoggedIn = Boolean(key?.startsWith("gid://shopify/Customer/"));
+    if (name && email) return { name, email };
     if (name) return { name, email: email ?? "" };
     if (email) return { name: email.split("@")[0] || "Customer", email };
+    if (isLoggedIn) return { name: "Customer", email: "" };
     return null;
-  }, [page.customerName, page.customerEmail]);
+  }, [page.customerName, page.customerEmail, page.customerKey]);
 
   const usedArea = useMemo(
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
@@ -550,17 +580,16 @@ export default function GangSheetEditor() {
   const estimate = useMemo(
     () =>
       computeGangSheetEstimateUsd({
-        variantPriceCents: page.variantPriceCents,
+        variantPriceCents: activeVariantPriceCents,
         pricePerSqIn: page.pricePerSqIn,
         sheetWidthIn: sheetWidth,
         sheetHeightIn: sheetHeight,
-        usedAreaSqIn: usedArea,
       }),
-    [page.variantPriceCents, page.pricePerSqIn, sheetWidth, sheetHeight, usedArea],
+    [activeVariantPriceCents, page.pricePerSqIn, sheetWidth, sheetHeight],
   );
   const welcomePriceLabel =
-    page.variantPriceCents != null
-      ? `$${(page.variantPriceCents / 100).toFixed(2)}`
+    activeVariantPriceCents != null
+      ? `$${(activeVariantPriceCents / 100).toFixed(2)}`
       : `$${gangSheetAreaPriceUsd(sheetWidth, sheetHeight, page.pricePerSqIn).toFixed(2)}`;
   const utilization = Math.min(100, Math.round((usedArea / (sheetWidth * sheetHeight)) * 100));
 
@@ -1016,7 +1045,7 @@ export default function GangSheetEditor() {
     setHistory([]);
     setFuture([]);
     setItems(restored);
-    selectItem(null);
+    selectItem(restored[0]?.id ?? null);
     setDraftOffer(null);
     setScreen("canvas");
     setMessage(`Restored draft · ${restored.length} piece${restored.length === 1 ? "" : "s"}.`);
@@ -1361,9 +1390,36 @@ export default function GangSheetEditor() {
     };
   }, [draftOffer, pushHistory, screen, selectedId, sheetHeight, sheetWidth, spacePan]);
 
-  function textPreviewDataUrl(content: string, fontSize: number, fontFamily: string, color: string) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120"><text x="8" y="${fontSize + 8}" font-size="${fontSize}" font-family="${fontFamily}" fill="${color}">${content.replace(/[<>&"]/g, "")}</text></svg>`;
+  function textPreviewDataUrl(
+    content: string,
+    fontSize: number,
+    fontFamily: string,
+    color: string,
+    strokeWidth = 0,
+    strokeColor = "#111827",
+  ) {
+    const safe = content.replace(/[<>&"]/g, "");
+    const stroke =
+      strokeWidth > 0
+        ? ` stroke="${strokeColor}" stroke-width="${strokeWidth}" paint-order="stroke fill"`
+        : "";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120"><text x="8" y="${fontSize + 8}" font-size="${fontSize}" font-family="${fontFamily}" fill="${color}"${stroke}>${safe}</text></svg>`;
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+
+  function applyNamesNumbersPreset(presetId: NamesNumbersPresetId) {
+    const preset = NAMES_NUMBERS_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setRosterNameFontFamily(preset.nameFont);
+    setRosterNumberFontFamily(preset.numberFont);
+    setRosterNameFontSize(preset.nameSize);
+    setRosterNumberFontSize(preset.numberSize);
+    setRosterNameWidthIn(preset.nameWidthIn);
+    setRosterNumberWidthIn(preset.numberWidthIn);
+    setRosterNameStrokeWidth(preset.strokeWidth);
+    setRosterNumberStrokeWidth(preset.strokeWidth);
+    setRosterStrokeColor(preset.strokeColor);
+    setRosterTextColor(preset.textColor);
   }
 
   function addTextToSheet(content?: string) {
@@ -1460,6 +1516,10 @@ export default function GangSheetEditor() {
       setError("Add roster rows — one name and number per line.");
       return;
     }
+    if (!rosterIncludeNames && !rosterIncludeNumbers) {
+      setError("Enable Add Names and/or Add Numbers.");
+      return;
+    }
     const dupes = rows.filter(
       (r, i) => rows.findIndex((x) => x.number && x.number === r.number) !== i,
     );
@@ -1470,65 +1530,85 @@ export default function GangSheetEditor() {
     const next: CanvasItem[] = [...items];
     let z = nextZIndex(next);
     rows.forEach((row, idx) => {
-      const nameLabel = row.name.trim();
-      const numberLabel = row.number.trim() ? `#${row.number.trim()}` : "";
-      const blockHeight =
-        rosterLayout === "stacked"
-          ? Math.max(rosterNameFontSize, rosterNumberFontSize) / 72 + 0.1
-          : Math.max(rosterNameFontSize, rosterNumberFontSize) / 72;
-      const yBase = 0.2 + idx * (blockHeight + gap);
+      for (let copy = 0; copy < rosterQuantity; copy += 1) {
+        const nameLabel = row.name.trim();
+        const numberLabel = row.number.trim() ? `#${row.number.trim()}` : "";
+        const blockHeight =
+          rosterLayout === "stacked"
+            ? Math.max(rosterNameFontSize, rosterNumberFontSize) / 72 + 0.1
+            : Math.max(rosterNameFontSize, rosterNumberFontSize) / 72;
+        const yBase = 0.2 + (idx * rosterQuantity + copy) * (blockHeight + gap);
 
-      if (nameLabel) {
-        const nameH = Math.max(0.35, rosterNameFontSize / 72);
-        const nameW = rosterLayout === "side-by-side" ? sheetWidth * 0.62 : Math.min(6, sheetWidth - 0.4);
-        next.push({
-          assetId: `text-roster-name-${crypto.randomUUID()}`,
-          widthPx: 400,
-          heightPx: 80,
-          contentType: "image/svg+xml",
-          id: crypto.randomUUID(),
-          name: nameLabel,
-          previewUrl: textPreviewDataUrl(nameLabel, rosterNameFontSize, rosterNameFontFamily, rosterTextColor),
-          xIn: 0.2,
-          yIn: yBase,
-          widthIn: nameW,
-          heightIn: nameH,
-          rotationDeg: 0,
-          zIndex: z++,
-          kind: "text",
-          textContent: nameLabel,
-          fontSize: rosterNameFontSize,
-          fontFamily: rosterNameFontFamily,
-          textColor: rosterTextColor,
-        });
-      }
+        if (rosterIncludeNames && nameLabel) {
+          const nameH = Math.max(0.35, rosterNameFontSize / 72);
+          const nameW =
+            rosterLayout === "side-by-side"
+              ? Math.min(rosterNameWidthIn, sheetWidth * 0.62)
+              : Math.min(rosterNameWidthIn, sheetWidth - 0.4);
+          next.push({
+            assetId: `text-roster-name-${crypto.randomUUID()}`,
+            widthPx: 400,
+            heightPx: 80,
+            contentType: "image/svg+xml",
+            id: crypto.randomUUID(),
+            name: nameLabel,
+            previewUrl: textPreviewDataUrl(
+              nameLabel,
+              rosterNameFontSize,
+              rosterNameFontFamily,
+              rosterTextColor,
+              rosterNameStrokeWidth,
+              rosterStrokeColor,
+            ),
+            xIn: 0.2,
+            yIn: yBase,
+            widthIn: nameW,
+            heightIn: nameH,
+            rotationDeg: 0,
+            zIndex: z++,
+            kind: "text",
+            textContent: nameLabel,
+            fontSize: rosterNameFontSize,
+            fontFamily: rosterNameFontFamily,
+            textColor: rosterTextColor,
+          });
+        }
 
-      if (numberLabel) {
-        const numH = Math.max(0.35, rosterNumberFontSize / 72);
-        const numW = rosterLayout === "side-by-side" ? sheetWidth * 0.28 : Math.min(2.5, sheetWidth - 0.4);
-        next.push({
-          assetId: `text-roster-number-${crypto.randomUUID()}`,
-          widthPx: 400,
-          heightPx: 80,
-          contentType: "image/svg+xml",
-          id: crypto.randomUUID(),
-          name: numberLabel,
-          previewUrl: textPreviewDataUrl(numberLabel, rosterNumberFontSize, rosterNumberFontFamily, rosterTextColor),
-          xIn: rosterLayout === "side-by-side" ? sheetWidth * 0.66 : 0.2,
-          yIn: rosterLayout === "stacked" ? yBase + rosterNameFontSize / 72 + 0.05 : yBase,
-          widthIn: numW,
-          heightIn: numH,
-          rotationDeg: 0,
-          zIndex: z++,
-          kind: "text",
-          textContent: numberLabel,
-          fontSize: rosterNumberFontSize,
-          fontFamily: rosterNumberFontFamily,
-          textColor: rosterTextColor,
-        });
+        if (rosterIncludeNumbers && numberLabel) {
+          const numH = Math.max(0.35, rosterNumberFontSize / 72);
+          const numW = Math.min(rosterNumberWidthIn, sheetWidth - 0.4);
+          next.push({
+            assetId: `text-roster-number-${crypto.randomUUID()}`,
+            widthPx: 400,
+            heightPx: 80,
+            contentType: "image/svg+xml",
+            id: crypto.randomUUID(),
+            name: numberLabel,
+            previewUrl: textPreviewDataUrl(
+              numberLabel,
+              rosterNumberFontSize,
+              rosterNumberFontFamily,
+              rosterTextColor,
+              rosterNumberStrokeWidth,
+              rosterStrokeColor,
+            ),
+            xIn: rosterLayout === "side-by-side" ? sheetWidth * 0.66 : 0.2,
+            yIn: rosterLayout === "stacked" ? yBase + rosterNameFontSize / 72 + 0.05 : yBase,
+            widthIn: numW,
+            heightIn: numH,
+            rotationDeg: 0,
+            zIndex: z++,
+            kind: "text",
+            textContent: numberLabel,
+            fontSize: rosterNumberFontSize,
+            fontFamily: rosterNumberFontFamily,
+            textColor: rosterTextColor,
+          });
+        }
       }
     });
     pushHistory(next);
+    selectItem(next.at(-1)?.id ?? null);
     setMessage(`Generated ${rows.length} roster row${rows.length === 1 ? "" : "s"}.`);
     setSidebarTab("layers");
     setMobileDrawer("sidebar");
@@ -1779,10 +1859,17 @@ export default function GangSheetEditor() {
       setSheetWidth(json.state.sheet.widthIn);
       setSheetHeight(json.state.sheet.maxHeightIn);
       setGap(json.state.sheet.imageMarginIn);
+      const marginIn = json.state.sheet.artboardMarginIn;
+      if (marginIn != null && marginIn > 0) {
+        setArtboardMarginEnabled(true);
+        setArtboardMarginIn(normalizeArtboardMarginIn(marginIn));
+      } else {
+        setArtboardMarginEnabled(false);
+      }
       setHistory([]);
       setFuture([]);
       setItems(restored);
-      selectItem(null);
+      selectItem(restored[0]?.id ?? null);
       setEditingDesignId(json.designId);
       setEditingVersion(json.version);
       setDesignName(json.name);
@@ -3114,7 +3201,6 @@ export default function GangSheetEditor() {
               <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
               <div className="sidebar-form">
                 <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-                <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
                 <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
               </div>
             </>
@@ -3179,7 +3265,10 @@ export default function GangSheetEditor() {
           <div
             className={`scroll ${spacePan ? "pan-mode" : ""}`}
             ref={scrollRef}
-            onClick={() => selectItem(null)}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (!target.closest(".piece")) selectItem(null);
+            }}
             onPointerDown={(e) => {
               if (!spacePan || e.button !== 0) return;
               const el = scrollRef.current;
@@ -3302,8 +3391,15 @@ export default function GangSheetEditor() {
                       draggable={false}
                     />
                   )}
-                  <em>{i.widthIn.toFixed(1)}″</em>
+                  <em>
+                    {i.widthIn.toFixed(1)}″ × {i.heightIn.toFixed(1)}″
+                    {i.kind !== "text" && i.dpi ? ` · ${Math.round(i.dpi)} DPI` : ""}
+                  </em>
+                  {selectedIds.has(i.id) && i.kind !== "text" && i.dpi ? (
+                    <span className="dpi-badge">{Math.round(i.dpi)} DPI</span>
+                  ) : null}
                   {selectedIds.has(i.id) && !i.lockPosition ? (
+                    <>
                     <button
                       type="button"
                       className="resize-handle se"
@@ -3324,6 +3420,7 @@ export default function GangSheetEditor() {
                         };
                       }}
                     />
+                    </>
                   ) : null}
                 </div>
               ))}
@@ -3536,6 +3633,10 @@ export default function GangSheetEditor() {
           <BagsNamesNumbersContent
             rosterCsv={rosterCsv}
             onRosterChange={setRosterCsv}
+            includeNames={rosterIncludeNames}
+            onIncludeNamesChange={setRosterIncludeNames}
+            includeNumbers={rosterIncludeNumbers}
+            onIncludeNumbersChange={setRosterIncludeNumbers}
             nameFontFamily={rosterNameFontFamily}
             onNameFontFamilyChange={setRosterNameFontFamily}
             numberFontFamily={rosterNumberFontFamily}
@@ -3544,10 +3645,23 @@ export default function GangSheetEditor() {
             onNameFontSizeChange={setRosterNameFontSize}
             numberFontSize={rosterNumberFontSize}
             onNumberFontSizeChange={setRosterNumberFontSize}
+            nameWidthIn={rosterNameWidthIn}
+            onNameWidthInChange={setRosterNameWidthIn}
+            numberWidthIn={rosterNumberWidthIn}
+            onNumberWidthInChange={setRosterNumberWidthIn}
+            nameStrokeWidth={rosterNameStrokeWidth}
+            onNameStrokeWidthChange={setRosterNameStrokeWidth}
+            numberStrokeWidth={rosterNumberStrokeWidth}
+            onNumberStrokeWidthChange={setRosterNumberStrokeWidth}
+            strokeColor={rosterStrokeColor}
+            onStrokeColorChange={setRosterStrokeColor}
             textColor={rosterTextColor}
             onTextColorChange={setRosterTextColor}
+            quantity={rosterQuantity}
+            onQuantityChange={setRosterQuantity}
             layout={rosterLayout}
             onLayoutChange={setRosterLayout}
+            onApplyPreset={applyNamesNumbersPreset}
             onGenerate={() => {
               generateRoster();
               setBottomNav(null);

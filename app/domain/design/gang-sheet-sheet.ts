@@ -96,3 +96,28 @@ export function gangSheetAreaPriceUsd(
 ): number {
   return Math.round(widthIn * heightIn * pricePerSqIn * 100) / 100;
 }
+
+export type GangSheetVariantPriceBinding = {
+  sheetHeightIn?: number | null;
+  variantPriceCents?: number | null;
+};
+
+/** Resolve configured flat variant price for the active sheet height. */
+export function resolveGangSheetVariantPriceCents(params: {
+  gangSheetVariants?: GangSheetVariantPriceBinding[];
+  sheetHeightIn: number;
+  fallbackVariantPriceCents?: number | null;
+}): number | null {
+  const { gangSheetVariants = [], sheetHeightIn, fallbackVariantPriceCents } = params;
+  const byHeight = gangSheetVariants.find((v) => v.sheetHeightIn === sheetHeightIn);
+  if (byHeight?.variantPriceCents != null && byHeight.variantPriceCents >= 0) {
+    return byHeight.variantPriceCents;
+  }
+  if (fallbackVariantPriceCents != null && fallbackVariantPriceCents >= 0) {
+    return fallbackVariantPriceCents;
+  }
+  const firstPriced = gangSheetVariants.find(
+    (v) => v.variantPriceCents != null && v.variantPriceCents >= 0,
+  );
+  return firstPriced?.variantPriceCents ?? null;
+}

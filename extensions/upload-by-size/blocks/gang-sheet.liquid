@@ -10,7 +10,7 @@
   data-variant-id="{{ product.selected_or_first_available_variant.id }}"
   data-shop="{{ shop.permanent_domain }}"
   data-customer-id="{% if customer %}{{ customer.id }}{% endif %}"
-  data-customer-name="{% if customer %}{{ customer.first_name | escape }} {{ customer.last_name | escape | strip }}{% endif %}"
+  data-customer-name="{% if customer %}{{ customer.name | default: customer.email | escape }}{% endif %}"
   data-customer-email="{% if customer %}{{ customer.email | escape }}{% endif %}"
   data-builder-type="gang_sheet"
   {% if block.settings.editor_base_url != blank %}

@@ -106,6 +106,48 @@ export const TEXT_STYLE_PRESETS = [
   { id: "number", label: "Jersey number", fontSize: 72, color: "#ffffff" },
 ] as const;
 
+export const NAMES_NUMBERS_PRESETS = [
+  {
+    id: "varsity",
+    label: "Varsity",
+    nameFont: "Impact",
+    numberFont: "Impact",
+    nameSize: 28,
+    numberSize: 48,
+    nameWidthIn: 5,
+    numberWidthIn: 2,
+    strokeWidth: 2,
+    strokeColor: "#111827",
+    textColor: "#ffffff",
+  },
+  {
+    id: "classic",
+    label: "Classic",
+    nameFont: "Arial",
+    numberFont: "Arial",
+    nameSize: 24,
+    numberSize: 36,
+    nameWidthIn: 4.5,
+    numberWidthIn: 1.75,
+    strokeWidth: 0,
+    strokeColor: "#111827",
+    textColor: "#111827",
+  },
+  {
+    id: "bold",
+    label: "Bold back",
+    nameFont: "Impact",
+    numberFont: "Impact",
+    nameSize: 32,
+    numberSize: 64,
+    nameWidthIn: 6,
+    numberWidthIn: 2.5,
+    strokeWidth: 3,
+    strokeColor: "#000000",
+    textColor: "#ffffff",
+  },
+] as const;
+
 export const HELP_SHORTCUTS = [
   { keys: "Arrow keys", action: "Nudge selected piece" },
   { keys: "Shift + Arrow", action: "Nudge by 0.25″" },

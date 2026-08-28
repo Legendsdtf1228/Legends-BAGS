@@ -4,7 +4,7 @@ import {
   DEFAULT_UPLOAD_BY_SIZE_SHEET,
   type SheetConfig,
 } from "../domain/design/types";
-import { DEFAULT_GANG_SHEET_HEIGHT_IN, resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
+import { DEFAULT_GANG_SHEET_HEIGHT_IN, DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN, resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
 import { ensureShopConfig } from "./merchant-loaders.server";
 import { getShopAppearance, type ShopAppearance } from "./shop-appearance.server";
 
@@ -107,8 +107,9 @@ export async function loadEditorPageConfig(
       binding?.imageMarginIn ?? config?.imageMarginIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.imageMarginIn,
     artboardMarginIn:
       binding?.artboardMarginIn ??
-      config?.artboardMarginIn ??
-      DEFAULT_UPLOAD_BY_SIZE_SHEET.artboardMarginIn,
+      (binding?.builderType === "gang_sheet"
+        ? DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN
+        : config?.artboardMarginIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.artboardMarginIn),
   };
 
   return {

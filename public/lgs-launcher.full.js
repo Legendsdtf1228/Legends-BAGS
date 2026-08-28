@@ -30,6 +30,9 @@
     var customerId = root.getAttribute("data-customer-id") || "";
     var customerName = (root.getAttribute("data-customer-name") || "").trim();
     var customerEmail = (root.getAttribute("data-customer-email") || "").trim();
+    if (customerId && !customerName && customerEmail) {
+      customerName = customerEmail.split("@")[0] || "Customer";
+    }
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
     var resolvedEditorOrigin = null;
     var configLoaded = false;

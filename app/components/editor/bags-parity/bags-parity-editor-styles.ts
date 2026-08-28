@@ -276,9 +276,35 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
 .lgs-editor.bags-parity-editor .bags-names-modal .sidebar-form{display:grid;gap:10px}
 .lgs-editor.bags-parity-editor .bags-names-form{display:grid;gap:12px}
 .lgs-editor.bags-parity-editor .bags-names-lead{margin:0;font-size:12px;color:var(--bags-muted);line-height:1.45}
-.lgs-editor.bags-parity-editor .bags-names-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lgs-editor.bags-parity-editor .bags-names-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .lgs-editor.bags-parity-editor .bags-names-meta{margin:0;font-size:11px;color:var(--bags-muted)}
 .lgs-editor.bags-parity-editor .bags-names-generate{justify-self:start}
+.lgs-editor.bags-parity-editor .bags-names-csv-actions{display:flex;gap:8px;margin-bottom:8px}
+.lgs-editor.bags-parity-editor .bags-names-presets{display:flex;flex-wrap:wrap;gap:6px}
+.lgs-editor.bags-parity-editor .bags-chip{border:1px solid var(--bags-border);background:#fff;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer}
+.lgs-editor.bags-parity-editor .bags-chip:hover{background:#f1f3f4}
+
+.lgs-editor.bags-parity-editor .canvas-stage{position:relative;margin-left:24px;padding-top:4px;min-height:0}
+.lgs-editor.bags-parity-editor .piece{pointer-events:auto;touch-action:none}
+.lgs-editor.bags-parity-editor .piece.selected{
+  outline:2px solid var(--bags-primary);
+  outline-offset:2px;
+  z-index:8;
+}
+.lgs-editor.bags-parity-editor .piece.selected em{display:block}
+.lgs-editor.bags-parity-editor .piece .dpi-badge{
+  display:none;position:absolute;top:-18px;right:0;background:#111827;color:#fff;
+  font-size:9px;font-style:normal;font-weight:700;padding:2px 5px;border-radius:3px;white-space:nowrap
+}
+.lgs-editor.bags-parity-editor .piece.selected .dpi-badge{display:block}
+.lgs-editor.bags-parity-editor .resize-handle{
+  position:absolute;width:10px;height:10px;border:2px solid #fff;background:var(--bags-primary);
+  border-radius:2px;padding:0;cursor:nwse-resize;z-index:9;pointer-events:auto
+}
+.lgs-editor.bags-parity-editor .resize-handle.se{right:-6px;bottom:-6px;cursor:nwse-resize}
+.lgs-editor.bags-parity-editor .resize-handle.sw{left:-6px;bottom:-6px;cursor:nesw-resize}
+.lgs-editor.bags-parity-editor .resize-handle.ne{right:-6px;top:-6px;cursor:nesw-resize}
+.lgs-editor.bags-parity-editor .resize-handle.nw{left:-6px;top:-6px;cursor:nwse-resize}
 .lgs-editor.bags-parity-editor .bags-visual-aid-custom{align-items:center;gap:8px}
 .lgs-editor.bags-parity-editor .bags-visual-aid-color{width:32px;height:28px;padding:0;border:1px solid var(--bags-border);border-radius:3px;background:#fff}
 

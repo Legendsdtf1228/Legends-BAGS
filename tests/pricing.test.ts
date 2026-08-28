@@ -90,8 +90,30 @@ describe("pricing", () => {
         pricePerSqIn: 0.049,
         sheetWidthIn: 22.5,
         sheetHeightIn: 24,
-        usedAreaSqIn: 0,
       }),
     ).toBe(26.46);
+  });
+
+  it("uses full sheet area for gang sheet with artwork when variant price is absent", () => {
+    expect(
+      computeGangSheetEstimateUsd({
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+        usedAreaSqIn: 8,
+      }),
+    ).toBe(26.46);
+  });
+
+  it("uses full sheet dimensions for gang sheet pricing snapshot without variant", () => {
+    const items = [
+      { assetId: "a", widthIn: 4, heightIn: 2, quantity: 1, rotationDeg: 0 as const },
+    ];
+    const snap = buildGangSheetPricingSnapshot(items, {
+      pricePerSqIn: 0.049,
+      sheetWidthIn: 22.5,
+      sheetHeightIn: 24,
+    });
+    expect(snap.totalCents).toBe(2646);
   });
 });
