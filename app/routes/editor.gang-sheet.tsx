@@ -136,6 +136,10 @@ type CanvasItem = Asset & {
   adjustments?: ImageAdjustments;
 };
 
+type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+const RESIZE_HANDLES: ResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
 type Interaction =
   | {
       mode: "drag";
@@ -149,11 +153,24 @@ type Interaction =
   | {
       mode: "resize";
       id: string;
+      handle: ResizeHandle;
       startW: number;
       startH: number;
+      startX: number;
+      startY: number;
       aspect: number;
+      lockAspect: boolean;
       sx: number;
       sy: number;
+      snapshot: CanvasItem[];
+    }
+  | {
+      mode: "rotate";
+      id: string;
+      startRotation: 0 | 90;
+      startW: number;
+      startH: number;
+      startAngle: number;
       snapshot: CanvasItem[];
     }
   | {
@@ -163,6 +180,55 @@ type Interaction =
       ex: number;
       ey: number;
     };
+
+function resizeFromHandle(
+  handle: ResizeHandle,
+  start: { xIn: number; yIn: number; widthIn: number; heightIn: number },
+  dx: number,
+  dy: number,
+  aspect: number,
+  lockAspect: boolean,
+): { xIn: number; yIn: number; widthIn: number; heightIn: number } {
+  const min = 0.1;
+  let { xIn, yIn, widthIn, heightIn } = start;
+
+  if (handle.includes("e")) widthIn = start.widthIn + dx;
+  if (handle.includes("w")) {
+    widthIn = start.widthIn - dx;
+    xIn = start.xIn + dx;
+  }
+  if (handle.includes("s")) heightIn = start.heightIn + dy;
+  if (handle.includes("n")) {
+    heightIn = start.heightIn - dy;
+    yIn = start.yIn + dy;
+  }
+
+  if (lockAspect) {
+    const isCorner = handle.length === 2;
+    if (isCorner) {
+      const scaleW = widthIn / start.widthIn;
+      const scaleH = heightIn / start.heightIn;
+      const scale = Math.abs(scaleW - 1) >= Math.abs(scaleH - 1) ? scaleW : scaleH;
+      widthIn = Math.max(min, start.widthIn * scale);
+      heightIn = Math.max(min, widthIn / aspect);
+      if (handle.includes("w")) xIn = start.xIn + start.widthIn - widthIn;
+      if (handle.includes("n")) yIn = start.yIn + start.heightIn - heightIn;
+    } else if (handle === "e" || handle === "w") {
+      widthIn = Math.max(min, widthIn);
+      heightIn = Math.max(min, widthIn / aspect);
+      if (handle === "w") xIn = start.xIn + start.widthIn - widthIn;
+    } else {
+      heightIn = Math.max(min, heightIn);
+      widthIn = Math.max(min, heightIn * aspect);
+      if (handle === "n") yIn = start.yIn + start.heightIn - heightIn;
+    }
+  } else {
+    widthIn = Math.max(min, widthIn);
+    heightIn = Math.max(min, heightIn);
+  }
+
+  return { xIn, yIn, widthIn, heightIn };
+}
 
 type AutoDraft = {
   id: string;
@@ -874,14 +940,42 @@ export default function GangSheetEditor() {
         );
         return;
       }
+      if (d.mode === "rotate") {
+        const item = itemsRef.current.find((i) => i.id === d.id);
+        if (!item) return;
+        const cx = r.left + ((item.xIn + item.widthIn / 2) / sheetWidth) * r.width;
+        const cy = r.top + ((item.yIn + item.heightIn / 2) / sheetHeight) * r.height;
+        const angle = Math.atan2(e.clientY - cy, e.clientX - cx);
+        let delta = angle - d.startAngle;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        const rotated = Math.abs(delta) >= Math.PI / 4;
+        const targetRot: 0 | 90 = rotated ? (d.startRotation ? 0 : 90) : d.startRotation;
+        setItems((all) =>
+          all.map((i) => {
+            if (i.id !== d.id) return i;
+            if (targetRot === d.startRotation) {
+              return { ...i, rotationDeg: d.startRotation, widthIn: d.startW, heightIn: d.startH };
+            }
+            return { ...i, rotationDeg: targetRot, widthIn: d.startH, heightIn: d.startW };
+          }),
+        );
+        return;
+      }
       const dx = ((e.clientX - d.sx) / r.width) * sheetWidth;
-      let widthIn = Math.max(0.1, d.startW + dx);
-      let heightIn = widthIn / d.aspect;
+      const dy = ((e.clientY - d.sy) / r.height) * sheetHeight;
       setItems((all) =>
         all.map((i) => {
           if (i.id !== d.id) return i;
-          const next = inside(withLiveDpi(i, { widthIn, heightIn }), sheetWidth, sheetHeight);
-          return next;
+          const next = resizeFromHandle(
+            d.handle,
+            { xIn: d.startX, yIn: d.startY, widthIn: d.startW, heightIn: d.startH },
+            dx,
+            dy,
+            d.aspect,
+            d.lockAspect,
+          );
+          return inside(withLiveDpi(i, next), sheetWidth, sheetHeight);
         }),
       );
     };
@@ -925,7 +1019,8 @@ export default function GangSheetEditor() {
         (before.xIn !== after.xIn ||
           before.yIn !== after.yIn ||
           before.widthIn !== after.widthIn ||
-          before.heightIn !== after.heightIn);
+          before.heightIn !== after.heightIn ||
+          before.rotationDeg !== after.rotationDeg);
       if (moved) commitFromSnapshot(d.snapshot, next);
       interaction.current = null;
     };
@@ -3665,34 +3760,56 @@ export default function GangSheetEditor() {
                     <button
                       type="button"
                       className="rotate-handle"
-                      aria-label="Rotate 90 degrees"
+                      aria-label="Rotate artwork"
                       onPointerDown={(e: ReactPointerEvent) => {
                         e.stopPropagation();
                         e.preventDefault();
                         selectItem(i.id);
-                        rotateCcw();
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="resize-handle se"
-                      aria-label="Resize piece"
-                      onPointerDown={(e: ReactPointerEvent) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        selectItem(i.id);
+                        const c = canvas.current;
+                        if (!c) return;
+                        const rect = c.getBoundingClientRect();
+                        const cx =
+                          rect.left + ((i.xIn + i.widthIn / 2) / sheetWidth) * rect.width;
+                        const cy =
+                          rect.top + ((i.yIn + i.heightIn / 2) / sheetHeight) * rect.height;
                         interaction.current = {
-                          mode: "resize",
+                          mode: "rotate",
                           id: i.id,
+                          startRotation: i.rotationDeg,
                           startW: i.widthIn,
                           startH: i.heightIn,
-                          aspect: i.widthIn / Math.max(0.01, i.heightIn),
-                          sx: e.clientX,
-                          sy: e.clientY,
+                          startAngle: Math.atan2(e.clientY - cy, e.clientX - cx),
                           snapshot: itemsRef.current,
                         };
                       }}
                     />
+                    {RESIZE_HANDLES.map((handle) => (
+                      <button
+                        key={handle}
+                        type="button"
+                        className={`resize-handle ${handle}`}
+                        aria-label={`Resize ${handle}`}
+                        onPointerDown={(e: ReactPointerEvent) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          selectItem(i.id);
+                          interaction.current = {
+                            mode: "resize",
+                            id: i.id,
+                            handle,
+                            startW: i.widthIn,
+                            startH: i.heightIn,
+                            startX: i.xIn,
+                            startY: i.yIn,
+                            aspect: i.widthIn / Math.max(0.01, i.heightIn),
+                            lockAspect: i.lockAspect !== false,
+                            sx: e.clientX,
+                            sy: e.clientY,
+                            snapshot: itemsRef.current,
+                          };
+                        }}
+                      />
+                    ))}
                     </>
                   ) : null}
                 </div>

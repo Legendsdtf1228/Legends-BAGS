@@ -26,7 +26,7 @@
 <body>
   <header>
     <h1>BAGS vs Legends — Visual Clone Comparison</h1>
-    <p>Identical viewport dimensions. Place PNGs under docs/qa/screenshots/exact-bags-visual-clone/</p>
+    <p>Identical viewport dimensions. Place BAGS PNGs under docs/qa/screenshots/exact-bags-visual-clone/bags/</p>
   </header>
   <div class="controls">
     <label>Viewport
@@ -42,15 +42,19 @@
       <select id="state">
         <option value="empty-editor">Empty editor</option>
         <option value="uploads">Uploads panel</option>
+        <option value="four-copy-sheet">Four-copy sheet</option>
         <option value="selected-artwork">Selected artwork</option>
-        <option value="selection-toolbar">Selection toolbar</option>
+        <option value="image-properties">Image properties</option>
         <option value="enhance-modal">Image editor — Enhance</option>
+        <option value="names-numbers">Names &amp; Numbers</option>
+        <option value="settings">Settings</option>
+        <option value="active-gang-sheets">Active gang sheets</option>
         <option value="mobile-editor">Mobile editor</option>
       </select>
     </label>
   </div>
   <main>
-    <p class="diff-note" id="diff-note">Select viewport and state. BAGS reference images require manual capture when live session is available.</p>
+    <p class="diff-note" id="diff-note">Select viewport and state. BAGS reference images require manual capture — see docs/qa/bags-visual-measurements.md.</p>
     <div class="pair">
       <section class="panel">
         <h2>BAGS (reference)</h2>
@@ -77,6 +81,11 @@
       "mobile-390": "390 / 844",
     };
 
+    const stateNotes = {
+      "four-copy-sheet": "Uses QA fixture qa-reference-11x11.png × 4 on sheet.",
+      "active-gang-sheets": "Desktop capture opens drawer via mobile nav (hidden at 1440px).",
+    };
+
     function loadImg(frame, base, label) {
       const v = vp.value;
       const s = st.value;
@@ -95,7 +104,8 @@
     function refresh() {
       loadImg(bagsFrame, "bags", "BAGS reference");
       loadImg(legendsFrame, "legends-after", "Legends after");
-      note.textContent = `Comparing ${vp.value} / ${st.value}. See docs/qa/visual-clone-parity-report.md for measured deltas.`;
+      const extra = stateNotes[st.value] ? ` ${stateNotes[st.value]}` : "";
+      note.textContent = `Comparing ${vp.value} / ${st.value}.${extra} See docs/qa/visual-clone-parity-report.md for measured deltas.`;
     }
 
     vp.addEventListener("change", refresh);

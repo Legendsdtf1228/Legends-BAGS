@@ -464,6 +464,7 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
   width:14px;height:14px;border-radius:50%;border:2px solid var(--bags-primary);background:#fff;cursor:grab;z-index:2;
   display:grid;place-items:center;padding:0;
 }
+.lgs-editor.bags-parity-editor .rotate-handle:active{cursor:grabbing}
 .lgs-editor.bags-parity-editor .rotate-handle::after{
   content:"";width:6px;height:6px;border-radius:50%;background:var(--bags-primary);display:block
 }
@@ -508,12 +509,36 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
   border:0;
   background:#fff;
   color:var(--bags-muted);
-  font-size:11px;
-  font-weight:700;
+  font-size:9px;
+  font-weight:600;
+  line-height:1.1;
   cursor:pointer;
   border-top:3px solid transparent;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:5px 2px 4px;
+  min-width:0;
+}
+.lgs-editor.bags-parity-editor .bags-bottom-nav-icon{
+  display:grid;
+  place-items:center;
+  width:22px;
+  height:22px;
+  flex-shrink:0;
+}
+.lgs-editor.bags-parity-editor .bags-bottom-nav-icon svg{width:20px;height:20px}
+.lgs-editor.bags-parity-editor .bags-bottom-nav-label{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  letter-spacing:-.01em;
 }
 .lgs-editor.bags-parity-editor .bags-bottom-nav-btn.active{color:var(--bags-primary);border-top-color:var(--bags-primary);background:#f8f9fa}
+.lgs-editor.bags-parity-editor .bags-bottom-nav-btn.active .bags-bottom-nav-icon{color:var(--bags-primary)}
 
 .lgs-editor.bags-parity-editor .bags-parity-drawer-backdrop{
   position:fixed;inset:0;background:rgba(0,0,0,.25);border:0;z-index:14;cursor:pointer

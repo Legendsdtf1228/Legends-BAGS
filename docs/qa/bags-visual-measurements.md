@@ -14,6 +14,28 @@ Legends target: dev storefront `legends-bags-in2lwdll.myshopify.com` via app pro
 
 Screenshots folder: `docs/qa/screenshots/exact-bags-visual-clone/bags/` — structure created; BAGS PNGs require manual capture from live BAGS when session is available.
 
+### Manual BAGS capture steps (when logged in)
+
+1. Open the live **Build a Gang Sheet** editor for the reference merchant (22.5×36 or dev-equivalent sheet).
+2. Set browser window to each target viewport (1440×1000, 1280×720, 1024×768, 768×1024, 390×844) using DevTools device mode or a fixed-size window.
+3. Capture each state as PNG with filenames matching Legends captures:
+
+| Filename | How to reach state |
+|----------|-------------------|
+| `empty-editor.png` | Canvas with no artwork |
+| `uploads.png` | Uploads rail / panel open |
+| `four-copy-sheet.png` | Place same 11×11″ reference image four times on sheet |
+| `selected-artwork.png` | Select one placed piece (handles visible) |
+| `image-properties.png` | Same as selected — properties panel visible |
+| `enhance-modal.png` | Image Editor → Enhance tab |
+| `names-numbers.png` | Names & Numbers panel/modal |
+| `settings.png` | Settings drawer/modal |
+| `active-gang-sheets.png` | Active Gang Sheets drawer (mobile: Select tab) |
+| `mobile-editor.png` | Mobile 390×844 canvas view (optional) |
+
+4. Save under `docs/qa/screenshots/exact-bags-visual-clone/bags/{viewport}/{state}.png` (mirror the `legends-after/` tree).
+5. Open `docs/qa/visual-clone-comparison.html` in a browser to compare side-by-side.
+
 ---
 
 ## Shell measurements (desktop 1440×1000)
@@ -132,8 +154,9 @@ Screenshots folder: `docs/qa/screenshots/exact-bags-visual-clone/bags/` — stru
 
 ## Remaining pixel gaps (honest)
 
-- Live BAGS side-by-side PNGs not captured this sprint (session blocker)
-- Corner/side resize handles: CSS present; only SE resize wired in canvas logic
-- BAGS exact icon glyph shapes may differ slightly from Legends SVG set
-- Mobile bottom nav: text labels vs BAGS icon+label density
+- Live BAGS side-by-side PNGs not captured this sprint (session blocker) — see manual steps above
+- BAGS exact icon glyph shapes may differ slightly from Legends SVG set (~1–2px)
+- Mobile bottom nav: icon+label density improved; long labels may truncate on 390px vs BAGS shorter copy
+- Product logo/branding differs (Legends L vs BAGS merchant logo)
+- Active gang sheets on desktop: Legends opens via hidden mobile nav button for QA capture; BAGS may use header entry
 - Canva/Dropbox OAuth panels — disconnected state styling only

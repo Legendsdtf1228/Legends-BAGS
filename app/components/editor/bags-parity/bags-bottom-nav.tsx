@@ -1,3 +1,5 @@
+import { EditorRailIcon } from "../editor-rail-icons";
+
 export type BagsBottomNavTab = "select" | "add-image" | "names-numbers" | "settings";
 
 export type BagsBottomNavProps = {
@@ -5,11 +7,11 @@ export type BagsBottomNavProps = {
   onSelect: (tab: BagsBottomNavTab) => void;
 };
 
-const TABS: { id: BagsBottomNavTab; label: string }[] = [
-  { id: "select", label: "Select" },
-  { id: "add-image", label: "Add Image" },
-  { id: "names-numbers", label: "Names & Numbers" },
-  { id: "settings", label: "Settings" },
+const TABS: { id: BagsBottomNavTab; label: string; icon: string }[] = [
+  { id: "select", label: "Select", icon: "sheet" },
+  { id: "add-image", label: "Add Image", icon: "uploads" },
+  { id: "names-numbers", label: "Names & Numbers", icon: "names" },
+  { id: "settings", label: "Settings", icon: "settings" },
 ];
 
 export function BagsBottomNav(props: BagsBottomNavProps) {
@@ -25,7 +27,10 @@ export function BagsBottomNav(props: BagsBottomNavProps) {
           onClick={() => onSelect(tab.id)}
           aria-current={active === tab.id ? "page" : undefined}
         >
-          {tab.label}
+          <span className="bags-bottom-nav-icon" aria-hidden>
+            <EditorRailIcon name={tab.icon} label={tab.label} />
+          </span>
+          <span className="bags-bottom-nav-label">{tab.label}</span>
         </button>
       ))}
     </nav>
