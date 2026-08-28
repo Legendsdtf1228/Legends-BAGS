@@ -59,17 +59,9 @@ export function mergeEditorLaunchFromUrl(
     designId: url.searchParams.get("designId") ?? "",
     designVersion: url.searchParams.get("designVersion") ?? "",
     parentOrigin: url.searchParams.get("parentOrigin") ?? "",
-    customerName:
-      url.searchParams.get("lgs_customer_name")?.trim() ||
-      session?.customerName?.trim() ||
-      "",
-    customerEmail:
-      url.searchParams.get("lgs_customer_email")?.trim() ||
-      session?.customerEmail?.trim() ||
-      "",
-    customerKey:
-      url.searchParams.get("lgs_customer_key")?.trim() ||
-      session?.customerKey?.trim() ||
-      "",
+    // Customer identity from verified storefront session only — never unsigned URL params.
+    customerName: session?.customerName?.trim() || "",
+    customerEmail: session?.customerEmail?.trim() || "",
+    customerKey: session?.customerKey?.trim() || "",
   };
 }

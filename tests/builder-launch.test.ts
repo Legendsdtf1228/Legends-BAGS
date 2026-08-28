@@ -247,6 +247,50 @@ describe("resolveBuilderLaunch", () => {
   });
 });
 
+describe("builder recovery", () => {
+  const originalDevShop = process.env.DEV_SHOP;
+  const shop = DEV_SHOP;
+
+  beforeEach(async () => {
+    process.env.DEV_SHOP = DEV_SHOP;
+    process.env.SHOPIFY_APP_URL = "https://upload-by-size-production.up.railway.app";
+    await prisma.productBinding.deleteMany({
+      where: { shop, productGid: "gid://shopify/Product/900099" },
+    });
+    await prisma.productBinding.create({
+      data: {
+        shop,
+        productGid: "gid://shopify/Product/900099",
+        variantGid: "gid://shopify/ProductVariant/900100",
+        builderType: "gang_sheet",
+        sheetHeightIn: 24,
+        variantPriceCents: 1700,
+        productTitle: "Dev Gang Sheet Test",
+      },
+    });
+  });
+
+  afterEach(async () => {
+    process.env.DEV_SHOP = originalDevShop;
+    await prisma.productBinding.deleteMany({
+      where: { shop, productGid: "gid://shopify/Product/900099" },
+    });
+  });
+
+  it("shows recovery screen when product ID is missing", async () => {
+    const { handleBuilderLaunchRequest } = await import("../app/lib/builder-launch-handler.server");
+    const response = await handleBuilderLaunchRequest(
+      new Request(
+        `https://upload-by-size-production.up.railway.app/builder?shop=${shop}&type=gang_sheet`,
+      ),
+    );
+    expect(response.status).toBe(400);
+    const html = await response.text();
+    expect(html).toContain("Dev Gang Sheet Test");
+    expect(html).toContain("product=900099");
+  });
+});
+
 describe("app-url normalization", () => {
   it("strips trailing slashes and duplicate path slashes", () => {
     expect(normalizeAppUrl("https://upload-by-size-production.up.railway.app/")).toBe(

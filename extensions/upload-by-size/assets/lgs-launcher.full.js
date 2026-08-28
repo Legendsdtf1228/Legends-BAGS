@@ -440,12 +440,10 @@
       u.searchParams.set("product", productNumericId());
       u.searchParams.set("variant", currentVariantId() || "");
       u.searchParams.set("quantity", currentQuantity());
+      u.searchParams.set("type", builderType);
       u.searchParams.set("shop_mode", "1");
       u.searchParams.set("embedded", "1");
       u.searchParams.set("parentOrigin", window.location.origin);
-      if (customerKey) u.searchParams.set("lgs_customer_key", customerKey);
-      if (customerName) u.searchParams.set("lgs_customer_name", customerName);
-      if (customerEmail) u.searchParams.set("lgs_customer_email", customerEmail);
       if (options && options.designId) {
         u.searchParams.set("designId", options.designId);
         u.searchParams.set(
