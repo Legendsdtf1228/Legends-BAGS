@@ -244,8 +244,20 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
 .lgs-editor.bags-parity-editor .pool-grid.list-view .pool-item{grid-template-columns:48px 1fr auto;align-items:center}
 .lgs-editor.bags-parity-editor .qty-badge{background:var(--bags-primary);color:#fff;border-radius:999px;padding:1px 5px;font-style:normal;font-size:9px;font-weight:700}
 .lgs-editor.bags-parity-editor .bags-fitcheck{display:block;margin-top:6px;font-size:11px;font-weight:700}
-.lgs-editor.bags-parity-editor .bags-fitcheck-excellent,.lgs-editor.bags-parity-editor .bags-fitcheck-good{color:#137333}
-.lgs-editor.bags-parity-editor .bags-fitcheck-low,.lgs-editor.bags-parity-editor .bags-fitcheck-poor{color:#d93025}
+.lgs-editor.bags-parity-editor .bags-fitcheck-optimal,.lgs-editor.bags-parity-editor .bags-fitcheck-good{color:#137333}
+.lgs-editor.bags-parity-editor .bags-fitcheck-bad,.lgs-editor.bags-parity-editor .bags-fitcheck-terrible,.lgs-editor.bags-parity-editor .bags-fitcheck-minimum{color:#d93025}
+.lgs-editor.bags-parity-editor .bags-image-editor-modal{max-width:960px;width:min(960px,96vw)}
+.lgs-editor.bags-parity-editor .bags-image-editor-body{display:grid;grid-template-columns:1fr 240px;gap:16px;min-height:320px}
+.lgs-editor.bags-parity-editor .bags-image-editor-preview{display:grid;place-items:center;min-height:280px;border:1px solid var(--bags-border);border-radius:8px;overflow:hidden;transform-origin:center center}
+.lgs-editor.bags-parity-editor .bags-image-editor-preview img{max-width:100%;max-height:280px;object-fit:contain}
+.lgs-editor.bags-parity-editor .bags-preview-bg-checkerboard{background:repeating-conic-gradient(#ccc 0% 25%,#fff 0% 50%) 50%/16px 16px}
+.lgs-editor.bags-parity-editor .bags-preview-bg-white{background:#fff}
+.lgs-editor.bags-parity-editor .bags-preview-bg-black{background:#111}
+.lgs-editor.bags-parity-editor .bags-preview-bg-gray{background:#9ca3af}
+.lgs-editor.bags-parity-editor .bags-automation-report{list-style:none;margin:12px 0;padding:0;display:grid;gap:8px}
+.lgs-editor.bags-parity-editor .bags-automation-report li{display:flex;justify-content:space-between;font-size:13px}
+.lgs-editor.bags-parity-editor .marquee-select{position:absolute;border:1px dashed var(--bags-primary);background:#1a73e820;pointer-events:none;z-index:9999}
+.lgs-editor.bags-parity-editor .rotate-handle{position:absolute;top:-20px;left:50%;transform:translateX(-50%);width:16px;height:16px;border-radius:50%;border:2px solid var(--bags-primary);background:#fff;cursor:grab;z-index:2}
 .lgs-editor.bags-parity-editor .canvas-main{background:var(--bags-workspace);min-width:0;display:flex;flex-direction:column;min-height:0}
 .lgs-editor.bags-parity-editor .canvas-meta{display:none}
 .lgs-editor.bags-parity-editor .scroll{height:100%;padding:12px 16px 12px 32px;flex:1;min-height:0;overflow:auto}

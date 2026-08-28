@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { dpiQualityTier, type QualitySummary } from "./dpi-quality";
+import { dpiQualityTier, isLowQualityTier, type QualitySummary } from "./dpi-quality";
 
 export type QualityDisplayPrefs = {
   showResolutionOutlines: boolean;
@@ -36,7 +36,7 @@ export function QualityStatusButton(props: {
 }) {
   const { summary, onClick, active } = props;
   const issues =
-    summary.low + summary.poor + summary.overlap + summary.oob + summary.unknown;
+    summary.bad + summary.terrible + summary.minimum + summary.overlap + summary.oob + summary.unknown;
   const status =
     issues === 0 ? "OK" : `${issues} issue${issues === 1 ? "" : "s"}`;
 
@@ -76,9 +76,7 @@ export function QualityInspectorPanel(props: QualityInspectorProps) {
     if (i.kind === "text") return false;
     const info = dpiQualityTier(i.dpi);
     return (
-      info.tier === "low" ||
-      info.tier === "poor" ||
-      info.tier === "unknown" ||
+      isLowQualityTier(info.tier) ||
       overlappingIds.has(i.id) ||
       oobIds.has(i.id)
     );
@@ -102,21 +100,21 @@ export function QualityInspectorPanel(props: QualityInspectorProps) {
         </header>
 
         <dl className="gs-quality-counts">
-          <div className="tier-excellent">
-            <dt>Excellent</dt>
-            <dd>{summary.excellent}</dd>
+          <div className="tier-optimal">
+            <dt>Optimal</dt>
+            <dd>{summary.optimal}</dd>
           </div>
           <div className="tier-good">
             <dt>Good</dt>
             <dd>{summary.good}</dd>
           </div>
-          <div className="tier-low">
-            <dt>Low</dt>
-            <dd>{summary.low}</dd>
+          <div className="tier-bad">
+            <dt>Bad</dt>
+            <dd>{summary.bad}</dd>
           </div>
-          <div className="tier-poor">
-            <dt>Poor</dt>
-            <dd>{summary.poor + summary.unknown}</dd>
+          <div className="tier-terrible">
+            <dt>Terrible / Minimum</dt>
+            <dd>{summary.terrible + summary.minimum + summary.unknown}</dd>
           </div>
           <div className="tier-overlap">
             <dt>Overlapping</dt>
@@ -169,7 +167,7 @@ export function QualityInspectorPanel(props: QualityInspectorProps) {
             {flagged.map((item) => {
               const info = dpiQualityTier(item.dpi);
               const flags: string[] = [];
-              if (info.tier === "low" || info.tier === "poor" || info.tier === "unknown") {
+              if (isLowQualityTier(info.tier)) {
                 flags.push(info.label);
               }
               if (overlappingIds.has(item.id)) flags.push("Overlap");
@@ -179,7 +177,7 @@ export function QualityInspectorPanel(props: QualityInspectorProps) {
                   <div>
                     <strong>{item.name}</strong>
                     <small>{flags.join(" · ")}</small>
-                    {info.tier !== "excellent" && info.tier !== "good" ? (
+                    {isLowQualityTier(info.tier) ? (
                       <p>{info.explanation}</p>
                     ) : null}
                   </div>

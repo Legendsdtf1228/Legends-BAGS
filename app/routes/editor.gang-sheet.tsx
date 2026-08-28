@@ -23,6 +23,9 @@ import { BagsAddImageModal, type AddImageTab } from "../components/editor/bags-p
 import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-editor-settings-drawer";
 import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
 import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
+import { BagsImageEditorModal, type BagsImageEditorResult } from "../components/editor/bags-parity/bags-image-editor-modal";
+import { BagsAutomationModal, type AutomationKind } from "../components/editor/bags-parity/bags-automation-modal";
+import { BagsIntegrationPanel } from "../components/editor/bags-parity/bags-integration-panel";
 import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
 import { BagsNamesNumbersContent, type NamesNumbersSizePresetId, type NamesNumbersWorkflow } from "../components/editor/bags-parity/bags-names-numbers-content";
 import { BagsDesignPickerModal, type DesignPickerTab } from "../components/editor/bags-parity/bags-design-picker-modal";
@@ -32,7 +35,9 @@ import { BAGS_PARITY_EDITOR_CSS } from "../components/editor/bags-parity/bags-pa
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
-import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import { dpiQualityTier, isLowQualityTier, liveDpi, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import { autoFillCopyCount } from "../domain/image/image-adjustments";
+import type { ImageAdjustments } from "../domain/image/image-adjustments";
 import {
   fitWidthZoomPercent,
   smartFitZoomPercent,
@@ -126,6 +131,8 @@ type CanvasItem = Asset & {
   textColor?: string;
   lockPosition?: boolean;
   lockAspect?: boolean;
+  quantity?: number;
+  adjustments?: ImageAdjustments;
 };
 
 type Interaction =
@@ -147,6 +154,13 @@ type Interaction =
       sx: number;
       sy: number;
       snapshot: CanvasItem[];
+    }
+  | {
+      mode: "marquee";
+      sx: number;
+      sy: number;
+      ex: number;
+      ey: number;
     };
 
 type AutoDraft = {
@@ -516,6 +530,10 @@ export default function GangSheetEditor() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveDialogError, setSaveDialogError] = useState("");
   const [saveDialogRequestId, setSaveDialogRequestId] = useState("");
+  const [imageEditorOpen, setImageEditorOpen] = useState(false);
+  const [automationOpen, setAutomationOpen] = useState(false);
+  const [automationKind, setAutomationKind] = useState<AutomationKind>("auto-fill");
+  const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -608,7 +626,7 @@ export default function GangSheetEditor() {
       items.filter((i) => {
         if (i.kind === "text") return false;
         const tier = dpiQualityTier(i.dpi).tier;
-        return tier === "low" || tier === "poor" || tier === "unknown";
+        return isLowQualityTier(tier);
       }).length,
     [items],
   );
@@ -799,6 +817,18 @@ export default function GangSheetEditor() {
       const c = canvas.current;
       if (!d || !c) return;
       const r = c.getBoundingClientRect();
+      if (d.mode === "marquee") {
+        interaction.current = { ...d, ex: e.clientX, ey: e.clientY };
+        const c = canvas.current;
+        if (!c) return;
+        const r = c.getBoundingClientRect();
+        const x1 = Math.min(d.sx, e.clientX) - r.left;
+        const y1 = Math.min(d.sy, e.clientY) - r.top;
+        const x2 = Math.max(d.sx, e.clientX) - r.left;
+        const y2 = Math.max(d.sy, e.clientY) - r.top;
+        setMarqueeRect({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+        return;
+      }
       if (d.mode === "drag") {
         setItems((all) =>
           all.map((i) => {
@@ -832,16 +862,43 @@ export default function GangSheetEditor() {
       let widthIn = Math.max(0.1, d.startW + dx);
       let heightIn = widthIn / d.aspect;
       setItems((all) =>
-        all.map((i) =>
-          i.id === d.id
-            ? inside({ ...i, widthIn, heightIn }, sheetWidth, sheetHeight)
-            : i,
-        ),
+        all.map((i) => {
+          if (i.id !== d.id) return i;
+          const next = inside(withLiveDpi(i, { widthIn, heightIn }), sheetWidth, sheetHeight);
+          return next;
+        }),
       );
     };
     const up = () => {
       const d = interaction.current;
       if (!d) return;
+      if (d.mode === "marquee") {
+        const c = canvas.current;
+        if (c) {
+          const r = c.getBoundingClientRect();
+          const x1 = Math.min(d.sx, d.ex) - r.left;
+          const y1 = Math.min(d.sy, d.ey) - r.top;
+          const x2 = Math.max(d.sx, d.ex) - r.left;
+          const y2 = Math.max(d.sy, d.ey) - r.top;
+          const ids = new Set<string>();
+          for (const item of itemsRef.current) {
+            const px = (item.xIn / sheetWidth) * r.width;
+            const py = (item.yIn / sheetHeight) * r.height;
+            const pw = (item.widthIn / sheetWidth) * r.width;
+            const ph = (item.heightIn / sheetHeight) * r.height;
+            if (px + pw >= x1 && px <= x2 && py + ph >= y1 && py <= y2) ids.add(item.id);
+          }
+          if (ids.size) {
+            setSelectedIds(ids);
+            setSelectedId([...ids].pop() ?? null);
+          } else {
+            selectItem(null);
+          }
+        }
+        setMarqueeRect(null);
+        interaction.current = null;
+        return;
+      }
       setSnapGuides([]);
       const next = itemsRef.current;
       const before = d.snapshot.find((i) => i.id === d.id);
@@ -884,6 +941,8 @@ export default function GangSheetEditor() {
       heightIn: h,
       rotationDeg: 0,
       zIndex: nextZIndex(existing) + index,
+      quantity: 1,
+      dpi: Math.round(liveDpi(asset.widthPx, asset.heightPx, w, h) ?? 0) || undefined,
     };
   }
 
@@ -913,14 +972,14 @@ export default function GangSheetEditor() {
     }
     if (tab === "canva") {
       setLeftRailTab("canva");
-      setAddImageTab("canva");
-      setAddImageOpen(true);
+      setSidebarTab("uploads");
+      setMobileDrawer("sidebar");
       return;
     }
     if (tab === "dropbox") {
       setLeftRailTab("dropbox");
-      setAddImageTab("uploads");
-      setAddImageOpen(true);
+      setSidebarTab("uploads");
+      setMobileDrawer("sidebar");
       return;
     }
     setLeftRailTab(tab);
@@ -930,7 +989,8 @@ export default function GangSheetEditor() {
     setMobileDrawer("sidebar");
   }
 
-  const desktopSidePanelOpen = isBagsLeftRailPanelTab(leftRailTab);
+  const desktopSidePanelOpen =
+    isBagsLeftRailPanelTab(leftRailTab) || leftRailTab === "canva" || leftRailTab === "dropbox";
   const desktopPropertiesOpen = Boolean(selected);
 
   function commitSheetSize(w: number, h: number, mode: "clamp" | "scale") {
@@ -1241,11 +1301,26 @@ export default function GangSheetEditor() {
     return json;
   }
 
+  function selectionIds(): Set<string> {
+    return selectedIds.size ? selectedIds : selectedId ? new Set([selectedId]) : new Set<string>();
+  }
+
+  function withLiveDpi(item: CanvasItem, patch: Partial<CanvasItem>): CanvasItem {
+    const next = { ...item, ...patch };
+    if (next.kind === "text") return next;
+    if (patch.widthIn != null || patch.heightIn != null) {
+      const dpi = liveDpi(next.widthPx, next.heightPx, next.widthIn, next.heightIn);
+      if (dpi != null) next.dpi = Math.round(dpi);
+    }
+    return next;
+  }
+
   function change(patch: Partial<CanvasItem>) {
-    if (!selectedId) return;
+    const ids = selectionIds();
+    if (!ids.size) return;
     pushHistory(
       items.map((i) =>
-        i.id === selectedId ? inside({ ...i, ...patch }, sheetWidth, sheetHeight) : i,
+        ids.has(i.id) ? inside(withLiveDpi(i, patch), sheetWidth, sheetHeight) : i,
       ),
     );
   }
@@ -1292,13 +1367,27 @@ export default function GangSheetEditor() {
     selectItem(null);
   }
 
-  function rotate() {
+  function rotateCcw() {
     if (!selected) return;
     change({
       widthIn: selected.heightIn,
       heightIn: selected.widthIn,
       rotationDeg: selected.rotationDeg ? 0 : 90,
     });
+  }
+
+  function rotateCw() {
+    if (!selected) return;
+    change({
+      widthIn: selected.heightIn,
+      heightIn: selected.widthIn,
+      rotationDeg: selected.rotationDeg ? 0 : 90,
+      flipX: !selected.flipX,
+    });
+  }
+
+  function rotate() {
+    rotateCcw();
   }
 
   function flipHorizontal() {
@@ -1357,6 +1446,12 @@ export default function GangSheetEditor() {
 
   function fillSheet() {
     if (!selected) return;
+    setAutomationKind("auto-fill");
+    setAutomationOpen(true);
+  }
+
+  function confirmFillSheet() {
+    if (!selected) return;
     const copies: CanvasItem[] = [];
     let z = nextZIndex(items);
     for (let y = 0.1; y + selected.heightIn <= sheetHeight; y += selected.heightIn + gap) {
@@ -1369,7 +1464,29 @@ export default function GangSheetEditor() {
     pushHistory([...items.filter((i) => i.id !== selected.id), ...copies]);
     selectItem(copies[0]?.id ?? null);
     setMessage(`Filled sheet with ${copies.length} copies.`);
+    setAutomationOpen(false);
   }
+
+  function openAutoNestModal() {
+    setAutomationKind("auto-nest");
+    setAutomationOpen(true);
+  }
+
+  function confirmAutoNest() {
+    autoArrange();
+    setAutomationOpen(false);
+  }
+
+  function applyImageEditorResult(result: BagsImageEditorResult) {
+    if (!selected) return;
+    change({ previewUrl: result.previewUrl, adjustments: result.adjustments });
+    setImageEditorOpen(false);
+    setMessage("Image adjustments applied.");
+  }
+
+  const autoFillPreviewCount = selected
+    ? autoFillCopyCount(selected.widthIn, selected.heightIn, sheetWidth, sheetHeight, gap)
+    : 0;
 
   function autoArrange() {
     let x = gap;
@@ -1429,7 +1546,7 @@ export default function GangSheetEditor() {
         setSpacePan(true);
         return;
       }
-      if (!selectedId || screen !== "canvas") return;
+      if (!selectionIds().size || screen !== "canvas") return;
       let dx = 0;
       let dy = 0;
       const step = e.shiftKey ? NUDGE_SHIFT_IN : NUDGE_IN;
@@ -1439,9 +1556,10 @@ export default function GangSheetEditor() {
       else if (e.key === "ArrowDown") dy = step;
       else return;
       e.preventDefault();
+      const ids = selectionIds();
       const cur = itemsRef.current;
       const next = cur.map((i) =>
-        i.id === selectedId && !i.lockPosition
+        ids.has(i.id) && !i.lockPosition
           ? inside({ ...i, xIn: i.xIn + dx, yIn: i.yIn + dy }, sheetWidth, sheetHeight)
           : i,
       );
@@ -3051,7 +3169,7 @@ export default function GangSheetEditor() {
         onTogglePan={() => setSpacePan((v) => !v)}
         gridVisible={gridVisible}
         onToggleGrid={() => setGridVisible((v) => !v)}
-        onAutoNest={() => handleOverflowAction("arrange")}
+        onAutoNest={openAutoNestModal}
         zoomLabel={zoomLabel}
         onZoomOut={() => {
           setZoom((z) => Math.max(15, z - 10));
@@ -3066,11 +3184,17 @@ export default function GangSheetEditor() {
       {selected ? (
         <BagsSelectionToolbar
           selected={selected}
+          multiCount={selectedIds.size || 1}
           sheetWidth={sheetWidth}
           sheetHeight={sheetHeight}
+          canUndo={history.length > 0}
+          canRedo={future.length > 0}
           onChange={(patch) => change(patch)}
-          onRotateCcw={rotate}
-          onRotateCw={rotate}
+          onAlign={(mode) => alignSelection(mode as Parameters<typeof alignSelected>[2])}
+          onDistribute={distributeSelection}
+          onLayer={(action) => layerAction(action)}
+          onRotateCcw={rotateCcw}
+          onRotateCw={rotateCw}
           onFlipH={flipHorizontal}
           onFlipV={flipVertical}
           onStretchWidth={stretchToArtboardWidth}
@@ -3084,6 +3208,8 @@ export default function GangSheetEditor() {
           onSnapBottom={() => alignSelection("bottom")}
           onDelete={removeSelected}
           onDuplicate={duplicate}
+          onUndo={undo}
+          onRedo={redo}
         />
       ) : null}
       <div className="bags-parity-body">
@@ -3169,10 +3295,21 @@ export default function GangSheetEditor() {
                 setLeftRailTab("uploads");
               }}
             />
-          ) : sidebarTab === "gallery" ? (
-            <>
-              <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
-              <p className="panel-lead">Artwork from your shop&apos;s Gallery Settings — not sample placeholders.</p>
+          ) : leftRailTab === "gallery" || sidebarTab === "gallery" ? (
+            <BagsIntegrationPanel
+              provider="gallery"
+              status={
+                galleryLoading
+                  ? "loading"
+                  : galleryError
+                    ? "error"
+                    : !filteredGallery.length
+                      ? "empty"
+                      : "ready"
+              }
+              error={galleryError}
+              onRetry={() => void refreshGallery()}
+            >
               <div className="sidebar-tools">
                 <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
                 <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
@@ -3184,27 +3321,28 @@ export default function GangSheetEditor() {
                   <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
                 ))}
               </div>
-              {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
-              {galleryError ? (
-                <p className="gs-save-error" style={{ margin: "0 16px 12px" }}>
-                  {galleryError}{" "}
-                  <button type="button" className="gs-ghost-btn" onClick={() => void refreshGallery()}>Retry</button>
-                </p>
-              ) : null}
-              {!galleryLoading && !filteredGallery.length ? (
-                <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
-              ) : (
-                <div className="pool-grid">
-                  {filteredGallery.map((g) => (
-                    <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
-                      <img src={g.thumb} alt="" />
-                      <span>{g.name}</span>
-                      <em>{g.widthIn}×{g.heightIn}″</em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+              <div className="pool-grid">
+                {filteredGallery.map((g) => (
+                  <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
+                    <img src={g.thumb} alt="" />
+                    <span>{g.name}</span>
+                    <em>{g.widthIn}×{g.heightIn}″</em>
+                  </button>
+                ))}
+              </div>
+            </BagsIntegrationPanel>
+          ) : leftRailTab === "canva" ? (
+            <BagsIntegrationPanel
+              provider="canva"
+              status="disconnected"
+              onConnect={() => setMessage("Canva OAuth is not configured for this shop.")}
+            />
+          ) : leftRailTab === "dropbox" ? (
+            <BagsIntegrationPanel
+              provider="dropbox"
+              status="disconnected"
+              onConnect={() => setMessage("Dropbox OAuth is not configured for this shop.")}
+            />
           ) : sidebarTab === "text" ? (
             <>
               <div className="heading"><span><strong>Text</strong><small>Add labels &amp; titles</small></span></div>
@@ -3300,10 +3438,26 @@ export default function GangSheetEditor() {
               if (!target.closest(".piece")) selectItem(null);
             }}
             onPointerDown={(e) => {
-              if (!spacePan || e.button !== 0) return;
-              const el = scrollRef.current;
-              if (!el) return;
-              panRef.current = { sx: e.clientX, sy: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+              if (spacePan && e.button === 0) {
+                const el = scrollRef.current;
+                if (!el) return;
+                panRef.current = { sx: e.clientX, sy: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+                return;
+              }
+              const target = e.target as HTMLElement;
+              if (target.closest(".piece") || target.closest(".resize-handle") || target.closest(".rotate-handle")) return;
+              if (e.button !== 0) return;
+              const c = canvas.current;
+              if (!c) return;
+              const r = c.getBoundingClientRect();
+              interaction.current = {
+                mode: "marquee",
+                sx: e.clientX,
+                sy: e.clientY,
+                ex: e.clientX,
+                ey: e.clientY,
+              };
+              setMarqueeRect({ x: e.clientX - r.left, y: e.clientY - r.top, w: 0, h: 0 });
             }}
             onPointerMove={(e) => {
               const p = panRef.current;
@@ -3432,6 +3586,17 @@ export default function GangSheetEditor() {
                     <>
                     <button
                       type="button"
+                      className="rotate-handle"
+                      aria-label="Rotate 90 degrees"
+                      onPointerDown={(e: ReactPointerEvent) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        selectItem(i.id);
+                        rotateCcw();
+                      }}
+                    />
+                    <button
+                      type="button"
                       className="resize-handle se"
                       aria-label="Resize piece"
                       onPointerDown={(e: ReactPointerEvent) => {
@@ -3459,6 +3624,17 @@ export default function GangSheetEditor() {
                   <small>Use Add Image below to place artwork on your gang sheet.</small>
                 </div>
               )}
+              {marqueeRect ? (
+                <div
+                  className="marquee-select"
+                  style={{
+                    left: marqueeRect.x,
+                    top: marqueeRect.y,
+                    width: marqueeRect.w,
+                    height: marqueeRect.h,
+                  }}
+                />
+              ) : null}
             </div>
             </div>
           </div>
@@ -3479,6 +3655,7 @@ export default function GangSheetEditor() {
           </button>
           <BagsPropertiesPanel
             selected={selected}
+            multiCount={selectedIds.size}
             sheetWidth={sheetWidth}
             sheetHeight={sheetHeight}
             gap={gap}
@@ -3495,6 +3672,11 @@ export default function GangSheetEditor() {
             onRotate={rotate}
             onFlipH={flipHorizontal}
             onFlipV={flipVertical}
+            onOpenImageEditor={
+              selected && selected.kind !== "text"
+                ? () => setImageEditorOpen(true)
+                : undefined
+            }
             onRemoveBg={
               selected && selected.kind !== "text" && !selected.assetId.startsWith("text-")
                 ? () => openBgRemoveForAsset(selected.assetId, selected.previewUrl)
@@ -3743,6 +3925,48 @@ export default function GangSheetEditor() {
             )}
           </>
         }
+      />
+
+      {selected && selected.kind !== "text" && imageEditorOpen ? (
+        <BagsImageEditorModal
+          open
+          sourcePreviewUrl={selected.previewUrl}
+          sourceName={selected.name}
+          onClose={() => setImageEditorOpen(false)}
+          onApply={applyImageEditorResult}
+          onRemoveBg={() => {
+            setImageEditorOpen(false);
+            openBgRemoveForAsset(selected.assetId, selected.previewUrl);
+          }}
+          onUpscale={() => void upscaleSelected()}
+          upscaling={upscaling}
+        />
+      ) : null}
+
+      <BagsAutomationModal
+        open={automationOpen}
+        kind={automationKind}
+        onClose={() => setAutomationOpen(false)}
+        onApply={() => {
+          if (automationKind === "auto-fill") confirmFillSheet();
+          else if (automationKind === "auto-nest") confirmAutoNest();
+          else setAutomationOpen(false);
+        }}
+        copyCount={autoFillPreviewCount}
+        gap={gap}
+        onGapChange={setGap}
+        sheetLabel={`${sheetWidth}″ × ${sheetHeight}″`}
+        fittedCount={autoPreview?.fittedCount ?? items.length}
+        remainingCount={autoPreview?.remainingCount ?? 0}
+        utilization={autoPreview?.utilization}
+        loading={autoPreviewLoading}
+        error={autoPreviewError}
+        allowRotate={allowRotate90}
+        onAllowRotateChange={setAllowRotate90}
+        onRegenerate={
+          automationKind === "auto-build" ? () => void refreshAutoPreview() : undefined
+        }
+        busy={autoBusy}
       />
 
       {bgRemove ? (

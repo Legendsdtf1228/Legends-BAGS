@@ -3,6 +3,8 @@ import {
   FONT_OPTIONS,
   NAME_SIZE_PRESETS,
   NUMBER_SIZE_PRESETS,
+  NAMES_NUMBERS_SAMPLE_CSV,
+  validateNamesNumbersCsv,
 } from "../gang-sheet/editor-data";
 
 export type NamesNumbersWorkflow = "names" | "numbers";
@@ -89,34 +91,34 @@ export function BagsNamesNumbersContent(props: BagsNamesNumbersContentProps) {
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [importTarget, setImportTarget] = useState<NamesNumbersWorkflow>("names");
+  const [importError, setImportError] = useState("");
   const nameCount = parseLineList(namesList).length;
   const numberCount = parseLineList(numbersList).length;
 
+  function downloadSampleCsv() {
+    const blob = new Blob([NAMES_NUMBERS_SAMPLE_CSV], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "names-numbers-sample.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function importCsvFile(file: File) {
+    setImportError("");
     const reader = new FileReader();
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
-      const lines = text
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
+      const result = validateNamesNumbersCsv(text, importTarget);
+      if (!result.ok) {
+        setImportError(result.error ?? "Invalid CSV");
+        return;
+      }
       if (importTarget === "names") {
-        onNamesListChange(
-          lines
-            .map((line) => line.split(/[,\t]/)[0]?.trim() ?? line)
-            .filter(Boolean)
-            .join("\n"),
-        );
+        onNamesListChange(result.lines.join("\n"));
       } else {
-        onNumbersListChange(
-          lines
-            .map((line) => {
-              const parts = line.split(/[,\t]/).map((p) => p.trim());
-              return parts.length > 1 ? parts[1] : parts[0];
-            })
-            .filter(Boolean)
-            .join("\n"),
-        );
+        onNumbersListChange(result.lines.join("\n"));
       }
     };
     reader.readAsText(file);
@@ -164,7 +166,11 @@ export function BagsNamesNumbersContent(props: BagsNamesNumbersContentProps) {
               >
                 Import CSV file
               </button>
+              <button type="button" className="bags-btn bags-btn-secondary" onClick={downloadSampleCsv}>
+                Download sample CSV
+              </button>
             </div>
+            {importError && workflow === "names" ? <p className="gs-save-error">{importError}</p> : null}
             <label className="bags-field">
               Names
               <textarea
@@ -291,7 +297,11 @@ export function BagsNamesNumbersContent(props: BagsNamesNumbersContentProps) {
               >
                 Import CSV file
               </button>
+              <button type="button" className="bags-btn bags-btn-secondary" onClick={downloadSampleCsv}>
+                Download sample CSV
+              </button>
             </div>
+            {importError && workflow === "numbers" ? <p className="gs-save-error">{importError}</p> : null}
             <label className="bags-field">
               Numbers
               <textarea

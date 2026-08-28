@@ -110,16 +110,16 @@ export function GangSheetSaveDialog(props: GangSheetSaveDialogProps) {
 
             <dl className="gs-save-summary gs-save-quality-summary">
               <div>
-                <dt>DPI excellent</dt>
-                <dd>{qualitySummary.excellent}</dd>
+                <dt>DPI optimal</dt>
+                <dd>{qualitySummary.optimal}</dd>
               </div>
               <div>
                 <dt>DPI good</dt>
                 <dd>{qualitySummary.good}</dd>
               </div>
               <div>
-                <dt>DPI low/poor</dt>
-                <dd>{qualitySummary.low + qualitySummary.poor + qualitySummary.unknown}</dd>
+                <dt>DPI below good</dt>
+                <dd>{qualitySummary.bad + qualitySummary.terrible + qualitySummary.minimum + qualitySummary.unknown}</dd>
               </div>
             </dl>
 

@@ -1,6 +1,6 @@
 import type { ChangeEvent, DragEvent, RefObject } from "react";
 import { ToolbarIcon } from "../gang-sheet/editor-toolbar-icons";
-import { dpiQualityTier } from "../gang-sheet/dpi-quality";
+import { dpiQualityTier, isLowQualityTier } from "../gang-sheet/dpi-quality";
 
 export type UploadPoolItem = {
   id: string;
@@ -153,7 +153,7 @@ export function BagsUploadsPanel(props: BagsUploadsPanelProps) {
                   <img src={p.previewUrl} alt="" className="checkerboard" />
                   <span>{p.name}</span>
                   {onSheet ? <em className="on-sheet qty-badge">{onSheet}×</em> : null}
-                  {dpiInfo.tier !== "excellent" && dpiInfo.tier !== "good" ? (
+                  {dpiInfo && isLowQualityTier(dpiInfo.tier) ? (
                     <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label} DPI</em>
                   ) : (
                     <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label}</em>

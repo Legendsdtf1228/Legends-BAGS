@@ -1,4 +1,5 @@
-import { dpiQualityTier } from "../gang-sheet/dpi-quality";
+import { dpiQualityTier, isLowQualityTier } from "../gang-sheet/dpi-quality";
+import type { ImageAdjustments } from "../../../domain/image/image-adjustments";
 
 export type BagsPropertiesSelection = {
   id: string;
@@ -16,14 +17,17 @@ export type BagsPropertiesSelection = {
   rotationDeg: 0 | 90;
   lockAspect?: boolean;
   lockPosition?: boolean;
+  quantity?: number;
   textContent?: string;
   fontSize?: number;
   fontFamily?: string;
   textColor?: string;
+  adjustments?: ImageAdjustments;
 };
 
 export type BagsPropertiesPanelProps = {
   selected: BagsPropertiesSelection | null;
+  multiCount?: number;
   sheetWidth: number;
   sheetHeight: number;
   gap: number;
@@ -40,6 +44,7 @@ export type BagsPropertiesPanelProps = {
   onRemoveBg?: () => void;
   onUpscale?: () => void;
   upscaling?: boolean;
+  onOpenImageEditor?: () => void;
   onAutoFill: () => void;
   onDelete: () => void;
   onLayer: (action: "forward" | "backward" | "front" | "back") => void;
@@ -50,6 +55,7 @@ export type BagsPropertiesPanelProps = {
 export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
   const {
     selected,
+    multiCount = 0,
     sheetWidth,
     sheetHeight,
     gap,
@@ -66,6 +72,7 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
     onRemoveBg,
     onUpscale,
     upscaling,
+    onOpenImageEditor,
     onAutoFill,
     onDelete,
     onLayer,
@@ -90,14 +97,17 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
   }
 
   const dpiTier = selected.kind !== "text" ? dpiQualityTier(selected.dpi) : null;
-  const aspect = selected.widthPx / Math.max(1, selected.heightPx);
+  const aspect = selected.widthIn / Math.max(0.01, selected.heightIn);
+  const adj = selected.adjustments;
 
   return (
     <>
       <div className="heading">
         <span>
           <strong>Properties</strong>
-          <small>{selected.kind === "text" ? "Text" : "Image"}</small>
+          <small>
+            {multiCount > 1 ? `${multiCount} selected` : selected.kind === "text" ? "Text" : "Image"}
+          </small>
         </span>
       </div>
 
@@ -115,7 +125,8 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
         </small>
         {dpiTier ? (
           <span className={`bags-fitcheck bags-fitcheck-${dpiTier.tier}`} role="status">
-            Fit check: {dpiTier.label} ({dpiTier.tier})
+            Fit check: {dpiTier.label}
+            {isLowQualityTier(dpiTier.tier) ? " — consider upscaling or reducing size" : ""}
           </span>
         ) : null}
       </div>
@@ -131,7 +142,7 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
             onChange={(e) => {
               const w = +e.target.value;
               if (selected.kind === "text" || selected.lockAspect === false) onChange({ widthIn: w });
-              else onChange({ widthIn: w, heightIn: w / aspect });
+              else onChange({ widthIn: w, heightIn: w / (selected.widthPx / Math.max(1, selected.heightPx)) });
             }}
           />
         </label>
@@ -145,8 +156,23 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
             onChange={(e) => {
               const h = +e.target.value;
               if (selected.kind === "text" || selected.lockAspect === false) onChange({ heightIn: h });
-              else onChange({ heightIn: h, widthIn: h * aspect });
+              else onChange({ heightIn: h, widthIn: h * (selected.widthPx / Math.max(1, selected.heightPx)) });
             }}
+          />
+        </label>
+        <label>
+          Aspect
+          <input type="text" readOnly value={aspect.toFixed(2)} aria-label="Aspect ratio" />
+        </label>
+        <label>
+          Qty
+          <input
+            type="number"
+            min={1}
+            max={999}
+            value={selected.quantity ?? 1}
+            onChange={(e) => onChange({ quantity: Math.max(1, Math.round(+e.target.value || 1)) })}
+            aria-label="Quantity per placement"
           />
         </label>
         <label>
@@ -207,33 +233,82 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
             <input type="color" value={selected.textColor ?? "#111827"} onChange={(e) => onChange({ textColor: e.target.value })} />
           </label>
         </div>
-      ) : null}
+      ) : (
+        <fieldset className="bags-settings-group">
+          <legend>Color adjustments</legend>
+          <label className="bags-field">
+            Gamma
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.05}
+              value={adj?.gamma ?? 1}
+              onChange={(e) =>
+                onChange({
+                  adjustments: { gamma: +e.target.value, contrast: adj?.contrast ?? 1, brightness: adj?.brightness ?? 1, halftoneDotSize: adj?.halftoneDotSize ?? 0, halftoneAngle: adj?.halftoneAngle ?? 45 },
+                })
+              }
+            />
+          </label>
+          <label className="bags-field">
+            Contrast
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.05}
+              value={adj?.contrast ?? 1}
+              onChange={(e) =>
+                onChange({
+                  adjustments: { gamma: adj?.gamma ?? 1, contrast: +e.target.value, brightness: adj?.brightness ?? 1, halftoneDotSize: adj?.halftoneDotSize ?? 0, halftoneAngle: adj?.halftoneAngle ?? 45 },
+                })
+              }
+            />
+          </label>
+          <label className="bags-field">
+            Brightness
+            <input
+              type="range"
+              min={0.5}
+              max={1.5}
+              step={0.05}
+              value={adj?.brightness ?? 1}
+              onChange={(e) =>
+                onChange({
+                  adjustments: { gamma: adj?.gamma ?? 1, contrast: adj?.contrast ?? 1, brightness: +e.target.value, halftoneDotSize: adj?.halftoneDotSize ?? 0, halftoneAngle: adj?.halftoneAngle ?? 45 },
+                })
+              }
+            />
+          </label>
+        </fieldset>
+      )}
 
       <div className="align-row">
         <span>Align</span>
-        <button type="button" onClick={() => onAlign("left")} aria-label="Align left">
+        <button type="button" onClick={() => onAlign("left")} aria-label="Align left" title="Align left">
           ⫷
         </button>
-        <button type="button" onClick={() => onAlign("center-h")} aria-label="Align center">
+        <button type="button" onClick={() => onAlign("center-h")} aria-label="Align center" title="Align center">
           ⫿
         </button>
-        <button type="button" onClick={() => onAlign("right")} aria-label="Align right">
+        <button type="button" onClick={() => onAlign("right")} aria-label="Align right" title="Align right">
           ⫸
         </button>
-        <button type="button" onClick={() => onAlign("top")} aria-label="Align top">
+        <button type="button" onClick={() => onAlign("top")} aria-label="Align top" title="Align top">
           ⫠
         </button>
-        <button type="button" onClick={() => onAlign("center-v")} aria-label="Align middle">
+        <button type="button" onClick={() => onAlign("center-v")} aria-label="Align middle" title="Align middle">
           ⫟
         </button>
-        <button type="button" onClick={() => onAlign("bottom")} aria-label="Align bottom">
+        <button type="button" onClick={() => onAlign("bottom")} aria-label="Align bottom" title="Align bottom">
           ⫡
         </button>
       </div>
 
       <div className="actions">
         <button type="button" onClick={onDuplicate}>
-          Duplicate
+          Duplicate Image
         </button>
         <button type="button" onClick={onRotate}>
           Rotate
@@ -244,6 +319,11 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
         <button type="button" onClick={onFlipV}>
           Flip V
         </button>
+        {selected.kind !== "text" && onOpenImageEditor ? (
+          <button type="button" onClick={onOpenImageEditor}>
+            FitCheck / Image Editor
+          </button>
+        ) : null}
         {selected.kind !== "text" && onRemoveBg ? (
           <button type="button" onClick={onRemoveBg}>
             Remove BG
@@ -255,7 +335,7 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
           </button>
         ) : null}
         <button type="button" onClick={onAutoFill}>
-          Auto fill sheet
+          Auto Fill Sheet
         </button>
         <button type="button" className="bags-tool-danger" onClick={onDelete}>
           Delete
@@ -264,26 +344,26 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
 
       <div className="layer-actions">
         <span>Layer</span>
-        <button type="button" onClick={() => onLayer("forward")}>
+        <button type="button" onClick={() => onLayer("forward")} title="Bring forward">
           Forward
         </button>
-        <button type="button" onClick={() => onLayer("backward")}>
+        <button type="button" onClick={() => onLayer("backward")} title="Send backward">
           Backward
         </button>
-        <button type="button" onClick={() => onLayer("front")}>
+        <button type="button" onClick={() => onLayer("front")} title="Bring to front">
           To front
         </button>
-        <button type="button" onClick={() => onLayer("back")}>
+        <button type="button" onClick={() => onLayer("back")} title="Send to back">
           To back
         </button>
       </div>
 
       <div className="align-row">
         <span>Distribute</span>
-        <button type="button" onClick={() => onDistribute("horizontal")}>
+        <button type="button" onClick={() => onDistribute("horizontal")} title="Distribute horizontally" disabled={multiCount > 0 && multiCount < 3}>
           Horizontal
         </button>
-        <button type="button" onClick={() => onDistribute("vertical")}>
+        <button type="button" onClick={() => onDistribute("vertical")} title="Distribute vertically" disabled={multiCount > 0 && multiCount < 3}>
           Vertical
         </button>
       </div>

@@ -106,17 +106,44 @@ export const TEXT_STYLE_PRESETS = [
   { id: "number", label: "Jersey number", fontSize: 72, color: "#ffffff" },
 ] as const;
 
+/** BAGS names presets: ~1 / 1.5 / 2 in width. */
 export const NAME_SIZE_PRESETS = [
-  { id: "small", label: "Small", fontSize: 22, widthIn: 3.5, strokeWidth: 0 },
-  { id: "medium", label: "Medium", fontSize: 28, widthIn: 5, strokeWidth: 1 },
-  { id: "large", label: "Large", fontSize: 36, widthIn: 6.5, strokeWidth: 2 },
+  { id: "small", label: "Small (~1″)", fontSize: 22, widthIn: 1, strokeWidth: 0 },
+  { id: "medium", label: "Medium (~1.5″)", fontSize: 28, widthIn: 1.5, strokeWidth: 1 },
+  { id: "large", label: "Large (~2″)", fontSize: 36, widthIn: 2, strokeWidth: 2 },
 ] as const;
 
+/** BAGS numbers presets: ~4 / 6 / 8 in width. */
 export const NUMBER_SIZE_PRESETS = [
-  { id: "small", label: "Small", fontSize: 36, widthIn: 1.5, strokeWidth: 0 },
-  { id: "medium", label: "Medium", fontSize: 48, widthIn: 2, strokeWidth: 1 },
-  { id: "large", label: "Large", fontSize: 64, widthIn: 2.5, strokeWidth: 2 },
+  { id: "small", label: "Small (~4″)", fontSize: 48, widthIn: 4, strokeWidth: 0 },
+  { id: "medium", label: "Medium (~6″)", fontSize: 64, widthIn: 6, strokeWidth: 1 },
+  { id: "large", label: "Large (~8″)", fontSize: 80, widthIn: 8, strokeWidth: 2 },
 ] as const;
+
+export const NAMES_NUMBERS_SAMPLE_CSV = "name,number\nSmith,12\nJones,7\nLee,23\n";
+
+export function validateNamesNumbersCsv(text: string, mode: "names" | "numbers"): { ok: boolean; lines: string[]; error?: string } {
+  const rawLines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!rawLines.length) return { ok: false, lines: [], error: "CSV is empty." };
+  const lines =
+    rawLines[0]?.toLowerCase().startsWith("name") || rawLines[0]?.toLowerCase().includes("number")
+      ? rawLines.slice(1)
+      : rawLines;
+  const parsed = lines
+    .map((line) => {
+      const parts = line.split(/[,\t]/).map((p) => p.trim());
+      return mode === "names" ? (parts[0] ?? line) : parts.length > 1 ? parts[1] : parts[0];
+    })
+    .filter(Boolean);
+  if (!parsed.length) return { ok: false, lines: [], error: "No valid entries found in CSV." };
+  if (parsed.some((v) => v.length > 64)) {
+    return { ok: false, lines: parsed, error: "Entries must be 64 characters or fewer." };
+  }
+  return { ok: true, lines: parsed };
+}
 
 export const NAMES_NUMBERS_PRESETS = [
   {
