@@ -80,7 +80,9 @@ export function BagsAutomationModal(props: BagsAutomationModalProps) {
               </p>
               {copyCount === 0 ? (
                 <p className="gs-save-error">Selected artwork is too large to fit even one copy with current spacing.</p>
-              ) : null}
+              ) : (
+                <p className="bags-modal-hint">Apply pushes copies to the sheet. Undo with Ctrl+Z or the toolbar undo button.</p>
+              )}
             </>
           ) : null}
 
@@ -116,6 +118,8 @@ export function BagsAutomationModal(props: BagsAutomationModalProps) {
                   {remainingCount} piece{(remainingCount ?? 0) === 1 ? "" : "s"} could not fit — reduce sizes or
                   increase sheet length. Nothing will be dropped silently.
                 </p>
+              ) : fittedCount != null && fittedCount > 0 ? (
+                <p className="bags-modal-hint">Apply rearranges the sheet. Undo with Ctrl+Z or the toolbar undo button.</p>
               ) : null}
               {onGapChange != null && gap != null ? (
                 <label className="bags-field">

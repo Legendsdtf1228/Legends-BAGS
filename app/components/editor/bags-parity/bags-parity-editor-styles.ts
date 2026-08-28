@@ -465,10 +465,30 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
   .lgs-editor.bags-parity-editor .bags-quality-legend{width:118px;padding:8px 6px;font-size:9px}
 }
 
+@media(max-width:1024px){
+  .lgs-editor.bags-parity-editor{
+    --bags-panel-w:240px;
+    --bags-props-w:220px;
+  }
+  .lgs-editor.bags-parity-editor .bags-quality-legend{width:96px;padding:6px 4px;font-size:8px}
+  .lgs-editor.bags-parity-editor .bags-parity-selection-bar{padding:2px 4px;gap:4px;min-height:36px}
+  .lgs-editor.bags-parity-editor .bags-sel-field input{width:48px;height:26px;font-size:10px}
+  .lgs-editor.bags-parity-editor .bags-tool-btn{width:28px;height:28px;font-size:12px}
+  .lgs-editor.bags-parity-editor .workspace.bags-parity-workspace.has-side-panel.has-properties{
+    grid-template-columns:var(--bags-rail-w) minmax(0,1fr) var(--bags-props-w,220px);
+  }
+  .lgs-editor.bags-parity-editor .sidebar-panel.bags-parity-sidebar.open{
+    width:min(var(--bags-panel-w),36vw);
+    min-width:min(var(--bags-panel-w),36vw);
+  }
+}
+
 @media(max-width:768px){
   .lgs-editor.bags-parity-editor .bags-parity-left-rail{display:none}
   .lgs-editor.bags-parity-editor .workspace.bags-parity-workspace,
-  .lgs-editor.bags-parity-editor .workspace.bags-parity-workspace.has-side-panel{
+  .lgs-editor.bags-parity-editor .workspace.bags-parity-workspace.has-side-panel,
+  .lgs-editor.bags-parity-editor .workspace.bags-parity-workspace.has-properties,
+  .lgs-editor.bags-parity-editor .workspace.bags-parity-workspace.has-side-panel.has-properties{
     grid-template-columns:minmax(0,1fr);
   }
   .lgs-editor.bags-parity-editor .sidebar-panel.bags-parity-sidebar.open{display:none}
@@ -477,9 +497,16 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
     bottom:var(--bags-bottom-h);width:min(var(--bags-panel-w),88vw);z-index:15;
     box-shadow:4px 0 16px rgba(0,0,0,.12)
   }
+  .lgs-editor.bags-parity-editor .properties.bags-parity-properties.open{display:none!important}
+  .lgs-editor.bags-parity-editor .properties.bags-parity-properties.mobile-open{
+    display:flex!important;position:fixed;right:0;top:calc(var(--bags-header-h) + var(--bags-toolbar-h));
+    bottom:var(--bags-bottom-h);width:min(var(--bags-props-w,260px),88vw);z-index:15;
+    box-shadow:-4px 0 16px rgba(0,0,0,.12)
+  }
   .lgs-editor.bags-parity-editor .bags-parity-header-actions .bags-btn-secondary{display:none}
   .lgs-editor.bags-parity-editor .bags-parity-account-text{display:none}
   .lgs-editor.bags-parity-editor .bags-quality-legend{display:none}
+  .lgs-editor.bags-parity-editor .bags-canvas-row{grid-template-columns:minmax(0,1fr)}
 }
 @media(min-width:769px){
   .lgs-editor.bags-parity-editor .bags-parity-bottom-nav{display:none!important}

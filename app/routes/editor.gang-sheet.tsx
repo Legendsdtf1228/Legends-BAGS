@@ -36,7 +36,7 @@ import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
 import { dpiQualityTier, isLowQualityTier, liveDpi, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
-import { autoFillCopyCount } from "../domain/image/image-adjustments";
+import { autoFillCopyCount, applyCropToDimensions } from "../domain/image/image-adjustments";
 import type { ImageAdjustments } from "../domain/image/image-adjustments";
 import {
   fitWidthZoomPercent,
@@ -80,6 +80,7 @@ import {
   readDraft,
   reorderLayer,
   round,
+  shelfPackLayout,
   sortByZIndex,
   writeDraft,
   type GangDraftV1,
@@ -536,6 +537,7 @@ export default function GangSheetEditor() {
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
   const [automationKind, setAutomationKind] = useState<AutomationKind>("auto-fill");
+  const [nestPreview, setNestPreview] = useState<ReturnType<typeof shelfPackLayout> | null>(null);
   const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
@@ -565,6 +567,9 @@ export default function GangSheetEditor() {
     } else {
       setSelectedId(id);
       setSelectedIds(new Set([id]));
+    }
+    if (id && typeof window !== "undefined" && window.innerWidth <= 768) {
+      setMobileDrawer("properties");
     }
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
@@ -1480,23 +1485,47 @@ export default function GangSheetEditor() {
     }
     pushHistory([...items.filter((i) => i.id !== selected.id), ...copies]);
     selectItem(copies[0]?.id ?? null);
-    setMessage(`Filled sheet with ${copies.length} copies.`);
+    setMessage(`Filled sheet with ${copies.length} copies. Undo with Ctrl+Z.`);
     setAutomationOpen(false);
   }
 
   function openAutoNestModal() {
     setAutomationKind("auto-nest");
+    setNestPreview(shelfPackLayout(items, sheetWidth, sheetHeight, gap));
     setAutomationOpen(true);
   }
 
   function confirmAutoNest() {
-    autoArrange();
+    const preview = shelfPackLayout(items, sheetWidth, sheetHeight, gap);
+    if (preview.remainingCount > 0) {
+      setMessage(
+        `Nested ${preview.fittedCount} of ${items.length} pieces — ${preview.remainingCount} did not fit. Undo with Ctrl+Z.`,
+      );
+    } else {
+      setMessage(`Artwork automatically arranged. Undo with Ctrl+Z.`);
+    }
+    pushHistory(preview.placed);
+    setNestPreview(null);
     setAutomationOpen(false);
   }
 
   function applyImageEditorResult(result: BagsImageEditorResult) {
     if (!selected) return;
-    change({ previewUrl: result.previewUrl, adjustments: result.adjustments });
+    const dims = applyCropToDimensions(
+      selected.widthPx,
+      selected.heightPx,
+      selected.widthIn,
+      selected.heightIn,
+      result.crop,
+    );
+    change({
+      previewUrl: result.previewUrl,
+      adjustments: result.adjustments,
+      widthPx: dims.widthPx,
+      heightPx: dims.heightPx,
+      widthIn: dims.widthIn,
+      heightIn: dims.heightIn,
+    });
     setImageEditorOpen(false);
     setMessage("Image adjustments applied.");
   }
@@ -1506,24 +1535,13 @@ export default function GangSheetEditor() {
     : 0;
 
   function autoArrange() {
-    let x = gap;
-    let y = gap;
-    let row = 0;
-    const placed = [...items]
-      .sort((a, b) => b.widthIn * b.heightIn - a.widthIn * a.heightIn)
-      .map((i) => {
-        if (x + i.widthIn > sheetWidth - gap) {
-          x = gap;
-          y += row + gap;
-          row = 0;
-        }
-        const n = inside({ ...i, xIn: x, yIn: y }, sheetWidth, sheetHeight);
-        x += i.widthIn + gap;
-        row = Math.max(row, i.heightIn);
-        return n;
-      });
-    pushHistory(placed);
-    setMessage("Artwork automatically arranged.");
+    const preview = shelfPackLayout(items, sheetWidth, sheetHeight, gap);
+    pushHistory(preview.placed);
+    setMessage(
+      preview.remainingCount > 0
+        ? `Arranged ${preview.fittedCount} pieces — ${preview.remainingCount} did not fit. Undo with Ctrl+Z.`
+        : "Artwork automatically arranged. Undo with Ctrl+Z.",
+    );
   }
 
   useEffect(() => {
@@ -4006,7 +4024,10 @@ export default function GangSheetEditor() {
       <BagsAutomationModal
         open={automationOpen}
         kind={automationKind}
-        onClose={() => setAutomationOpen(false)}
+        onClose={() => {
+          setAutomationOpen(false);
+          setNestPreview(null);
+        }}
         onApply={() => {
           if (automationKind === "auto-fill") confirmFillSheet();
           else if (automationKind === "auto-nest") confirmAutoNest();
@@ -4014,17 +4035,36 @@ export default function GangSheetEditor() {
         }}
         copyCount={autoFillPreviewCount}
         gap={gap}
-        onGapChange={setGap}
+        onGapChange={(nextGap) => {
+          setGap(nextGap);
+          if (automationKind === "auto-nest") {
+            setNestPreview(shelfPackLayout(items, sheetWidth, sheetHeight, nextGap));
+          }
+        }}
         sheetLabel={`${sheetWidth}″ × ${sheetHeight}″`}
-        fittedCount={autoPreview?.fittedCount ?? items.length}
-        remainingCount={autoPreview?.remainingCount ?? 0}
-        utilization={autoPreview?.utilization}
-        loading={autoPreviewLoading}
-        error={autoPreviewError}
+        fittedCount={
+          automationKind === "auto-nest"
+            ? (nestPreview?.fittedCount ?? items.length)
+            : autoPreview?.fittedCount
+        }
+        remainingCount={
+          automationKind === "auto-nest"
+            ? (nestPreview?.remainingCount ?? 0)
+            : (autoPreview?.remainingCount ?? 0)
+        }
+        utilization={
+          automationKind === "auto-nest" ? nestPreview?.utilization : autoPreview?.utilization
+        }
+        loading={automationKind === "auto-build" ? autoPreviewLoading : false}
+        error={automationKind === "auto-build" ? autoPreviewError : undefined}
         allowRotate={allowRotate90}
         onAllowRotateChange={setAllowRotate90}
         onRegenerate={
-          automationKind === "auto-build" ? () => void refreshAutoPreview() : undefined
+          automationKind === "auto-build"
+            ? () => void refreshAutoPreview()
+            : automationKind === "auto-nest"
+              ? () => setNestPreview(shelfPackLayout(items, sheetWidth, sheetHeight, gap))
+              : undefined
         }
         busy={autoBusy}
       />

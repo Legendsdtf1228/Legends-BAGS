@@ -129,6 +129,22 @@ export function applyHalftone(
 }
 
 /** Count grid copies that fit on a sheet (auto-fill preview). */
+/** Apply normalized crop to pixel and inch dimensions (preserves effective DPI). */
+export function applyCropToDimensions(
+  widthPx: number,
+  heightPx: number,
+  widthIn: number,
+  heightIn: number,
+  crop: CropRect,
+): { widthPx: number; heightPx: number; widthIn: number; heightIn: number } {
+  return {
+    widthPx: Math.max(1, Math.round(widthPx * crop.w)),
+    heightPx: Math.max(1, Math.round(heightPx * crop.h)),
+    widthIn: Math.max(0.1, widthIn * crop.w),
+    heightIn: Math.max(0.1, heightIn * crop.h),
+  };
+}
+
 export function autoFillCopyCount(
   widthIn: number,
   heightIn: number,

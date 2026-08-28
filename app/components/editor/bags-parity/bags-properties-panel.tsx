@@ -321,7 +321,7 @@ export function BagsPropertiesPanel(props: BagsPropertiesPanelProps) {
         </button>
         {selected.kind !== "text" && onOpenImageEditor ? (
           <button type="button" onClick={onOpenImageEditor}>
-            FitCheck / Image Editor
+            Edit Image
           </button>
         ) : null}
         {selected.kind !== "text" && onRemoveBg ? (

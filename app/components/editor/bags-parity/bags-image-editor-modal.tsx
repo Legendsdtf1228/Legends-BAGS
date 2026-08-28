@@ -362,6 +362,13 @@ export function BagsImageEditorModal(props: BagsImageEditorModalProps) {
                   />
                   <span>{adj.brightness.toFixed(2)}</span>
                 </label>
+                <button
+                  type="button"
+                  className="bags-btn bags-btn-secondary"
+                  onClick={() => setAdj({ ...DEFAULT_IMAGE_ADJUSTMENTS })}
+                >
+                  Reset colors
+                </button>
               </>
             ) : null}
           </div>
@@ -374,7 +381,7 @@ export function BagsImageEditorModal(props: BagsImageEditorModalProps) {
           <button
             type="button"
             className="bags-btn bags-btn-primary"
-            disabled={rendering || !!error}
+            disabled={rendering || !!error || !previewUrl}
             onClick={() => {
               if (!previewUrl) return;
               onApply({ previewUrl, adjustments: adj, crop });

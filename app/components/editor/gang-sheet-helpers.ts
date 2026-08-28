@@ -376,3 +376,55 @@ export function distributeSelected<T extends RectIn>(
     return p ? inside({ ...i, ...p }, sheetW, sheetH) : i;
   });
 }
+
+export type ShelfPackPreview<T extends RectIn = RectIn> = {
+  placed: T[];
+  fittedCount: number;
+  remainingCount: number;
+  utilization: number;
+};
+
+/** Shelf-pack layout used by Auto Nest — reports fitted vs remaining before apply. */
+export function shelfPackLayout<T extends RectIn>(
+  items: T[],
+  sheetWidth: number,
+  sheetHeight: number,
+  gap: number,
+): ShelfPackPreview<T> {
+  if (!items.length) {
+    return { placed: [], fittedCount: 0, remainingCount: 0, utilization: 0 };
+  }
+
+  let x = gap;
+  let y = gap;
+  let row = 0;
+  const placed: T[] = [];
+  let remainingCount = 0;
+
+  const sorted = [...items].sort((a, b) => b.widthIn * b.heightIn - a.widthIn * a.heightIn);
+  for (const item of sorted) {
+    if (x + item.widthIn > sheetWidth - gap) {
+      x = gap;
+      y += row + gap;
+      row = 0;
+    }
+    if (y + item.heightIn > sheetHeight - gap + 1e-6) {
+      remainingCount++;
+      continue;
+    }
+    const next = inside({ ...item, xIn: x, yIn: y }, sheetWidth, sheetHeight);
+    placed.push(next);
+    x += item.widthIn + gap;
+    row = Math.max(row, item.heightIn);
+  }
+
+  const usedArea = placed.reduce((sum, i) => sum + i.widthIn * i.heightIn, 0);
+  const sheetArea = sheetWidth * sheetHeight;
+
+  return {
+    placed,
+    fittedCount: placed.length,
+    remainingCount,
+    utilization: sheetArea > 0 ? usedArea / sheetArea : 0,
+  };
+}
