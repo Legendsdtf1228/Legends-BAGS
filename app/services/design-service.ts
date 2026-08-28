@@ -674,12 +674,22 @@ export async function listDesignLibrary(params: {
       let workflow = "upload_by_size";
       let pieceCount = 0;
       let sheetLabel = "";
+      let priceCents = v?.priceCents ?? 0;
       if (v) {
         try {
           const state = JSON.parse(v.stateJson) as DesignStateV1;
           workflow = state.workflow;
           pieceCount = state.items.reduce((n, i) => n + (i.quantity || 1), 0);
           sheetLabel = `${state.sheet.widthIn}″ × ${state.sheet.maxHeightIn}″`;
+          if (workflow === "gang_sheet") {
+            const pricing = await gangSheetPricingForDesign(
+              params.shop,
+              state.items,
+              d.productGid ?? undefined,
+              d.variantGid ?? undefined,
+            );
+            priceCents = pricing.totalCents;
+          }
         } catch {
           /* ignore */
         }
@@ -708,7 +718,7 @@ export async function listDesignLibrary(params: {
         archived: d.archived,
         pieceCount,
         sheetLabel,
-        priceCents: v?.priceCents ?? 0,
+        priceCents,
         updatedAt: d.updatedAt.toISOString(),
         createdAt: d.createdAt.toISOString(),
         sourceDesignId: d.sourceDesignId,

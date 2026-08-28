@@ -9,7 +9,9 @@ export type BagsEditorSettingsDrawerProps = {
   qualityPrefs: QualityDisplayPrefs;
   onQualityPrefsChange: (prefs: QualityDisplayPrefs) => void;
   visualAid: "checkerboard" | "gray" | "black" | "white" | "custom";
+  visualAidCustomColor: string;
   onVisualAidChange: (aid: BagsEditorSettingsDrawerProps["visualAid"]) => void;
+  onVisualAidCustomColorChange: (color: string) => void;
   artboardMarginEnabled: boolean;
   artboardMarginIn: number;
   onArtboardMarginChange: (enabled: boolean, value: number) => void;
@@ -23,6 +25,8 @@ export function BagsEditorSettingsContent(props: Omit<BagsEditorSettingsDrawerPr
     onQualityPrefsChange,
     visualAid,
     onVisualAidChange,
+    visualAidCustomColor,
+    onVisualAidCustomColorChange,
     artboardMarginEnabled,
     artboardMarginIn,
     onArtboardMarginChange,
@@ -73,6 +77,26 @@ export function BagsEditorSettingsContent(props: Omit<BagsEditorSettingsDrawerPr
             {aid.charAt(0).toUpperCase() + aid.slice(1)}
           </label>
         ))}
+        <label className="bags-radio bags-visual-aid-custom">
+          <input
+            type="radio"
+            name="visual-aid"
+            checked={visualAid === "custom"}
+            onChange={() => onVisualAidChange("custom")}
+          />
+          Custom
+          <input
+            type="color"
+            className="bags-visual-aid-color"
+            value={visualAidCustomColor}
+            disabled={visualAid !== "custom"}
+            onChange={(e) => {
+              onVisualAidCustomColorChange(e.target.value);
+              onVisualAidChange("custom");
+            }}
+            aria-label="Custom visual aid color"
+          />
+        </label>
       </fieldset>
 
       <fieldset className="bags-settings-group">

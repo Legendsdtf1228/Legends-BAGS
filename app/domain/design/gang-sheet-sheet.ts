@@ -56,13 +56,37 @@ export function resolveGangSheetHeight(params: {
 }
 
 /** Gang sheet design state stores canvas length in sheet.maxHeightIn. */
+export const DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN = 0.125;
+
 export function gangSheetDesignSheet(widthIn: number, heightIn: number) {
   return {
     widthIn,
     maxHeightIn: heightIn,
     imageMarginIn: 0.15,
-    artboardMarginIn: 0.1,
+    artboardMarginIn: DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   };
+}
+
+/** Restrict sheet width choices to the product binding (e.g. 22.5″ only). */
+export function resolveAllowedSheetWidths(productWidthIn?: number | null): readonly number[] {
+  if (productWidthIn != null && Number.isFinite(productWidthIn) && productWidthIn > 0) {
+    const exact = GANG_SHEET_WIDTHS.find((w) => w === productWidthIn);
+    return exact != null ? [exact] : [productWidthIn];
+  }
+  return GANG_SHEET_WIDTHS;
+}
+
+/** Restrict length presets to variants configured for this product when present. */
+export function resolveAllowedSheetHeights(
+  gangSheetVariants: GangSheetVariantBinding[] = [],
+): readonly number[] {
+  const fromVariants = gangSheetVariants
+    .map((v) => v.sheetHeightIn)
+    .filter(isGangSheetHeightIn);
+  if (fromVariants.length) {
+    return [...new Set(fromVariants)].sort((a, b) => a - b);
+  }
+  return GANG_SHEET_HEIGHTS;
 }
 
 export function gangSheetAreaPriceUsd(

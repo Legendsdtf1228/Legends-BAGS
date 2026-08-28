@@ -20,6 +20,10 @@ import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-
 import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
 import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
 import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
+import { BagsNamesNumbersContent, type NamesNumbersLayout } from "../components/editor/bags-parity/bags-names-numbers-content";
+import { BagsDesignPickerModal, type DesignPickerTab } from "../components/editor/bags-parity/bags-design-picker-modal";
+import { BagsWelcomeCenter, BagsWelcomeAction } from "../components/editor/bags-parity/bags-welcome-center";
+import type { BagsCustomerAccount } from "../components/editor/bags-parity/bags-gang-sheet-header";
 import { BAGS_PARITY_EDITOR_CSS } from "../components/editor/bags-parity/bags-parity-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
@@ -38,9 +42,12 @@ import {
 import { SheetShrinkDialog } from "../components/editor/gang-sheet/sheet-shrink-dialog";
 import {
   GANG_SHEET_HEIGHTS,
-  GANG_SHEET_WIDTHS,
+  DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   gangSheetAreaPriceUsd,
+  resolveAllowedSheetHeights,
+  resolveAllowedSheetWidths,
 } from "../domain/design/gang-sheet-sheet";
+import { computeGangSheetEstimateUsd } from "../domain/pricing";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
@@ -217,9 +224,26 @@ type AutoNestPreview = {
   remainingCount?: number;
 };
 
-const SHEET_WIDTHS = GANG_SHEET_WIDTHS;
 const SHEET_HEIGHTS = [...GANG_SHEET_HEIGHTS];
 const AUTO_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12] as const;
+
+function sheetVisualAidStyle(
+  visualAid: "checkerboard" | "gray" | "black" | "white" | "custom",
+  customColor: string,
+): CSSProperties | undefined {
+  switch (visualAid) {
+    case "gray":
+      return { backgroundColor: "#9ca3af" };
+    case "black":
+      return { backgroundColor: "#111827" };
+    case "white":
+      return { backgroundColor: "#ffffff" };
+    case "custom":
+      return { backgroundColor: customColor };
+    default:
+      return undefined;
+  }
+}
 
 function buildNestItemsFromDrafts(drafts: AutoDraft[]) {
   return drafts.flatMap((d) =>
@@ -279,6 +303,7 @@ type LibraryDesign = {
   status: string;
   archived: boolean;
   previewPath?: string | null;
+  sourceOrderId?: string | null;
 };
 
 type RemoteDesignPayload = {
@@ -336,14 +361,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
       appearance,
       pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
       variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
+      productSheetWidthIn: editorConfig?.binding?.sheetWidthIn ?? editorConfig?.sheet.widthIn ?? null,
       gangSheetVariants: editorConfig?.gangSheetVariants ?? [],
       defaultSheetHeightIn: editorConfig?.defaultSheetHeightIn ?? 24,
       defaultSheet: editorConfig?.sheet ?? {
         widthIn: 22.5,
         maxHeightIn: 24,
         imageMarginIn: 0.15,
-        artboardMarginIn: 0.1,
+        artboardMarginIn: DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
       },
+      customerName: launch.customerName,
+      customerEmail: launch.customerEmail,
     },
     { headers },
   );
@@ -377,7 +405,7 @@ export default function GangSheetEditor() {
   const [qualityPrefs, setQualityPrefs] = useState<QualityDisplayPrefs>({
     showResolutionOutlines: true,
     showOverlapOutlines: true,
-    showSafeZone: false,
+    showSafeZone: true,
     showOobShading: true,
   });
   const [scrollMetrics, setScrollMetrics] = useState({ top: 0, height: 0, client: 0 });
@@ -410,8 +438,11 @@ export default function GangSheetEditor() {
   const [addImageTab, setAddImageTab] = useState<AddImageTab>("recent");
   const [sheetsDrawerCollapsed, setSheetsDrawerCollapsed] = useState(false);
   const [visualAid, setVisualAid] = useState<"checkerboard" | "gray" | "black" | "white" | "custom">("checkerboard");
+  const [visualAidCustomColor, setVisualAidCustomColor] = useState("#c4c4c4");
   const [artboardMarginEnabled, setArtboardMarginEnabled] = useState(true);
-  const [artboardMarginIn, setArtboardMarginIn] = useState(page.defaultSheet.artboardMarginIn ?? 0.1);
+  const [artboardMarginIn, setArtboardMarginIn] = useState(
+    page.defaultSheet.artboardMarginIn ?? DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
+  );
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
@@ -429,6 +460,14 @@ export default function GangSheetEditor() {
   const [textColor, setTextColor] = useState("#111827");
   const [rosterCsv, setRosterCsv] = useState("");
   const [rosterFontSize, setRosterFontSize] = useState(24);
+  const [rosterNameFontFamily, setRosterNameFontFamily] = useState("Impact");
+  const [rosterNumberFontFamily, setRosterNumberFontFamily] = useState("Impact");
+  const [rosterNameFontSize, setRosterNameFontSize] = useState(28);
+  const [rosterNumberFontSize, setRosterNumberFontSize] = useState(36);
+  const [rosterTextColor, setRosterTextColor] = useState("#111827");
+  const [rosterLayout, setRosterLayout] = useState<NamesNumbersLayout>("stacked");
+  const [designPickerOpen, setDesignPickerOpen] = useState(false);
+  const [designPickerTab, setDesignPickerTab] = useState<DesignPickerTab>("mine");
   const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState("");
@@ -449,7 +488,7 @@ export default function GangSheetEditor() {
   const [designName, setDesignName] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
-  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapEnabled, setSnapEnabled] = useState(false);
   const [spacePan, setSpacePan] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState<"sidebar" | "properties" | null>(null);
@@ -488,14 +527,41 @@ export default function GangSheetEditor() {
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
 
+  const allowedSheetWidths = useMemo(
+    () => resolveAllowedSheetWidths(page.productSheetWidthIn),
+    [page.productSheetWidthIn],
+  );
+  const allowedSheetHeights = useMemo(
+    () => resolveAllowedSheetHeights(page.gangSheetVariants),
+    [page.gangSheetVariants],
+  );
+  const storefrontCustomer = useMemo<BagsCustomerAccount | null>(() => {
+    const name = page.customerName?.trim();
+    const email = page.customerEmail?.trim();
+    if (name) return { name, email: email ?? "" };
+    if (email) return { name: email.split("@")[0] || "Customer", email };
+    return null;
+  }, [page.customerName, page.customerEmail]);
+
   const usedArea = useMemo(
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
     [items],
   );
-  const estimate =
+  const estimate = useMemo(
+    () =>
+      computeGangSheetEstimateUsd({
+        variantPriceCents: page.variantPriceCents,
+        pricePerSqIn: page.pricePerSqIn,
+        sheetWidthIn: sheetWidth,
+        sheetHeightIn: sheetHeight,
+        usedAreaSqIn: usedArea,
+      }),
+    [page.variantPriceCents, page.pricePerSqIn, sheetWidth, sheetHeight, usedArea],
+  );
+  const welcomePriceLabel =
     page.variantPriceCents != null
-      ? page.variantPriceCents / 100
-      : Math.round(usedArea * page.pricePerSqIn * 100) / 100;
+      ? `$${(page.variantPriceCents / 100).toFixed(2)}`
+      : `$${gangSheetAreaPriceUsd(sheetWidth, sheetHeight, page.pricePerSqIn).toFixed(2)}`;
   const utilization = Math.min(100, Math.round((usedArea / (sheetWidth * sheetHeight)) * 100));
 
   const overlappingIds = useMemo(() => findOverlappingIds(items), [items]);
@@ -547,6 +613,18 @@ export default function GangSheetEditor() {
     setSaved(false);
     setDirty(true);
   }, []);
+
+  useEffect(() => {
+    if (!allowedSheetWidths.includes(sheetWidth)) {
+      setSheetWidth(allowedSheetWidths[0] ?? page.defaultSheet.widthIn);
+    }
+  }, [allowedSheetWidths, sheetWidth, page.defaultSheet.widthIn]);
+
+  useEffect(() => {
+    if (!allowedSheetHeights.includes(sheetHeight)) {
+      setSheetHeight(allowedSheetHeights[0] ?? page.defaultSheetHeightIn);
+    }
+  }, [allowedSheetHeights, sheetHeight, page.defaultSheetHeightIn]);
 
   useEffect(() => {
     const draft = readDraft(page.shop);
@@ -1392,34 +1470,74 @@ export default function GangSheetEditor() {
     const next: CanvasItem[] = [...items];
     let z = nextZIndex(next);
     rows.forEach((row, idx) => {
-      const label = `${row.name}${row.number ? ` #${row.number}` : ""}`.trim();
-      const w = Math.min(6, sheetWidth - 0.4);
-      const h = Math.max(0.4, rosterFontSize / 72);
-      next.push({
-        assetId: `text-roster-${crypto.randomUUID()}`,
-        widthPx: 400,
-        heightPx: 80,
-        contentType: "image/svg+xml",
-        id: crypto.randomUUID(),
-        name: label,
-        previewUrl: textPreviewDataUrl(label, rosterFontSize, "Impact", "#111827"),
-        xIn: 0.2,
-        yIn: 0.2 + idx * (h + gap),
-        widthIn: w,
-        heightIn: h,
-        rotationDeg: 0,
-        zIndex: z++,
-        kind: "text",
-        textContent: label,
-        fontSize: rosterFontSize,
-        fontFamily: "Impact",
-        textColor: "#111827",
-      });
+      const nameLabel = row.name.trim();
+      const numberLabel = row.number.trim() ? `#${row.number.trim()}` : "";
+      const blockHeight =
+        rosterLayout === "stacked"
+          ? Math.max(rosterNameFontSize, rosterNumberFontSize) / 72 + 0.1
+          : Math.max(rosterNameFontSize, rosterNumberFontSize) / 72;
+      const yBase = 0.2 + idx * (blockHeight + gap);
+
+      if (nameLabel) {
+        const nameH = Math.max(0.35, rosterNameFontSize / 72);
+        const nameW = rosterLayout === "side-by-side" ? sheetWidth * 0.62 : Math.min(6, sheetWidth - 0.4);
+        next.push({
+          assetId: `text-roster-name-${crypto.randomUUID()}`,
+          widthPx: 400,
+          heightPx: 80,
+          contentType: "image/svg+xml",
+          id: crypto.randomUUID(),
+          name: nameLabel,
+          previewUrl: textPreviewDataUrl(nameLabel, rosterNameFontSize, rosterNameFontFamily, rosterTextColor),
+          xIn: 0.2,
+          yIn: yBase,
+          widthIn: nameW,
+          heightIn: nameH,
+          rotationDeg: 0,
+          zIndex: z++,
+          kind: "text",
+          textContent: nameLabel,
+          fontSize: rosterNameFontSize,
+          fontFamily: rosterNameFontFamily,
+          textColor: rosterTextColor,
+        });
+      }
+
+      if (numberLabel) {
+        const numH = Math.max(0.35, rosterNumberFontSize / 72);
+        const numW = rosterLayout === "side-by-side" ? sheetWidth * 0.28 : Math.min(2.5, sheetWidth - 0.4);
+        next.push({
+          assetId: `text-roster-number-${crypto.randomUUID()}`,
+          widthPx: 400,
+          heightPx: 80,
+          contentType: "image/svg+xml",
+          id: crypto.randomUUID(),
+          name: numberLabel,
+          previewUrl: textPreviewDataUrl(numberLabel, rosterNumberFontSize, rosterNumberFontFamily, rosterTextColor),
+          xIn: rosterLayout === "side-by-side" ? sheetWidth * 0.66 : 0.2,
+          yIn: rosterLayout === "stacked" ? yBase + rosterNameFontSize / 72 + 0.05 : yBase,
+          widthIn: numW,
+          heightIn: numH,
+          rotationDeg: 0,
+          zIndex: z++,
+          kind: "text",
+          textContent: numberLabel,
+          fontSize: rosterNumberFontSize,
+          fontFamily: rosterNumberFontFamily,
+          textColor: rosterTextColor,
+        });
+      }
     });
     pushHistory(next);
-    setMessage(`Generated ${rows.length} name/number set${rows.length === 1 ? "" : "s"}.`);
+    setMessage(`Generated ${rows.length} roster row${rows.length === 1 ? "" : "s"}.`);
     setSidebarTab("layers");
     setMobileDrawer("sidebar");
+  }
+
+  function openDesignPicker(tab: DesignPickerTab = "mine") {
+    setDesignPickerTab(tab);
+    setDesignPickerOpen(true);
+    void refreshLibrary(true);
   }
 
   function renamePoolItem(poolId: string, name: string) {
@@ -1668,6 +1786,7 @@ export default function GangSheetEditor() {
       setEditingDesignId(json.designId);
       setEditingVersion(json.version);
       setDesignName(json.name);
+      setDesignPickerOpen(false);
       setScreen("canvas");
       setSaved(true);
       setDirty(false);
@@ -1771,7 +1890,7 @@ export default function GangSheetEditor() {
             widthIn: sheetWidth,
             maxHeightIn: sheetHeight,
             imageMarginIn: gap,
-            artboardMarginIn: 0.1,
+            artboardMarginIn: artboardMarginEnabled ? artboardMarginIn : 0,
           },
           allowRotate90,
         }),
@@ -1939,7 +2058,7 @@ export default function GangSheetEditor() {
           widthIn: sheetWidth,
           maxHeightIn: sheetHeight,
           imageMarginIn: gap,
-          artboardMarginIn: 0.1,
+          artboardMarginIn: artboardMarginEnabled ? artboardMarginIn : 0,
         },
         items: resolved,
         name: designName ?? undefined,
@@ -2073,364 +2192,146 @@ export default function GangSheetEditor() {
   if (screen === "welcome") {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
-      <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+      <>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BAGS_PARITY_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
-        <div className="home-shell">
-          <nav className="icon-rail" aria-label="Builder navigation">
-            <button type="button" className="rail-btn active" title="Home" aria-label="Home">
-              <EditorRailIcon name="home" label="Home" />
-              <span className="rail-label">Home</span>
-            </button>
-            {SIDEBAR_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className="rail-btn"
-                title={tab.label}
-                aria-label={tab.label}
-                onClick={() => openCanvas({ tab: tab.id === "auto" ? "uploads" : tab.id })}
-              >
-                <EditorRailIcon name={tab.icon} label={tab.label} />
-                <span className="rail-label">{tab.label}</span>
-              </button>
-            ))}
-          </nav>
-
-          <div className="home-main">
-            <div className="welcome-card">
-              <div className="brand center">
-                <b>L</b>
-                <span>
-                  <strong>LEGENDS BAGS</strong>
-                  <small>Welcome Center</small>
-                </span>
-              </div>
-              <h1>{page.appearance.welcomeTitle}</h1>
-              <p className="welcome-lead">{page.appearance.welcomeSubtitle}</p>
-              {!page.hasDevAuth ? (
-                <p className="error block">Dev auth not configured — check DEV_SHOP / TEST_API_TOKEN.</p>
-              ) : null}
-
-              <div className="welcome-sheet-pick">
-                <label>
-                  Sheet width
-                  <select
-                    value={sheetWidth}
-                    onChange={(e) => setSheetWidth(+e.target.value)}
-                    aria-label="Sheet width"
-                  >
-                    {SHEET_WIDTHS.map((w) => (
-                      <option key={w} value={w}>
-                        {w} in
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Sheet length
-                  <select
-                    value={sheetHeight}
-                    onChange={(e) => setSheetHeight(+e.target.value)}
-                    aria-label="Sheet length"
-                  >
-                    {SHEET_HEIGHTS.map((h) => (
-                      <option key={h} value={h}>
-                        {h} in
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <p className="welcome-tip">
-                Upload is inside the canvas: choose <strong>Build a Gang Sheet</strong> below, then use{" "}
-                <strong>＋ Upload image(s)</strong> in the left sidebar (or drag PNG/JPEG onto the drop
-                zone).
-              </p>
-
-              <div className="welcome-grid two-col">
-                <button
-                  type="button"
-                  className="welcome-opt primary featured"
-                  onClick={() => openCanvas({ tab: "uploads" })}
-                >
-                  <div className="welcome-icon"><EditorRailIcon name="sheet" label="Build" /></div>
-                  <strong>Build a Gang Sheet</strong>
-                  <span>Open the canvas with your selected sheet size — upload, place, and arrange.</span>
-                </button>
-                <a className="welcome-opt" href={ubsHref}>
-                  <div className="welcome-icon"><EditorRailIcon name="upload" label="Upload by Size" /></div>
-                  <strong>Upload by Size</strong>
-                  <span>Single-design workflow with presets and live pricing.</span>
-                </a>
-                <button
-                  type="button"
-                  className="welcome-opt"
-                  onClick={() => {
-                    setScreen("auto_build");
-                    setAutoPhase("setup");
-                    setAutoDrafts([]);
-                    setAutoPreview(null);
-                    setAutoPreviewError("");
-                    setSelectedAutoId(null);
-                    setMessage("Upload all designs, set size & quantity — preview updates live.");
-                  }}
-                >
-                  <div className="welcome-icon"><EditorRailIcon name="auto" label="Auto Build" /></div>
-                  <strong>Auto Arrange</strong>
-                  <span>Bulk upload with live nest preview — fastest for many designs.</span>
-                </button>
-                <button type="button" className="welcome-opt" onClick={() => setShowTemplates((v) => !v)}>
-                  <div className="welcome-icon"><EditorRailIcon name="template" label="Templates" /></div>
-                  <strong>Start from a template</strong>
-                  <span>Pick a preset sheet layout and open the editor.</span>
-                </button>
-                {libraryLoading ? (
-                  <button type="button" className="welcome-opt" disabled aria-busy="true">
-                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
-                    <strong>Open saved design</strong>
-                    <span>Loading your saved gang sheets…</span>
-                  </button>
-                ) : libraryError ? (
+        <BagsWelcomeCenter
+          appearance={page.appearance}
+          appearanceVars={appearanceVars(page.appearance)}
+          welcomeTitle={page.appearance.welcomeTitle}
+          welcomeSubtitle={page.appearance.welcomeSubtitle}
+          sheetWidth={sheetWidth}
+          sheetHeight={sheetHeight}
+          sheetWidths={allowedSheetWidths}
+          sheetHeights={allowedSheetHeights}
+          onSheetWidthChange={setSheetWidth}
+          onSheetHeightChange={setSheetHeight}
+          priceLabel={welcomePriceLabel}
+          hasDevAuth={page.hasDevAuth}
+          footer={
+            savedDesigns.length ? (
+              <div className="saved-designs-list" style={{ marginTop: 16 }}>
+                <h3>Saved designs</h3>
+                {savedDesigns.slice(0, 6).map((d) => (
                   <button
+                    key={d.id}
                     type="button"
-                    className="welcome-opt"
-                    onClick={() => void refreshLibrary()}
+                    className="saved-design-row"
+                    onClick={() => void loadRemoteDesign(d.id, d.version)}
                   >
-                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
-                    <strong>Open saved design</strong>
-                    <span>{libraryError} Tap to retry.</span>
-                  </button>
-                ) : savedDesigns.length ? (
-                  <button
-                    type="button"
-                    className="welcome-opt"
-                    onClick={() => void loadRemoteDesign(savedDesigns[0].id, savedDesigns[0].version)}
-                  >
-                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
-                    <strong>Open saved design</strong>
-                    <span>
-                      {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} in your library.
+                    <span className="saved-design-copy">
+                      <strong>{d.name || "Untitled design"}</strong>
+                      <small>
+                        {d.sheetLabel} · ${(d.priceCents / 100).toFixed(2)}
+                      </small>
                     </span>
                   </button>
-                ) : (
-                  <button type="button" className="welcome-opt" disabled={!libraryLoaded}>
-                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
-                    <strong>Open saved design</strong>
-                    <span>
-                      {libraryLoaded
-                        ? page.productGid
-                          ? "No saved gang sheets for this product yet. Save from the canvas to build your library."
-                          : "Save a design from the editor to build your library."
-                        : "Checking your saved designs…"}
-                    </span>
-                  </button>
-                )}
-                {hasStoredDraft ? (
+                ))}
+              </div>
+            ) : null
+          }
+        >
+          <BagsWelcomeAction
+            featured
+            title="Build a Gang Sheet"
+            description="Open the canvas with your selected sheet size — upload, place, and arrange."
+            icon={<EditorRailIcon name="sheet" label="Build" />}
+            onClick={() => openCanvas({ tab: "uploads" })}
+          />
+          <BagsWelcomeAction
+            title="Upload by Size"
+            description="Single-design workflow with presets and live pricing."
+            icon={<EditorRailIcon name="upload" label="Upload by Size" />}
+            href={ubsHref}
+          />
+          <BagsWelcomeAction
+            title="Auto Arrange"
+            description="Bulk upload with live nest preview — fastest for many designs."
+            icon={<EditorRailIcon name="auto" label="Auto Build" />}
+            onClick={() => {
+              setScreen("auto_build");
+              setAutoPhase("setup");
+              setAutoDrafts([]);
+              setAutoPreview(null);
+              setAutoPreviewError("");
+              setSelectedAutoId(null);
+            }}
+          />
+          <BagsWelcomeAction
+            title="Start from a template"
+            description="Pick a preset sheet layout and open the editor."
+            icon={<EditorRailIcon name="template" label="Templates" />}
+            onClick={() => setShowTemplates((v) => !v)}
+          />
+          <BagsWelcomeAction
+            title="Open saved design"
+            description={
+              libraryLoading
+                ? "Loading your saved gang sheets…"
+                : libraryError
+                  ? `${libraryError} Tap to retry.`
+                  : savedDesigns.length
+                    ? `${savedDesigns.length} saved design${savedDesigns.length === 1 ? "" : "s"} in your library.`
+                    : libraryLoaded
+                      ? "No saved gang sheets yet — save from the canvas to build your library."
+                      : "Checking your saved designs…"
+            }
+            icon={<EditorRailIcon name="saved" label="Saved" />}
+            disabled={libraryLoading || (!libraryError && !savedDesigns.length && libraryLoaded)}
+            busy={libraryLoading}
+            onClick={() => {
+              if (libraryError) void refreshLibrary();
+              else if (savedDesigns.length) openDesignPicker("mine");
+            }}
+          />
+          {hasStoredDraft ? (
+            <BagsWelcomeAction
+              title="Continue draft"
+              description="Resume the local draft saved on this device."
+              icon={<EditorRailIcon name="upload" label="Continue" />}
+              onClick={() => {
+                const d = readDraft(page.shop);
+                if (d) void restoreDraft(d);
+              }}
+            />
+          ) : null}
+          <BagsWelcomeAction
+            title="Upload image(s)"
+            description="Add files to Uploads, then click each one to place on the gang sheet."
+            icon={<EditorRailIcon name="uploads" label="Upload" />}
+            onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
+          />
+        </BagsWelcomeCenter>
+        {showTemplates ? (
+          <div className="bags-parity-modal-backdrop" role="presentation" onClick={() => setShowTemplates(false)}>
+            <div className="bags-parity-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              <header className="bags-modal-head">
+                <h2>Sheet templates</h2>
+                <button type="button" className="bags-icon-btn" onClick={() => setShowTemplates(false)} aria-label="Close">
+                  ×
+                </button>
+              </header>
+              <div className="bags-modal-body template-picker">
+                {SHEET_TEMPLATES.map((tpl) => (
                   <button
+                    key={tpl.id}
                     type="button"
-                    className="welcome-opt continue-draft"
+                    className="template-card"
                     onClick={() => {
-                      const d = readDraft(page.shop);
-                      if (d) void restoreDraft(d);
+                      applySheetSize(tpl.widthIn, tpl.heightIn);
+                      setShowTemplates(false);
+                      openCanvas({ tab: "uploads" });
                     }}
                   >
-                    <div className="welcome-icon"><EditorRailIcon name="upload" label="Continue" /></div>
-                    <strong>Continue draft</strong>
-                    <span>Resume the local draft saved on this device.</span>
+                    <strong>{tpl.name}</strong>
+                    <span>{tpl.description}</span>
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="welcome-opt"
-                  onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
-                >
-                  <div className="welcome-icon"><EditorRailIcon name="uploads" label="Upload" /></div>
-                  <strong>Upload image(s)</strong>
-                  <span>Add files to Uploads, then click each one to place on the gang sheet.</span>
-                </button>
-              </div>
-
-              {showTemplates ? (
-                <div className="template-picker">
-                  {SHEET_TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      className="template-card"
-                      onClick={() => {
-                        applySheetSize(tpl.widthIn, tpl.heightIn);
-                        openCanvas({ tab: "uploads" });
-                      }}
-                    >
-                      <strong>{tpl.name}</strong>
-                      <span>{tpl.description}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {savedDesigns.length ? (
-                <div className="saved-designs-list">
-                  <div className="sidebar-tools">
-                    <input
-                      type="search"
-                      placeholder="Search saved designs…"
-                      value={librarySearch}
-                      onChange={(e) => setLibrarySearch(e.target.value)}
-                      onBlur={() => void refreshLibrary()}
-                      aria-label="Search saved designs"
-                    />
-                    <select
-                      value={librarySort}
-                      onChange={(e) => {
-                        setLibrarySort(e.target.value as "recent" | "name");
-                        void refreshLibrary();
-                      }}
-                      aria-label="Sort saved designs"
-                    >
-                      <option value="recent">Recent</option>
-                      <option value="name">Name</option>
-                    </select>
-                    <label className="library-archived-toggle">
-                      <input
-                        type="checkbox"
-                        checked={libraryIncludeArchived}
-                        onChange={(e) => {
-                          const next = e.target.checked;
-                          setLibraryIncludeArchived(next);
-                          void refreshLibrary(next);
-                        }}
-                      />
-                      Show archived
-                    </label>
-                  </div>
-                  <h3>Saved designs (server)</h3>
-                  {savedDesigns.slice(0, 8).map((d) => (
-                    <div key={d.id} className="saved-design-row-wrap">
-                      {libraryRenamingId === d.id ? (
-                        <form
-                          className="saved-design-rename"
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            void renameLibraryDesign(d.id, libraryRenameValue);
-                          }}
-                        >
-                          <input
-                            value={libraryRenameValue}
-                            onChange={(e) => setLibraryRenameValue(e.target.value)}
-                            aria-label="Design name"
-                            autoFocus
-                          />
-                          <button type="submit" className="saved-design-action">
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            className="saved-design-action"
-                            onClick={() => {
-                              setLibraryRenamingId(null);
-                              setLibraryRenameValue("");
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="saved-design-row"
-                            onClick={() => void loadRemoteDesign(d.id, d.version)}
-                          >
-                            {d.previewPath ? (
-                              <span className="saved-design-thumb checkerboard">
-                                <img src={d.previewPath} alt="" />
-                              </span>
-                            ) : null}
-                            <span className="saved-design-copy">
-                              <strong>{d.name || "Untitled design"}</strong>
-                              <small>
-                                {d.pieceCount} piece{d.pieceCount === 1 ? "" : "s"} · {d.sheetLabel} · v{d.version} ·{" "}
-                                ${(d.priceCents / 100).toFixed(2)} · {new Date(d.updatedAt).toLocaleDateString()}
-                                {d.archived ? " · archived" : ""}
-                              </small>
-                            </span>
-                          </button>
-                          <div className="saved-design-actions">
-                            <button
-                              type="button"
-                              className="saved-design-action"
-                              onClick={() => {
-                                setLibraryRenamingId(d.id);
-                                setLibraryRenameValue(d.name || "");
-                              }}
-                            >
-                              Rename
-                            </button>
-                            {!d.archived ? (
-                              <button
-                                type="button"
-                                className="saved-design-action"
-                                onClick={() => void archiveLibraryDesign(d.id)}
-                              >
-                                Archive
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="saved-design-action"
-                              onClick={() =>
-                                void fetch("/api/design-library", {
-                                  method: "POST",
-                                  credentials: "include",
-                                  headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
-                                  body: JSON.stringify({
-                                    intent: "duplicate",
-                                    sourceDesignId: d.id,
-                                    sourceVersion: d.version,
-                                    productGid: page.productGid,
-                                    variantGid: page.variantId
-                                      ? `gid://shopify/ProductVariant/${page.variantId}`
-                                      : undefined,
-                                  }),
-                                }).then(async (res) => {
-                                  const json = (await res.json()) as { designId?: string; error?: string };
-                                  if (!res.ok || !json.designId) throw new Error(json.error || "Duplicate failed");
-                                  void loadRemoteDesign(json.designId!);
-                                })
-                              }
-                            >
-                              Duplicate
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <p className="welcome-tip">
-                {hasStoredDraft ? <>Local draft on this device is separate from your saved library. </> : null}
-                Tip: Arrow keys nudge selected art by 0.05″ (Shift = 0.25″). Drag the corner handle to
-                resize with aspect lock.
-              </p>
-
-              <div className="welcome-foot">
-                <span>Selected sheet · est. empty sheet</span>
-                <strong>
-                  {sheetWidth}″ × {sheetHeight}″ ·{" "}
-                  {page.variantPriceCents != null
-                    ? `$${(page.variantPriceCents / 100).toFixed(2)} sheet price`
-                    : `$${gangSheetAreaPriceUsd(sheetWidth, sheetHeight, page.pricePerSqIn).toFixed(2)} max · $${page.pricePerSqIn.toFixed(3)}/in² printed`}
-                </strong>
+                ))}
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        ) : null}
+      </>
     );
   }
 
@@ -2610,7 +2511,7 @@ export default function GangSheetEditor() {
                       value={sheetWidth}
                       onChange={(e) => setSheetWidth(+e.target.value)}
                     >
-                      {SHEET_WIDTHS.map((w) => (
+                      {allowedSheetWidths.map((w) => (
                         <option key={w} value={w}>
                           {w} in
                         </option>
@@ -2623,7 +2524,7 @@ export default function GangSheetEditor() {
                       value={sheetHeight}
                       onChange={(e) => setSheetHeight(+e.target.value)}
                     >
-                      {SHEET_HEIGHTS.map((h) => (
+                      {allowedSheetHeights.map((h) => (
                         <option key={h} value={h}>
                           {h} in
                         </option>
@@ -2982,16 +2883,14 @@ export default function GangSheetEditor() {
         onSaveAndCart={openSaveDialog}
         onSave={openSaveDialog}
         onClose={closeEditor}
-        onMyDesigns={() => {
-          setScreen("welcome");
-          void refreshLibrary();
-        }}
+        customer={storefrontCustomer}
+        onMyDesigns={() => openDesignPicker("mine")}
       />
       <BagsSheetToolbar
         sheetWidth={sheetWidth}
         sheetHeight={sheetHeight}
-        sheetWidths={SHEET_WIDTHS}
-        sheetHeights={SHEET_HEIGHTS}
+        sheetWidths={allowedSheetWidths}
+        sheetHeights={allowedSheetHeights}
         onSheetSizeChange={requestSheetSize}
         canUndo={history.length > 0}
         canRedo={future.length > 0}
@@ -3270,7 +3169,7 @@ export default function GangSheetEditor() {
         </aside>
         <main className="canvas-main">
           <div className="bags-canvas-row">
-          <BagsQualityLegend />
+          <BagsQualityLegend qualityPrefs={qualityPrefs} onQualityPrefsChange={setQualityPrefs} />
           <div className="bags-canvas-scroll-wrap">
           <div className="canvas-meta">
             <strong>{sheetWidth} × {sheetHeight} in</strong>
@@ -3330,8 +3229,12 @@ export default function GangSheetEditor() {
             />
             <div
               ref={canvas}
-              className={`sheet ${gridVisible ? "grid-on" : "grid-off"} ${qualityPrefs.showSafeZone ? "safe-zone-on" : ""}`}
-              style={{ width: `${zoom}%`, aspectRatio: `${sheetWidth}/${sheetHeight}` }}
+              className={`sheet ${visualAid === "checkerboard" ? "checkerboard" : ""} ${gridVisible ? "grid-on" : "grid-off"} ${qualityPrefs.showSafeZone ? "safe-zone-on" : ""}`}
+              style={{
+                width: `${zoom}%`,
+                aspectRatio: `${sheetWidth}/${sheetHeight}`,
+                ...sheetVisualAidStyle(visualAid, visualAidCustomColor),
+              }}
             >
               <i className={qualityPrefs.showSafeZone ? "safe-zone" : undefined} />
               {snapGuides.map((g, idx) => (
@@ -3606,10 +3509,7 @@ export default function GangSheetEditor() {
         onQuantityChange={setSheetQuantity}
         onDuplicateSheet={() => handleOverflowAction("duplicate-design")}
         onAddNewDesign={() => setScreen("welcome")}
-        onOpenPreviousDesigns={() => {
-          setScreen("welcome");
-          void refreshLibrary();
-        }}
+        onOpenPreviousDesigns={() => openDesignPicker("mine")}
         onAutoBuild={() => handleOverflowAction("arrange")}
         onStartOver={clearSheet}
       />
@@ -3622,6 +3522,8 @@ export default function GangSheetEditor() {
         onQualityPrefsChange={setQualityPrefs}
         visualAid={visualAid}
         onVisualAidChange={setVisualAid}
+        visualAidCustomColor={visualAidCustomColor}
+        onVisualAidCustomColorChange={setVisualAidCustomColor}
         artboardMarginEnabled={artboardMarginEnabled}
         artboardMarginIn={artboardMarginIn}
         onArtboardMarginChange={(enabled, value) => {
@@ -3631,14 +3533,39 @@ export default function GangSheetEditor() {
       />
       {bottomNav === "names-numbers" ? (
         <BagsNamesNumbersModal open onClose={() => setBottomNav(null)}>
-          <div className="sidebar-form">
-            <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
-            <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-            <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-            <button type="button" className="bags-btn bags-btn-primary" onClick={() => { generateRoster(); setBottomNav(null); }}>Generate on sheet</button>
-          </div>
+          <BagsNamesNumbersContent
+            rosterCsv={rosterCsv}
+            onRosterChange={setRosterCsv}
+            nameFontFamily={rosterNameFontFamily}
+            onNameFontFamilyChange={setRosterNameFontFamily}
+            numberFontFamily={rosterNumberFontFamily}
+            onNumberFontFamilyChange={setRosterNumberFontFamily}
+            nameFontSize={rosterNameFontSize}
+            onNameFontSizeChange={setRosterNameFontSize}
+            numberFontSize={rosterNumberFontSize}
+            onNumberFontSizeChange={setRosterNumberFontSize}
+            textColor={rosterTextColor}
+            onTextColorChange={setRosterTextColor}
+            layout={rosterLayout}
+            onLayoutChange={setRosterLayout}
+            onGenerate={() => {
+              generateRoster();
+              setBottomNav(null);
+            }}
+          />
         </BagsNamesNumbersModal>
       ) : null}
+      <BagsDesignPickerModal
+        open={designPickerOpen}
+        onClose={() => setDesignPickerOpen(false)}
+        activeTab={designPickerTab}
+        onTabChange={setDesignPickerTab}
+        designs={savedDesigns}
+        loading={libraryLoading}
+        error={libraryError}
+        onRetry={() => void refreshLibrary(true)}
+        onSelect={(designId, version) => void loadRemoteDesign(designId, version)}
+      />
       <BagsAddImageModal
         open={addImageOpen}
         onClose={() => setAddImageOpen(false)}
@@ -3647,45 +3574,117 @@ export default function GangSheetEditor() {
         canvaEnabled={false}
         dropboxEnabled={false}
         recentPanel={
-          <div className="pool-grid">
-            {uploadPool.slice(0, 12).map((p) => (
-              <button key={p.id} type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
-                <img src={p.previewUrl} alt="" className="checkerboard" />
-                <span>{p.name}</span>
-              </button>
-            ))}
-            {!uploadPool.length ? <p className="sidebar-empty">No recent uploads yet.</p> : null}
-          </div>
-        }
-        uploadsPanel={
           <>
-            <label className="sidebar-upload-btn drop-target">
-              {uploading ? "Uploading…" : "Upload Image(s)"}
-              <input type="file" multiple accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
-            </label>
+            <div className="sidebar-tools">
+              <input
+                type="search"
+                placeholder="Search recent uploads…"
+                value={uploadSearch}
+                onChange={(e) => setUploadSearch(e.target.value)}
+                aria-label="Search recent uploads"
+              />
+            </div>
             <div className="pool-grid">
-              {filteredPool.map((p) => (
+              {uploadPool.slice(0, 24).filter((p) =>
+                !uploadSearch.trim() || p.name.toLowerCase().includes(uploadSearch.trim().toLowerCase()),
+              ).map((p) => (
                 <button key={p.id} type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
                   <img src={p.previewUrl} alt="" className="checkerboard" />
                   <span>{p.name}</span>
                 </button>
               ))}
+              {!uploadPool.length ? <p className="sidebar-empty">No recent uploads yet.</p> : null}
+            </div>
+          </>
+        }
+        uploadsPanel={
+          <>
+            <p className="sidebar-hint">Drag PNG/JPEG files here or browse — then click a thumbnail to place on the sheet.</p>
+            <label
+              className="sidebar-upload-btn drop-target"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
+              }}
+            >
+              {uploading ? "Uploading…" : "Upload Image(s)"}
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                onChange={(e) => {
+                  void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <div className="sidebar-tools">
+              <input
+                type="search"
+                placeholder="Search uploads…"
+                value={uploadSearch}
+                onChange={(e) => setUploadSearch(e.target.value)}
+                aria-label="Search uploads"
+              />
+              <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
+                <option value="recent">Recent</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <div className="pool-grid">
+              {filteredPool.map((p) => (
+                <div key={p.id} className="pool-item-wrap">
+                  <button type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
+                    <img src={p.previewUrl} alt="" className="checkerboard" />
+                    <span>{p.name}</span>
+                  </button>
+                  <div className="pool-item-actions">
+                    <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
+                    <button type="button" aria-label="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>Cut</button>
+                    <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>Del</button>
+                  </div>
+                </div>
+              ))}
+              {!filteredPool.length ? <p className="sidebar-empty">{uploadPool.length ? "No matches" : "No uploads yet"}</p> : null}
             </div>
           </>
         }
         galleryPanel={
-          galleryLoading ? (
-            <p className="sidebar-empty">Loading gallery…</p>
-          ) : (
-            <div className="pool-grid">
-              {filteredGallery.map((g) => (
-                <button key={g.id} type="button" className="pool-item" onClick={() => { void placeGalleryItem(g); setAddImageOpen(false); }} disabled={uploading}>
-                  <img src={g.thumb} alt="" />
-                  <span>{g.name}</span>
-                </button>
+          <>
+            <div className="sidebar-tools">
+              <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
+              <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
+                <ToolbarIcon name="refresh" />
+              </button>
+            </div>
+            <div className="chip-row">
+              {galleryCategories.map((cat) => (
+                <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
               ))}
             </div>
-          )
+            {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
+            {galleryError ? (
+              <p className="sidebar-empty">
+                {galleryError}{" "}
+                <button type="button" className="bags-link-btn" onClick={() => void refreshGallery()}>Retry</button>
+              </p>
+            ) : null}
+            {!galleryLoading && !filteredGallery.length ? (
+              <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
+            ) : (
+              <div className="pool-grid">
+                {filteredGallery.map((g) => (
+                  <button key={g.id} type="button" className="pool-item" onClick={() => { void placeGalleryItem(g); setAddImageOpen(false); }} disabled={uploading}>
+                    <img src={g.thumb} alt="" />
+                    <span>{g.name}</span>
+                    <em>{g.widthIn}×{g.heightIn}″</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         }
       />
 

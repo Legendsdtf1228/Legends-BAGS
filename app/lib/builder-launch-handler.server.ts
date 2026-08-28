@@ -12,6 +12,8 @@ function passthroughFromRequest(url: URL) {
     parentOrigin: url.searchParams.get("parentOrigin"),
     lgs_session: url.searchParams.get("lgs_session"),
     lgs_customer_key: url.searchParams.get("lgs_customer_key"),
+    lgs_customer_name: url.searchParams.get("lgs_customer_name"),
+    lgs_customer_email: url.searchParams.get("lgs_customer_email"),
     designId: url.searchParams.get("designId"),
     designVersion: url.searchParams.get("designVersion"),
   };

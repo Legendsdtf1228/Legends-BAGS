@@ -28,6 +28,8 @@
     var variantId = root.getAttribute("data-variant-id") || "";
     var shop = root.getAttribute("data-shop") || "";
     var customerId = root.getAttribute("data-customer-id") || "";
+    var customerName = (root.getAttribute("data-customer-name") || "").trim();
+    var customerEmail = (root.getAttribute("data-customer-email") || "").trim();
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
     var resolvedEditorOrigin = null;
     var configLoaded = false;
@@ -437,6 +439,8 @@
       u.searchParams.set("embedded", "1");
       u.searchParams.set("parentOrigin", window.location.origin);
       if (customerKey) u.searchParams.set("lgs_customer_key", customerKey);
+      if (customerName) u.searchParams.set("lgs_customer_name", customerName);
+      if (customerEmail) u.searchParams.set("lgs_customer_email", customerEmail);
       if (options && options.designId) {
         u.searchParams.set("designId", options.designId);
         u.searchParams.set(

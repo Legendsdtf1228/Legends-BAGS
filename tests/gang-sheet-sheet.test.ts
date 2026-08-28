@@ -7,6 +7,8 @@ import {
   gangSheetAreaPriceUsd,
   gangSheetDesignSheet,
   isGangSheetHeightIn,
+  resolveAllowedSheetHeights,
+  resolveAllowedSheetWidths,
   resolveGangSheetHeight,
 } from "../app/domain/design/gang-sheet-sheet";
 
@@ -66,6 +68,28 @@ describe("gang sheet dimensions regression", () => {
     expect(short).toBeCloseTo(26.46, 2);
     expect(wrong).toBeCloseTo(396.9, 2);
     expect(short).not.toBe(wrong);
+  });
+});
+
+describe("resolveAllowedSheetWidths", () => {
+  it("restricts to product width when bound", () => {
+    expect(resolveAllowedSheetWidths(22.5)).toEqual([22.5]);
+    expect(resolveAllowedSheetWidths(24)).toEqual([24]);
+  });
+
+  it("returns all widths when product width is unset", () => {
+    expect(resolveAllowedSheetWidths(null)).toEqual(GANG_SHEET_WIDTHS);
+  });
+});
+
+describe("resolveAllowedSheetHeights", () => {
+  it("uses variant heights when configured", () => {
+    expect(
+      resolveAllowedSheetHeights([
+        { variantGid: "gid://shopify/ProductVariant/1", sheetHeightIn: 24 },
+        { variantGid: "gid://shopify/ProductVariant/2", sheetHeightIn: 36 },
+      ]),
+    ).toEqual([24, 36]);
   });
 });
 

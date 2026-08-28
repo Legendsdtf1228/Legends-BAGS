@@ -34,6 +34,8 @@ export function mergeEditorLaunchFromUrl(
   designId: string;
   designVersion: string;
   parentOrigin: string;
+  customerName: string;
+  customerEmail: string;
 } {
   const url = new URL(request.url);
   const launch = parseEditorLaunchParams(url.searchParams);
@@ -54,5 +56,7 @@ export function mergeEditorLaunchFromUrl(
     designId: url.searchParams.get("designId") ?? "",
     designVersion: url.searchParams.get("designVersion") ?? "",
     parentOrigin: url.searchParams.get("parentOrigin") ?? "",
+    customerName: url.searchParams.get("lgs_customer_name")?.trim() || "",
+    customerEmail: url.searchParams.get("lgs_customer_email")?.trim() || "",
   };
 }

@@ -195,6 +195,8 @@ export type EditorLaunchPassthrough = {
   parentOrigin?: string | null;
   lgs_session?: string | null;
   lgs_customer_key?: string | null;
+  lgs_customer_name?: string | null;
+  lgs_customer_email?: string | null;
   designId?: string | null;
   designVersion?: string | null;
 };
@@ -222,6 +224,12 @@ export function buildEditorLaunchUrl(
   if (passthrough.lgs_session) url.searchParams.set("lgs_session", passthrough.lgs_session);
   if (passthrough.lgs_customer_key) {
     url.searchParams.set("lgs_customer_key", passthrough.lgs_customer_key);
+  }
+  if (passthrough.lgs_customer_name) {
+    url.searchParams.set("lgs_customer_name", passthrough.lgs_customer_name);
+  }
+  if (passthrough.lgs_customer_email) {
+    url.searchParams.set("lgs_customer_email", passthrough.lgs_customer_email);
   }
   if (passthrough.designId) url.searchParams.set("designId", passthrough.designId);
   if (passthrough.designVersion) url.searchParams.set("designVersion", passthrough.designVersion);

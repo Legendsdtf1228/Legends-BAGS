@@ -1,17 +1,42 @@
-/** BAGS-style print quality legend — left of canvas workspace. */
+import type { QualityDisplayPrefs } from "../gang-sheet/quality-inspector";
 
-export function BagsQualityLegend() {
+export type BagsQualityLegendProps = {
+  qualityPrefs: QualityDisplayPrefs;
+  onQualityPrefsChange: (prefs: QualityDisplayPrefs) => void;
+};
+
+/** BAGS-style print quality legend with inline overlap/resolution toggles. */
+export function BagsQualityLegend(props: BagsQualityLegendProps) {
+  const { qualityPrefs, onQualityPrefsChange } = props;
+
+  const setPref = (key: keyof QualityDisplayPrefs, value: boolean) =>
+    onQualityPrefsChange({ ...qualityPrefs, [key]: value });
+
   return (
     <aside className="bags-quality-legend" aria-label="Print quality legend">
       <strong className="bags-quality-legend-title">Legend</strong>
       <ul className="bags-quality-legend-list">
         <li className="bags-legend-overlap">
-          <span className="bags-legend-swatch" aria-hidden />
-          Overlapping lines
+          <label className="bags-legend-toggle">
+            <input
+              type="checkbox"
+              checked={qualityPrefs.showOverlapOutlines}
+              onChange={(e) => setPref("showOverlapOutlines", e.target.checked)}
+            />
+            <span className="bags-legend-swatch" aria-hidden />
+            Overlapping lines
+          </label>
         </li>
         <li className="bags-legend-resolution">
-          <span className="bags-legend-swatch" aria-hidden />
-          Resolution lines
+          <label className="bags-legend-toggle">
+            <input
+              type="checkbox"
+              checked={qualityPrefs.showResolutionOutlines}
+              onChange={(e) => setPref("showResolutionOutlines", e.target.checked)}
+            />
+            <span className="bags-legend-swatch" aria-hidden />
+            Resolution lines
+          </label>
         </li>
         <li className="bags-legend-optimal">
           <span className="bags-legend-swatch" aria-hidden />

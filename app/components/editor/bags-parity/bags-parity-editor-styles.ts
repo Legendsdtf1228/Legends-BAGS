@@ -142,6 +142,8 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
 .lgs-editor.bags-parity-editor .bags-quality-legend-title{display:block;font-size:11px;font-weight:700;margin-bottom:8px;color:var(--bags-text)}
 .lgs-editor.bags-parity-editor .bags-quality-legend-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .lgs-editor.bags-parity-editor .bags-quality-legend-list li{display:flex;align-items:flex-start;gap:6px;color:var(--bags-muted)}
+.lgs-editor.bags-parity-editor .bags-legend-toggle{display:flex;align-items:flex-start;gap:6px;cursor:pointer;font-size:inherit;color:inherit}
+.lgs-editor.bags-parity-editor .bags-legend-toggle input{margin-top:2px;flex-shrink:0}
 .lgs-editor.bags-parity-editor .bags-legend-swatch{
   width:14px;height:14px;border-radius:2px;flex-shrink:0;margin-top:1px;border:1px solid rgba(0,0,0,.12)
 }
@@ -272,7 +274,58 @@ ${BAGS_STOREFRONT_TOKEN_CSS}
 .lgs-editor.bags-parity-editor .bags-settings-modal{width:min(480px,100%)}
 .lgs-editor.bags-parity-editor .bags-names-modal{width:min(520px,100%)}
 .lgs-editor.bags-parity-editor .bags-names-modal .sidebar-form{display:grid;gap:10px}
-.lgs-editor.bags-parity-editor .bags-names-modal textarea{min-height:140px;resize:vertical}
+.lgs-editor.bags-parity-editor .bags-names-form{display:grid;gap:12px}
+.lgs-editor.bags-parity-editor .bags-names-lead{margin:0;font-size:12px;color:var(--bags-muted);line-height:1.45}
+.lgs-editor.bags-parity-editor .bags-names-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lgs-editor.bags-parity-editor .bags-names-meta{margin:0;font-size:11px;color:var(--bags-muted)}
+.lgs-editor.bags-parity-editor .bags-names-generate{justify-self:start}
+.lgs-editor.bags-parity-editor .bags-visual-aid-custom{align-items:center;gap:8px}
+.lgs-editor.bags-parity-editor .bags-visual-aid-color{width:32px;height:28px;padding:0;border:1px solid var(--bags-border);border-radius:3px;background:#fff}
+
+.lgs-editor.bags-parity-editor .bags-design-picker-modal{width:min(640px,100%)}
+.lgs-editor.bags-parity-editor .bags-design-picker-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.lgs-editor.bags-parity-editor .bags-design-picker-row{
+  width:100%;display:grid;grid-template-columns:56px 1fr;gap:10px;align-items:center;text-align:left;
+  border:1px solid var(--bags-border);border-radius:4px;padding:8px;background:#fff;cursor:pointer
+}
+.lgs-editor.bags-parity-editor .bags-design-picker-row:hover{border-color:var(--bags-primary);background:#f8f9fa}
+.lgs-editor.bags-parity-editor .bags-design-picker-thumb{width:56px;height:56px;border-radius:4px;overflow:hidden;display:grid;place-items:center}
+.lgs-editor.bags-parity-editor .bags-design-picker-thumb img{width:100%;height:100%;object-fit:contain}
+.lgs-editor.bags-parity-editor .bags-design-picker-thumb-empty{background:#e8eaed;font-size:11px;font-weight:700;color:var(--bags-muted)}
+.lgs-editor.bags-parity-editor .bags-design-picker-copy strong,.lgs-editor.bags-parity-editor .bags-design-picker-copy small{display:block;line-height:1.35}
+.lgs-editor.bags-parity-editor .bags-design-picker-copy small{font-size:11px;color:var(--bags-muted)}
+
+.bags-welcome-center{min-height:100vh;background:var(--bags-workspace,#e8eaed);color:var(--bags-text,#202124);font:13px/1.35 Inter,system-ui,sans-serif}
+.bags-welcome-center .bags-welcome-shell{max-width:920px;margin:0 auto;padding:20px 16px 32px}
+.bags-welcome-center .bags-welcome-top{padding:8px 0 16px}
+.bags-welcome-center .bags-welcome-brand{display:flex;align-items:center;gap:10px}
+.bags-welcome-center .bags-welcome-logo{width:40px;height:40px;border-radius:8px;display:grid;place-items:center;background:var(--bags-primary,#1a73e8);color:#fff;font-weight:800}
+.bags-welcome-center .bags-welcome-brand strong,.bags-welcome-center .bags-welcome-brand small{display:block;line-height:1.25}
+.bags-welcome-center .bags-welcome-brand small{font-size:11px;color:var(--bags-muted,#5f6368)}
+.bags-welcome-center .bags-welcome-card{background:#fff;border:1px solid var(--bags-border,#dadce0);border-radius:8px;padding:24px 28px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.bags-welcome-center .bags-welcome-card h1{margin:0 0 8px;font-size:22px;text-align:center}
+.bags-welcome-center .bags-welcome-lead{margin:0 0 18px;text-align:center;color:var(--bags-muted,#5f6368);font-size:13px;line-height:1.5}
+.bags-welcome-center .bags-welcome-sheet-row{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;margin-bottom:18px;padding:12px;background:#f8f9fa;border-radius:6px;border:1px solid var(--bags-border,#dadce0)}
+.bags-welcome-center .bags-welcome-sheet-row label{display:grid;gap:4px;font-size:11px;font-weight:600;color:var(--bags-muted,#5f6368)}
+.bags-welcome-center .bags-welcome-sheet-row select{padding:8px;border:1px solid var(--bags-border,#dadce0);border-radius:4px;background:#fff;font:inherit}
+.bags-welcome-center .bags-welcome-price{text-align:right;font-size:11px;color:var(--bags-muted,#5f6368)}
+.bags-welcome-center .bags-welcome-price strong{display:block;font-size:16px;color:var(--bags-text,#202124)}
+.bags-welcome-center .bags-welcome-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bags-welcome-center .bags-welcome-action{
+  display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:start;text-align:left;
+  border:1px solid var(--bags-border,#dadce0);border-radius:6px;padding:14px;background:#fff;cursor:pointer;color:inherit;text-decoration:none
+}
+.bags-welcome-center .bags-welcome-action:hover:not(.disabled){border-color:var(--bags-primary,#1a73e8);background:#f8f9fa}
+.bags-welcome-center .bags-welcome-action.featured{border-color:var(--bags-primary,#1a73e8);background:#e8f0fe}
+.bags-welcome-center .bags-welcome-action.disabled{opacity:.55;cursor:not-allowed}
+.bags-welcome-center .bags-welcome-action strong{font-size:14px;grid-column:2}
+.bags-welcome-center .bags-welcome-action span{font-size:12px;color:var(--bags-muted,#5f6368);grid-column:2;line-height:1.4}
+.bags-welcome-center .bags-welcome-action-icon{grid-row:span 2;display:grid;place-items:center;width:44px;height:44px;border-radius:8px;background:#e8f0fe;color:var(--bags-primary,#1a73e8)}
+@media(max-width:720px){
+  .bags-welcome-center .bags-welcome-actions{grid-template-columns:1fr}
+  .bags-welcome-center .bags-welcome-sheet-row{grid-template-columns:1fr}
+  .lgs-editor.bags-parity-editor .bags-names-grid{grid-template-columns:1fr}
+}
 .lgs-editor.bags-parity-editor .tip.toast{display:none}
 
 @media(max-width:1280px){
