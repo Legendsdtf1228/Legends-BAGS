@@ -386,6 +386,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
       productSheetWidthIn: editorConfig?.binding?.sheetWidthIn ?? editorConfig?.sheet.widthIn ?? null,
       gangSheetVariants: editorConfig?.gangSheetVariants ?? [],
+      productTitle: editorConfig?.binding?.productTitle ?? null,
+      productStatus: editorConfig?.binding?.productStatus ?? null,
+      syncStatus: editorConfig?.binding?.syncStatus ?? null,
       defaultSheetHeightIn: editorConfig?.defaultSheetHeightIn ?? 24,
       defaultSheet: editorConfig?.sheet ?? {
         widthIn: 22.5,
@@ -583,6 +586,14 @@ export default function GangSheetEditor() {
       }),
     [page.gangSheetVariants, page.variantPriceCents, sheetHeight],
   );
+
+  const activeVariantMeta = useMemo(() => {
+    const match = page.gangSheetVariants.find((v) => v.sheetHeightIn === sheetHeight);
+    return {
+      title: match?.variantTitle ?? null,
+      id: page.variantId || match?.variantGid?.replace("gid://shopify/ProductVariant/", "") || null,
+    };
+  }, [page.gangSheetVariants, page.variantId, sheetHeight]);
 
   const storefrontCustomer = useMemo<BagsCustomerAccount | null>(() => {
     const name = page.customerName?.trim();
@@ -972,13 +983,16 @@ export default function GangSheetEditor() {
     }
     if (tab === "canva") {
       setLeftRailTab("canva");
-      setSidebarTab("uploads");
       setMobileDrawer("sidebar");
       return;
     }
     if (tab === "dropbox") {
       setLeftRailTab("dropbox");
-      setSidebarTab("uploads");
+      setMobileDrawer("sidebar");
+      return;
+    }
+    if (tab === "names-numbers") {
+      setLeftRailTab("names-numbers");
       setMobileDrawer("sidebar");
       return;
     }
@@ -990,7 +1004,10 @@ export default function GangSheetEditor() {
   }
 
   const desktopSidePanelOpen =
-    isBagsLeftRailPanelTab(leftRailTab) || leftRailTab === "canva" || leftRailTab === "dropbox";
+    isBagsLeftRailPanelTab(leftRailTab) ||
+    leftRailTab === "canva" ||
+    leftRailTab === "dropbox" ||
+    leftRailTab === "names-numbers";
   const desktopPropertiesOpen = Boolean(selected);
 
   function commitSheetSize(w: number, h: number, mode: "clamp" | "scale") {
@@ -3257,7 +3274,56 @@ export default function GangSheetEditor() {
           >
             ×
           </button>
-          {sidebarTab === "products" ? (
+          {leftRailTab === "canva" ? (
+            <BagsIntegrationPanel
+              provider="canva"
+              status="disconnected"
+              onConnect={() => setMessage("Canva OAuth is not configured for this shop.")}
+            />
+          ) : leftRailTab === "dropbox" ? (
+            <BagsIntegrationPanel
+              provider="dropbox"
+              status="disconnected"
+              onConnect={() => setMessage("Dropbox OAuth is not configured for this shop.")}
+            />
+          ) : leftRailTab === "names-numbers" ? (
+            <div className="bags-names-numbers-panel">
+              <BagsNamesNumbersContent
+                workflow={namesNumbersWorkflow}
+                onWorkflowChange={setNamesNumbersWorkflow}
+                namesList={namesList}
+                onNamesListChange={setNamesList}
+                numbersList={numbersList}
+                onNumbersListChange={setNumbersList}
+                nameFontFamily={rosterNameFontFamily}
+                onNameFontFamilyChange={setRosterNameFontFamily}
+                numberFontFamily={rosterNumberFontFamily}
+                onNumberFontFamilyChange={setRosterNumberFontFamily}
+                nameFontSize={rosterNameFontSize}
+                onNameFontSizeChange={setRosterNameFontSize}
+                numberFontSize={rosterNumberFontSize}
+                onNumberFontSizeChange={setRosterNumberFontSize}
+                nameWidthIn={rosterNameWidthIn}
+                onNameWidthInChange={setRosterNameWidthIn}
+                numberWidthIn={rosterNumberWidthIn}
+                onNumberWidthInChange={setRosterNumberWidthIn}
+                nameStrokeWidth={rosterNameStrokeWidth}
+                onNameStrokeWidthChange={setRosterNameStrokeWidth}
+                numberStrokeWidth={rosterNumberStrokeWidth}
+                onNumberStrokeWidthChange={setRosterNumberStrokeWidth}
+                strokeColor={rosterStrokeColor}
+                onStrokeColorChange={setRosterStrokeColor}
+                textColor={rosterTextColor}
+                onTextColorChange={setRosterTextColor}
+                quantity={rosterQuantity}
+                onQuantityChange={setRosterQuantity}
+                onApplyNamePreset={applyNameSizePreset}
+                onApplyNumberPreset={applyNumberSizePreset}
+                onGenerateNames={generateNames}
+                onGenerateNumbers={generateNumbers}
+              />
+            </div>
+          ) : sidebarTab === "products" || leftRailTab === "products" ? (
             <BagsProductsPanel
               sheetWidth={sheetWidth}
               activeHeight={sheetHeight}
@@ -3265,11 +3331,17 @@ export default function GangSheetEditor() {
                 sheetHeightIn: v.sheetHeightIn,
                 variantPriceCents: v.variantPriceCents,
                 variantTitle: v.variantTitle ?? null,
+                variantId: v.variantGid?.replace("gid://shopify/ProductVariant/", "") ?? null,
               }))}
               pricePerSqIn={page.pricePerSqIn}
+              productTitle={page.productTitle}
+              productStatus={page.productStatus}
+              syncStatus={page.syncStatus}
+              selectedVariantId={activeVariantMeta.id}
+              selectedVariantTitle={activeVariantMeta.title}
               onSelectHeight={(heightIn) => requestSheetSize(sheetWidth, heightIn)}
             />
-          ) : sidebarTab === "uploads" ? (
+          ) : sidebarTab === "uploads" || leftRailTab === "uploads" ? (
             <BagsUploadsPanel
               uploadPool={uploadPool}
               filteredPool={filteredPool}
@@ -3331,18 +3403,6 @@ export default function GangSheetEditor() {
                 ))}
               </div>
             </BagsIntegrationPanel>
-          ) : leftRailTab === "canva" ? (
-            <BagsIntegrationPanel
-              provider="canva"
-              status="disconnected"
-              onConnect={() => setMessage("Canva OAuth is not configured for this shop.")}
-            />
-          ) : leftRailTab === "dropbox" ? (
-            <BagsIntegrationPanel
-              provider="dropbox"
-              status="disconnected"
-              onConnect={() => setMessage("Dropbox OAuth is not configured for this shop.")}
-            />
           ) : sidebarTab === "text" ? (
             <>
               <div className="heading"><span><strong>Text</strong><small>Add labels &amp; titles</small></span></div>

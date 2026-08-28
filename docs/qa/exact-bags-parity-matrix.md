@@ -15,7 +15,7 @@ Status key: **Exact** | **Equivalent** | **Partial** | **Missing** | **Intention
 | Save / Close | Yes | Header | Equivalent |
 | Live USD price | Yes | Synced variant via app proxy | Equivalent |
 | Customer account menu | Yes | Storefront session | Equivalent |
-| Permanent left rail (desktop) | Yes | Home/Products/Uploads/Gallery/Canva/Dropbox/Settings | Equivalent |
+| Permanent left rail (desktop) | Yes | Home/Products/Uploads/Gallery/Canva/Dropbox/N&N/Settings | Equivalent |
 | Uploads side panel | Yes | `BagsUploadsPanel` grid/list, progress, qty badges | Equivalent |
 | Properties panel (desktop right) | Yes | Width/height/aspect/qty/margin/adjustments/FitCheck | Equivalent |
 | Sheet size selector (22.5 widths) | Yes | Toolbar + domain constants | Exact |
@@ -44,7 +44,7 @@ Status key: **Exact** | **Equivalent** | **Partial** | **Missing** | **Intention
 |------|--------|-------|
 | Image Editor (Enhance/Halftone/Crop/Colors) | Equivalent | Browser preview; Apply commits to canvas |
 | Add Image full parity (folders, bulk) | Partial | Modal shell; Canva/Dropbox disconnected honestly |
-| Canva / Dropbox integrations | Missing | OAuth blocked — honest disconnected state |
+| Canva / Dropbox integrations | Partial | Dedicated panels with honest disconnected state; OAuth blocked |
 | Text workflow | Partial | Sidebar text panel |
 | Names & Numbers presets + CSV | Equivalent | S/M/L presets, sample CSV download, validation |
 | Auto Fill / Nest / Build | Equivalent | Confirmation modals with fitted/remaining report |
@@ -98,9 +98,17 @@ node scripts/capture-gang-sheet-screenshots.mjs --capture
 ## Storefront verification (not localhost)
 
 - App proxy: https://legends-bags-in2lwdll.myshopify.com/apps/legends-bags/
-- Builder: https://legends-bags-in2lwdll.myshopify.com/apps/legends-bags/builder?type=gang_sheet
-- Pricing: synced variant ($17 on 22.5×24)
-- Customer: logged-in Shopify customer name/email when session present
+- Builder: https://legends-bags-in2lwdll.myshopify.com/apps/legends-bags/builder?type=gang_sheet (recovery screen links assigned product when product ID missing)
+- Product page: https://legends-bags-in2lwdll.myshopify.com/products/lgs-dev-gang-sheet-builder-test (publish via Admin → Set up → Publish dev test products if 404)
+- Assigned product example: product=10294398320888, 22.5×24 @ $17
+- Customer session: app-proxy `/session` reads signed `logged_in_customer_id`; editor uses verified `lgs_session` only
+
+### Dev storefront login (acceptance)
+
+1. Open https://legends-bags-in2lwdll.myshopify.com/account/login
+2. Sign in with a dev store customer account
+3. Open the gang sheet product page and launch the builder — header should show customer name/email (not Guest)
+4. Guest check: open builder in a private window without logging in — header shows Guest
 
 ## Remaining honest gaps
 

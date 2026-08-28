@@ -12,6 +12,7 @@ import {
   resolveAllowedSheetWidths,
   resolveGangSheetHeight,
   resolveGangSheetVariantPriceCents,
+  resolveGangSheetProductPanelVariants,
 } from "../app/domain/design/gang-sheet-sheet";
 
 describe("resolveGangSheetHeight", () => {
@@ -124,13 +125,26 @@ describe("resolveGangSheetVariantPriceCents", () => {
     ).toBe(1700);
   });
 
-  it("matches variant price when DB height is a float", () => {
+  it("prefers fixed variant price over area-pricing fallback", () => {
     expect(
       resolveGangSheetVariantPriceCents({
-        gangSheetVariants: [{ sheetHeightIn: 24.0001, variantPriceCents: 1700 }],
+        gangSheetVariants: [{ sheetHeightIn: 24, variantPriceCents: 1700 }],
         sheetHeightIn: 24,
+        fallbackVariantPriceCents: 9999,
       }),
     ).toBe(1700);
+  });
+});
+
+describe("resolveGangSheetProductPanelVariants", () => {
+  it("falls back to active binding when catalog is empty", () => {
+    const binding = {
+      builderType: "gang_sheet" as const,
+      sheetHeightIn: 24,
+      variantPriceCents: 1700,
+      variantTitle: "22.5 x 24",
+    };
+    expect(resolveGangSheetProductPanelVariants<typeof binding>([], binding)).toEqual([binding]);
   });
 });
 

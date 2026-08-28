@@ -138,3 +138,18 @@ export function resolveGangSheetVariantPriceCents(params: {
   );
   return firstPriced?.variantPriceCents ?? null;
 }
+
+/** Product panel rows — fall back to the active binding when variant catalog is empty. */
+export function resolveGangSheetProductPanelVariants<
+  T extends GangSheetVariantPriceBinding & { variantTitle?: string | null },
+>(gangSheetVariants: T[], binding: (T & { builderType?: string }) | null): T[] {
+  const rows = gangSheetVariants.filter(
+    (v) => v.sheetHeightIn != null && Number.isFinite(v.sheetHeightIn),
+  );
+  if (rows.length) {
+    return [...rows].sort((a, b) => (a.sheetHeightIn ?? 0) - (b.sheetHeightIn ?? 0));
+  }
+  if (!binding || binding.builderType !== "gang_sheet") return [];
+  if (binding.sheetHeightIn == null || !Number.isFinite(binding.sheetHeightIn)) return [];
+  return [binding];
+}

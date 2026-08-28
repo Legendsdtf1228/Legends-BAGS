@@ -21,6 +21,9 @@ export type EditorBindingConfig = {
   imageMarginIn: number | null;
   artboardMarginIn: number | null;
   variantTitle?: string | null;
+  productTitle?: string | null;
+  productStatus?: string | null;
+  syncStatus?: string | null;
 };
 
 export type EditorPageConfig = {
@@ -82,6 +85,9 @@ function mapBinding(row: NonNullable<Awaited<ReturnType<typeof resolveProductBin
     imageMarginIn: row.imageMarginIn,
     artboardMarginIn: row.artboardMarginIn,
     variantTitle: row.variantTitle,
+    productTitle: row.productTitle,
+    productStatus: row.productStatus,
+    syncStatus: row.syncStatus,
   };
 }
 
@@ -134,7 +140,17 @@ export async function loadEditorPageConfig(
     defaultSheetHeightIn,
     appearance,
     binding: binding ? mapBinding(binding) : null,
-    gangSheetVariants,
+    gangSheetVariants: ensureGangSheetVariantCatalog(gangSheetVariants, binding ? mapBinding(binding) : null),
     resolvedProductGid,
   };
+}
+
+function ensureGangSheetVariantCatalog(
+  gangSheetVariants: EditorBindingConfig[],
+  binding: EditorBindingConfig | null,
+): EditorBindingConfig[] {
+  if (gangSheetVariants.length) return gangSheetVariants;
+  if (!binding || binding.builderType !== "gang_sheet") return [];
+  if (binding.sheetHeightIn == null || !Number.isFinite(binding.sheetHeightIn)) return [];
+  return [binding];
 }

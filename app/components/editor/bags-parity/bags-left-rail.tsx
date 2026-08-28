@@ -7,6 +7,7 @@ export type BagsLeftRailTab =
   | "gallery"
   | "canva"
   | "dropbox"
+  | "names-numbers"
   | "settings";
 
 export type BagsLeftRailProps = {
@@ -22,6 +23,7 @@ const TABS: { id: BagsLeftRailTab; label: string; icon: string }[] = [
   { id: "gallery", label: "Gallery", icon: "gallery" },
   { id: "canva", label: "Canva", icon: "canva" },
   { id: "dropbox", label: "Dropbox", icon: "dropbox" },
+  { id: "names-numbers", label: "Names & Numbers", icon: "names" },
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
