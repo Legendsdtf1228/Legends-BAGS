@@ -18,6 +18,8 @@ import { BagsActiveSheetsDrawer } from "../components/editor/bags-parity/bags-ac
 import { BagsAddImageModal, type AddImageTab } from "../components/editor/bags-parity/bags-add-image-modal";
 import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-editor-settings-drawer";
 import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
+import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
+import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
 import { BAGS_PARITY_EDITOR_CSS } from "../components/editor/bags-parity/bags-parity-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
@@ -3267,6 +3269,9 @@ export default function GangSheetEditor() {
           ) : null}
         </aside>
         <main className="canvas-main">
+          <div className="bags-canvas-row">
+          <BagsQualityLegend />
+          <div className="bags-canvas-scroll-wrap">
           <div className="canvas-meta">
             <strong>{sheetWidth} × {sheetHeight} in</strong>
             <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
@@ -3421,13 +3426,13 @@ export default function GangSheetEditor() {
               ))}
               {!items.length && (
                 <div className="empty">
-                  <b>＋</b>
-                  <strong>Your gang sheet starts here</strong>
-                  <small>Add artwork from Uploads, Gallery, or Text — then drag to position.</small>
+                  <small>Use Add Image below to place artwork on your gang sheet.</small>
                 </div>
               )}
             </div>
             </div>
+          </div>
+          </div>
           </div>
         </main>
         <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
@@ -3625,21 +3630,14 @@ export default function GangSheetEditor() {
         }}
       />
       {bottomNav === "names-numbers" ? (
-        <>
-          <button type="button" className="bags-parity-drawer-backdrop" aria-label="Close" onClick={() => setBottomNav(null)} />
-          <aside className="bags-parity-drawer bags-names-drawer" aria-label="Names and Numbers">
-            <header className="bags-drawer-head">
-              <strong>Names &amp; Numbers</strong>
-              <button type="button" className="bags-icon-btn" onClick={() => setBottomNav(null)} aria-label="Close">×</button>
-            </header>
-            <div className="bags-drawer-body sidebar-form">
-              <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
-              <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-              <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-              <button type="button" className="bags-btn bags-btn-primary" onClick={generateRoster}>Generate on sheet</button>
-            </div>
-          </aside>
-        </>
+        <BagsNamesNumbersModal open onClose={() => setBottomNav(null)}>
+          <div className="sidebar-form">
+            <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+            <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
+            <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
+            <button type="button" className="bags-btn bags-btn-primary" onClick={() => { generateRoster(); setBottomNav(null); }}>Generate on sheet</button>
+          </div>
+        </BagsNamesNumbersModal>
       ) : null}
       <BagsAddImageModal
         open={addImageOpen}

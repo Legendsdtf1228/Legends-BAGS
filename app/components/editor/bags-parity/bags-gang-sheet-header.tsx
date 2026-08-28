@@ -58,10 +58,6 @@ export function BagsGangSheetHeader(props: BagsGangSheetHeaderProps) {
             onChange={(v) => onQuantityChange(Math.max(1, Math.round(v)))}
           />
         </div>
-        <div className="bags-parity-price" aria-live="polite">
-          <strong>${estimateUsd.toFixed(2)}</strong>
-          <span>USD</span>
-        </div>
       </div>
 
       <div className="bags-parity-header-actions">
@@ -84,6 +80,11 @@ export function BagsGangSheetHeader(props: BagsGangSheetHeaderProps) {
         <button type="button" className="bags-btn bags-btn-danger" onClick={onClose} aria-label="Close editor">
           Close
         </button>
+      </div>
+
+      <div className="bags-parity-price" aria-live="polite">
+        <strong>${estimateUsd.toFixed(2)}</strong>
+        <span>USD</span>
       </div>
 
       <details className="bags-parity-account">

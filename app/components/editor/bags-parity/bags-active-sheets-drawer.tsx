@@ -45,7 +45,7 @@ export function BagsActiveSheetsDrawer(props: BagsActiveSheetsDrawerProps) {
     <>
       <button type="button" className="bags-parity-drawer-backdrop" aria-label="Close drawer" onClick={onClose} />
       <aside
-        className={`bags-parity-drawer bags-active-sheets ${collapsed ? "collapsed" : ""}`}
+        className={`bags-parity-drawer bags-active-sheets bags-drawer-right ${collapsed ? "collapsed" : ""}`}
         aria-label="Active gang sheets"
       >
         <header className="bags-drawer-head">

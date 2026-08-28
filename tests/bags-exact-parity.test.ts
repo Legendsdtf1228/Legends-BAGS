@@ -9,6 +9,8 @@ describe("exact BAGS parity foundation", () => {
     expect(BAGS_PARITY_EDITOR_CSS).toContain("bags-parity-editor");
     expect(BAGS_PARITY_EDITOR_CSS).toContain("bags-parity-bottom-nav");
     expect(BAGS_PARITY_EDITOR_CSS).toContain("bags-parity-header");
+    expect(BAGS_PARITY_EDITOR_CSS).toContain("bags-quality-legend");
+    expect(BAGS_PARITY_EDITOR_CSS).toContain("bags-drawer-right");
   });
 
   it("uses BAGS primary blue for customer actions", () => {
