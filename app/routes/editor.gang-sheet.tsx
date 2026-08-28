@@ -9,9 +9,18 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
-import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
+import type { OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
-import { GANG_SHEET_SHELL_CSS } from "../components/editor/gang-sheet/gang-sheet-shell-styles";
+import { BagsGangSheetHeader } from "../components/editor/bags-parity/bags-gang-sheet-header";
+import { BagsSheetToolbar } from "../components/editor/bags-parity/bags-sheet-toolbar";
+import { BagsBottomNav, type BagsBottomNavTab } from "../components/editor/bags-parity/bags-bottom-nav";
+import { BagsActiveSheetsDrawer } from "../components/editor/bags-parity/bags-active-sheets-drawer";
+import { BagsAddImageModal, type AddImageTab } from "../components/editor/bags-parity/bags-add-image-modal";
+import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-editor-settings-drawer";
+import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
+import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
+import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
+import { BAGS_PARITY_EDITOR_CSS } from "../components/editor/bags-parity/bags-parity-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
@@ -24,7 +33,6 @@ import {
 } from "../components/editor/gang-sheet/editor-zoom";
 import {
   QualityInspectorPanel,
-  QualityStatusButton,
   type QualityDisplayPrefs,
 } from "../components/editor/gang-sheet/quality-inspector";
 import { SheetShrinkDialog } from "../components/editor/gang-sheet/sheet-shrink-dialog";
@@ -396,7 +404,14 @@ export default function GangSheetEditor() {
   const [showFirstTip, setShowFirstTip] = useState(true);
   const [uploadSearch, setUploadSearch] = useState("");
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
-  const [uploadView, setUploadView] = useState<"grid" | "list">("grid");
+  const [sheetQuantity, setSheetQuantity] = useState(page.quantity ?? 1);
+  const [bottomNav, setBottomNav] = useState<BagsBottomNavTab | null>(null);
+  const [addImageOpen, setAddImageOpen] = useState(false);
+  const [addImageTab, setAddImageTab] = useState<AddImageTab>("recent");
+  const [sheetsDrawerCollapsed, setSheetsDrawerCollapsed] = useState(false);
+  const [visualAid, setVisualAid] = useState<"checkerboard" | "gray" | "black" | "white" | "custom">("checkerboard");
+  const [artboardMarginEnabled, setArtboardMarginEnabled] = useState(true);
+  const [artboardMarginIn, setArtboardMarginIn] = useState(page.defaultSheet.artboardMarginIn ?? 0.1);
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
@@ -455,7 +470,6 @@ export default function GangSheetEditor() {
     if (!id) {
       setSelectedId(null);
       setSelectedIds(new Set());
-      setMobileDrawer((drawer) => (drawer === "properties" ? null : drawer));
       return;
     }
     if (additive) {
@@ -470,9 +484,6 @@ export default function GangSheetEditor() {
     } else {
       setSelectedId(id);
       setSelectedIds(new Set([id]));
-    }
-    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1024px)").matches) {
-      setMobileDrawer("properties");
     }
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
@@ -808,13 +819,12 @@ export default function GangSheetEditor() {
   function fitToViewport(mode: "width" | "sheet" = "sheet") {
     const el = scrollRef.current;
     if (!el) return;
-    const pad = 24;
     if (mode === "width") {
-      setZoom(fitWidthZoomPercent(el.clientWidth, sheetWidth, pad));
+      setZoom(fitWidthZoomPercent(el.clientWidth, sheetWidth));
       setZoomMode("fit-width");
       return;
     }
-    const fit = smartFitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight, pad);
+    const fit = smartFitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight);
     setZoom(fit.zoom);
     setZoomMode(fit.mode);
   }
@@ -852,6 +862,38 @@ export default function GangSheetEditor() {
       return;
     }
     if (action === "exit") {
+      setScreen("welcome");
+    }
+  }
+
+  function handleBottomNav(tab: BagsBottomNavTab) {
+    if (tab === "add-image") {
+      setAddImageOpen(true);
+      setBottomNav(null);
+      return;
+    }
+    setBottomNav((prev) => (prev === tab ? null : tab));
+  }
+
+  function stretchToArtboardWidth() {
+    if (!selected) return;
+    change({ widthIn: sheetWidth, xIn: 0 });
+  }
+
+  function stretchToArtboardHeight() {
+    if (!selected) return;
+    change({ heightIn: sheetHeight, yIn: 0 });
+  }
+
+  function centerBothSelection() {
+    alignSelection("center-h");
+    alignSelection("center-v");
+  }
+
+  function closeEditor() {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: "lgs:close-editor" }, page.parentOrigin || page.editorOrigin || "*");
+    } else {
       setScreen("welcome");
     }
   }
@@ -2032,7 +2074,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{GANG_SHEET_SHELL_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -2402,7 +2444,7 @@ export default function GangSheetEditor() {
 
     return (
       <div className="bags auto-mode lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{GANG_SHEET_SHELL_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         <header>
           <div className="brand">
             <b>L</b>
@@ -2886,8 +2928,8 @@ export default function GangSheetEditor() {
   }
 
   return (
-    <div className="bags lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{GANG_SHEET_SHELL_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+    <div className="bags lgs-editor bags-parity-editor" style={appearanceVars(page.appearance)}>
+      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BAGS_PARITY_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <GangSheetSaveDialog
@@ -2931,20 +2973,35 @@ export default function GangSheetEditor() {
           if (shrinkPrompt) commitSheetSize(shrinkPrompt.w, shrinkPrompt.h, "scale");
         }}
       />
-      <GangSheetCommandBar
-        designName={designName}
-        onDesignNameChange={(name) => {
-          setDesignName(name);
-          setDirty(true);
+      <BagsGangSheetHeader
+        quantity={sheetQuantity}
+        onQuantityChange={setSheetQuantity}
+        estimateUsd={estimate}
+        saving={saving}
+        hasItems={items.length > 0}
+        onSaveAndCart={openSaveDialog}
+        onSave={openSaveDialog}
+        onClose={closeEditor}
+        onMyDesigns={() => {
+          setScreen("welcome");
+          void refreshLibrary();
         }}
-        dirty={dirty}
-        saved={saved}
+      />
+      <BagsSheetToolbar
         sheetWidth={sheetWidth}
         sheetHeight={sheetHeight}
         sheetWidths={SHEET_WIDTHS}
         sheetHeights={SHEET_HEIGHTS}
         onSheetSizeChange={requestSheetSize}
-        estimateUsd={estimate}
+        canUndo={history.length > 0}
+        canRedo={future.length > 0}
+        onUndo={undo}
+        onRedo={redo}
+        panMode={spacePan}
+        onTogglePan={() => setSpacePan((v) => !v)}
+        gridVisible={gridVisible}
+        onToggleGrid={() => setGridVisible((v) => !v)}
+        onAutoNest={() => handleOverflowAction("arrange")}
         zoomLabel={zoomLabel}
         onZoomOut={() => {
           setZoom((z) => Math.max(15, z - 10));
@@ -2954,30 +3011,32 @@ export default function GangSheetEditor() {
           setZoom((z) => Math.min(200, z + 10));
           setZoomMode("custom");
         }}
-        onFitWidth={() => fitToViewport("width")}
         onFitSheet={() => fitToViewport("sheet")}
-        panMode={spacePan}
-        onTogglePan={() => setSpacePan((v) => !v)}
-        gridVisible={gridVisible}
-        onToggleGrid={() => setGridVisible((v) => !v)}
-        canUndo={history.length > 0}
-        canRedo={future.length > 0}
-        onUndo={undo}
-        onRedo={redo}
-        onHome={() => setScreen("welcome")}
-        onSaveOnly={openSaveDialog}
-        onSaveAndCart={openSaveDialog}
-        saving={saving}
-        hasItems={items.length > 0}
-        onOverflowAction={handleOverflowAction}
-        qualityButton={
-          <QualityStatusButton
-            summary={qualitySummary}
-            active={qualityPanelOpen}
-            onClick={() => setQualityPanelOpen((v) => !v)}
-          />
-        }
       />
+      {selected ? (
+        <BagsSelectionToolbar
+          selected={selected}
+          sheetWidth={sheetWidth}
+          sheetHeight={sheetHeight}
+          onChange={(patch) => change(patch)}
+          onRotateCcw={rotate}
+          onRotateCw={rotate}
+          onFlipH={flipHorizontal}
+          onFlipV={flipVertical}
+          onStretchWidth={stretchToArtboardWidth}
+          onStretchHeight={stretchToArtboardHeight}
+          onCenterH={() => alignSelection("center-h")}
+          onCenterV={() => alignSelection("center-v")}
+          onCenterBoth={centerBothSelection}
+          onSnapLeft={() => alignSelection("left")}
+          onSnapRight={() => alignSelection("right")}
+          onSnapTop={() => alignSelection("top")}
+          onSnapBottom={() => alignSelection("bottom")}
+          onDelete={removeSelected}
+          onDuplicate={duplicate}
+        />
+      ) : null}
+      <div className="bags-parity-body">
       <QualityInspectorPanel
         open={qualityPanelOpen}
         onOpenChange={setQualityPanelOpen}
@@ -3002,37 +3061,8 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className={`workspace ${selected ? "has-properties" : ""}`}>
-        <nav className="icon-rail" aria-label="Builder navigation">
-          <button
-            type="button"
-            className="rail-btn"
-            title="Home"
-            aria-label="Home"
-            onClick={() => setScreen("welcome")}
-          >
-            <EditorRailIcon name="home" label="Home" />
-            <span className="rail-label">Home</span>
-          </button>
-          {SIDEBAR_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`rail-btn ${sidebarTab === tab.id ? "active" : ""}`}
-              title={tab.label}
-              aria-label={tab.label}
-              onClick={() => handleSidebarTab(tab.id)}
-            >
-              <EditorRailIcon name={tab.icon} label={tab.label} />
-              <span className="rail-label">{tab.label}</span>
-              {tab.id === "uploads" && uploadPool.length ? (
-                <span className="rail-badge">{uploadPool.length}</span>
-              ) : null}
-            </button>
-          ))}
-        </nav>
-
-        <aside className={`sidebar-panel ${mobileDrawer === "sidebar" ? "mobile-open" : ""}`}>
+      <div className="workspace bags-parity-workspace">
+        <aside className="sidebar-panel" hidden aria-hidden>
           <button
             type="button"
             className="mobile-drawer-close"
@@ -3058,76 +3088,49 @@ export default function GangSheetEditor() {
                   <ToolbarIcon name="refresh" />
                 </button>
               </div>
-              <div className="panel-body">
-                <div className="panel-section">
-                  <label
-                    className="gs-panel-primary drop-target"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                    }}
-                  >
-                    {uploading ? "Uploading…" : "Upload Artwork"}
-                    <input
-                      ref={sidebarUploadRef}
-                      type="file"
-                      multiple
-                      accept="image/png,image/jpeg"
-                      hidden
-                      onChange={(e) => {
-                        void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                </div>
-                <div className="sidebar-tools">
-                  <input
-                    type="search"
-                    placeholder="Search uploads…"
-                    value={uploadSearch}
-                    onChange={(e) => setUploadSearch(e.target.value)}
-                    aria-label="Search uploads"
-                  />
-                  <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
-                    <option value="recent">Recent</option>
-                    <option value="name">Name</option>
-                  </select>
-                  <div className="view-toggle" role="group" aria-label="Upload view">
-                    <button type="button" className={uploadView === "grid" ? "active" : ""} onClick={() => setUploadView("grid")} aria-label="Grid view" aria-pressed={uploadView === "grid"}>
-                      ▦
-                    </button>
-                    <button type="button" className={uploadView === "list" ? "active" : ""} onClick={() => setUploadView("list")} aria-label="List view" aria-pressed={uploadView === "list"}>
-                      ☰
-                    </button>
-                  </div>
-                </div>
-                {!filteredPool.length ? (
-                  <label
-                    className="drop compact drop-target"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                    }}
-                  >
-                    <b>＋</b>
-                    <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
-                    <small>Drop PNG/JPEG here or use Upload Artwork above</small>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/png,image/jpeg"
-                      hidden
-                      onChange={(e) => {
-                        void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                ) : (
-                  <div className={uploadView === "grid" ? "pool-grid" : "pool-list"} key={poolTick}>
+              <div className="sidebar-tools">
+                <input
+                  type="search"
+                  placeholder="Search uploads…"
+                  value={uploadSearch}
+                  onChange={(e) => setUploadSearch(e.target.value)}
+                  aria-label="Search uploads"
+                />
+                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
+                  <option value="recent">Recent</option>
+                  <option value="name">Name</option>
+                </select>
+              </div>
+              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
+              <label
+                className="sidebar-upload-btn drop-target"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
+                }}
+              >
+                {uploading ? "Uploading…" : "Upload image(s)"}
+                <input
+                  ref={sidebarUploadRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg"
+                  hidden
+                  onChange={(e) => {
+                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {!filteredPool.length ? (
+                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
+                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
+                  <small>Drop PNG/JPEG files here or browse above</small>
+                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
+                </label>
+              ) : (
+                <div className="pool-grid" key={poolTick}>
                   {filteredPool.map((p) => {
                     const dpiInfo = dpiQualityTier(p.asset.dpi);
                     const onSheet = sheetCountForAsset(p.asset.assetId);
@@ -3152,8 +3155,7 @@ export default function GangSheetEditor() {
                     );
                   })}
                 </div>
-                )}
-              </div>
+              )}
             </>
           ) : sidebarTab === "gallery" ? (
             <>
@@ -3204,7 +3206,7 @@ export default function GangSheetEditor() {
                     <button key={p.id} type="button" className="chip" onClick={() => { setTextFontSize(p.fontSize); setTextColor(p.color); }}>{p.label}</button>
                   ))}
                 </div>
-                <button type="button" className="gs-panel-primary" onClick={() => addTextToSheet()}>Add text to sheet</button>
+                <button type="button" className="sidebar-upload-btn" onClick={() => addTextToSheet()}>Add text to sheet</button>
               </div>
             </>
           ) : sidebarTab === "names" ? (
@@ -3214,7 +3216,7 @@ export default function GangSheetEditor() {
               <div className="sidebar-form">
                 <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
                 <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-                <button type="button" className="gs-panel-primary" onClick={generateRoster}>Generate on sheet</button>
+                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
               </div>
             </>
           ) : sidebarTab === "layers" ? (
@@ -3267,6 +3269,9 @@ export default function GangSheetEditor() {
           ) : null}
         </aside>
         <main className="canvas-main">
+          <div className="bags-canvas-row">
+          <BagsQualityLegend />
+          <div className="bags-canvas-scroll-wrap">
           <div className="canvas-meta">
             <strong>{sheetWidth} × {sheetHeight} in</strong>
             <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
@@ -3421,55 +3426,15 @@ export default function GangSheetEditor() {
               ))}
               {!items.length && (
                 <div className="empty">
-                  <span className="empty-icon" aria-hidden>＋</span>
-                  <strong>Add artwork to begin</strong>
-                  <small>Upload PNG or JPEG files, then click a thumbnail to place on the sheet.</small>
-                  <div className="empty-actions">
-                    <button
-                      type="button"
-                      className="gs-empty-primary"
-                      onClick={() => {
-                        setSidebarTab("uploads");
-                        handleSidebarTab("uploads");
-                        sidebarUploadRef.current?.click();
-                      }}
-                    >
-                      Upload Artwork
-                    </button>
-                    <button
-                      type="button"
-                      className="gs-empty-secondary"
-                      onClick={() => {
-                        setSidebarTab("gallery");
-                        handleSidebarTab("gallery");
-                      }}
-                    >
-                      Browse Gallery
-                    </button>
-                  </div>
+                  <small>Use Add Image below to place artwork on your gang sheet.</small>
                 </div>
               )}
             </div>
             </div>
           </div>
-          {!selected && items.length > 0 ? (
-            <div className="gs-canvas-summary" aria-label="Sheet summary">
-              <p>
-                <span>Usage</span>
-                <strong>{utilization}%</strong>
-              </p>
-              <p>
-                <span>Printed</span>
-                <strong>{usedArea.toFixed(2)} in²</strong>
-              </p>
-              <p>
-                <span>Est. total</span>
-                <strong>${estimate.toFixed(2)}</strong>
-              </p>
-            </div>
-          ) : null}
+          </div>
+          </div>
         </main>
-        {selected ? (
         <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
           <button
             type="button"
@@ -3482,10 +3447,11 @@ export default function GangSheetEditor() {
           <div className="heading">
             <span>
               <strong>Properties</strong>
-              <small>Artwork selected</small>
+              <small>{selected ? "Artwork selected" : "Select an item"}</small>
             </span>
           </div>
-          <div className="panel-body">
+          {selected ? (
+            <>
               <div className="preview">
                 {selected.kind === "text" ? (
                   <span className="text-preview">{selected.textContent ?? selected.name}</span>
@@ -3598,7 +3564,13 @@ export default function GangSheetEditor() {
               >
                 Save to library
               </button>
-          </div>
+            </>
+          ) : (
+            <div className="none">
+              <b>↖</b>
+              <p>Click artwork on the sheet to resize, rotate, duplicate, or fill the sheet.</p>
+            </div>
+          )}
           <section className="summary">
             <p>
               <span>Printed area</span>
@@ -3614,17 +3586,108 @@ export default function GangSheetEditor() {
             </p>
           </section>
         </aside>
-        ) : null}
       </div>
-      <nav className="mobile-bar" aria-label="Mobile toolbar">
-        <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
-        <button type="button" onClick={() => { setSidebarTab("gallery"); setMobileDrawer("sidebar"); }}>Gallery</button>
-        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto Arrange</button>
-        <button type="button" onClick={() => { setSidebarTab("layers"); setMobileDrawer("sidebar"); }}>Layers</button>
-        <button type="button" className="save" onClick={openSaveDialog} disabled={saving || !items.length}>
-          {saving ? "Saving…" : "Save"}
-        </button>
-      </nav>
+      </div>
+      <BagsBottomNav active={bottomNav} onSelect={handleBottomNav} />
+      <BagsActiveSheetsDrawer
+        open={bottomNav === "select"}
+        collapsed={sheetsDrawerCollapsed}
+        onToggleCollapse={() => setSheetsDrawerCollapsed((v) => !v)}
+        onClose={() => setBottomNav(null)}
+        designName={designName}
+        onDesignNameChange={(name) => {
+          setDesignName(name);
+          setDirty(true);
+        }}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        artworkCount={items.length}
+        quantity={sheetQuantity}
+        onQuantityChange={setSheetQuantity}
+        onDuplicateSheet={() => handleOverflowAction("duplicate-design")}
+        onAddNewDesign={() => setScreen("welcome")}
+        onOpenPreviousDesigns={() => {
+          setScreen("welcome");
+          void refreshLibrary();
+        }}
+        onAutoBuild={() => handleOverflowAction("arrange")}
+        onStartOver={clearSheet}
+      />
+      <BagsEditorSettingsDrawer
+        open={bottomNav === "settings"}
+        onClose={() => setBottomNav(null)}
+        snapEnabled={snapEnabled}
+        onSnapChange={setSnapEnabled}
+        qualityPrefs={qualityPrefs}
+        onQualityPrefsChange={setQualityPrefs}
+        visualAid={visualAid}
+        onVisualAidChange={setVisualAid}
+        artboardMarginEnabled={artboardMarginEnabled}
+        artboardMarginIn={artboardMarginIn}
+        onArtboardMarginChange={(enabled, value) => {
+          setArtboardMarginEnabled(enabled);
+          setArtboardMarginIn(value);
+        }}
+      />
+      {bottomNav === "names-numbers" ? (
+        <BagsNamesNumbersModal open onClose={() => setBottomNav(null)}>
+          <div className="sidebar-form">
+            <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+            <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
+            <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
+            <button type="button" className="bags-btn bags-btn-primary" onClick={() => { generateRoster(); setBottomNav(null); }}>Generate on sheet</button>
+          </div>
+        </BagsNamesNumbersModal>
+      ) : null}
+      <BagsAddImageModal
+        open={addImageOpen}
+        onClose={() => setAddImageOpen(false)}
+        activeTab={addImageTab}
+        onTabChange={setAddImageTab}
+        canvaEnabled={false}
+        dropboxEnabled={false}
+        recentPanel={
+          <div className="pool-grid">
+            {uploadPool.slice(0, 12).map((p) => (
+              <button key={p.id} type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
+                <img src={p.previewUrl} alt="" className="checkerboard" />
+                <span>{p.name}</span>
+              </button>
+            ))}
+            {!uploadPool.length ? <p className="sidebar-empty">No recent uploads yet.</p> : null}
+          </div>
+        }
+        uploadsPanel={
+          <>
+            <label className="sidebar-upload-btn drop-target">
+              {uploading ? "Uploading…" : "Upload Image(s)"}
+              <input type="file" multiple accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
+            </label>
+            <div className="pool-grid">
+              {filteredPool.map((p) => (
+                <button key={p.id} type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
+                  <img src={p.previewUrl} alt="" className="checkerboard" />
+                  <span>{p.name}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        }
+        galleryPanel={
+          galleryLoading ? (
+            <p className="sidebar-empty">Loading gallery…</p>
+          ) : (
+            <div className="pool-grid">
+              {filteredGallery.map((g) => (
+                <button key={g.id} type="button" className="pool-item" onClick={() => { void placeGalleryItem(g); setAddImageOpen(false); }} disabled={uploading}>
+                  <img src={g.thumb} alt="" />
+                  <span>{g.name}</span>
+                </button>
+              ))}
+            </div>
+          )
+        }
+      />
 
       {bgRemove ? (
         <BackgroundRemovalModal
