@@ -37,10 +37,8 @@ export function QualityStatusButton(props: {
   const { summary, onClick, active } = props;
   const issues =
     summary.low + summary.poor + summary.overlap + summary.oob + summary.unknown;
-  const label =
-    issues === 0
-      ? "Quality OK"
-      : `${issues} issue${issues === 1 ? "" : "s"}`;
+  const status =
+    issues === 0 ? "OK" : `${issues} issue${issues === 1 ? "" : "s"}`;
 
   return (
     <button
@@ -49,10 +47,11 @@ export function QualityStatusButton(props: {
       onClick={onClick}
       aria-expanded={active}
       aria-haspopup="dialog"
-      title="Sheet quality summary"
+      title={`Quality: ${status}`}
+      aria-label={`Quality: ${status}`}
     >
       <span className="gs-quality-btn-label">Quality</span>
-      <span className="gs-quality-btn-value">{label}</span>
+      <span className="gs-quality-btn-value">{status}</span>
     </button>
   );
 }

@@ -117,6 +117,17 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           </button>
         </div>
 
+        <button
+          type="button"
+          className={`gs-icon-btn ${panMode ? "active" : ""}`}
+          onClick={onTogglePan}
+          title="Select / pan (hold Space)"
+          aria-label="Toggle select and pan mode"
+          aria-pressed={panMode}
+        >
+          <ToolbarIcon name="pan" />
+        </button>
+
         <div className="gs-zoom-group" role="group" aria-label="Zoom">
           <button type="button" className="gs-icon-btn" onClick={onZoomOut} title="Zoom out" aria-label="Zoom out">
             <ToolbarIcon name="zoomOut" />
@@ -125,24 +136,13 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           <button type="button" className="gs-icon-btn" onClick={onZoomIn} title="Zoom in" aria-label="Zoom in">
             <ToolbarIcon name="zoomIn" />
           </button>
-          <button type="button" className="gs-ghost-btn gs-zoom-mode-btn" onClick={onFitWidth} title="Fit width" aria-label="Fit width">
+          <button type="button" className="gs-ghost-btn gs-zoom-mode-btn gs-hide-narrow" onClick={onFitWidth} title="Fit width" aria-label="Fit width">
             Width
           </button>
           <button type="button" className="gs-icon-btn gs-fit-btn" onClick={onFitSheet} title="Fit full sheet" aria-label="Fit full sheet">
             <ToolbarIcon name="fit" />
           </button>
         </div>
-
-        <button
-          type="button"
-          className={`gs-icon-btn ${panMode ? "active" : ""}`}
-          onClick={onTogglePan}
-          title="Pan mode (hold Space)"
-          aria-label="Toggle pan mode"
-          aria-pressed={panMode}
-        >
-          <ToolbarIcon name="pan" />
-        </button>
 
         <button
           type="button"
@@ -156,7 +156,7 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
         </button>
 
         {onPreview ? (
-          <button type="button" className="gs-ghost-btn" onClick={onPreview} title="Preview sheet">
+          <button type="button" className="gs-ghost-btn gs-hide-narrow" onClick={onPreview} title="Preview sheet">
             <ToolbarIcon name="preview" />
             <span>Preview</span>
           </button>
@@ -166,7 +166,7 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
       </div>
 
       <nav className="gs-command-right" aria-label="Editor actions">
-        <div className="gs-sheet-meta">
+        <div className="gs-sheet-meta gs-hide-mobile">
           <label className="gs-sheet-select">
             <span>Size</span>
             <select
@@ -188,13 +188,18 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           </label>
         </div>
 
-        <div className="gs-price-pill" aria-label={`Estimated price ${estimateUsd.toFixed(2)} dollars`}>
+        <div className="gs-price-inline gs-hide-mobile" aria-label={`Estimated price ${estimateUsd.toFixed(2)} dollars`}>
+          <span>Est.</span>
+          <strong>${estimateUsd.toFixed(2)}</strong>
+        </div>
+
+        <div className="gs-price-pill" aria-hidden>
           <strong>${estimateUsd.toFixed(2)}</strong>
         </div>
 
         <button
           type="button"
-          className="gs-secondary-btn"
+          className="gs-secondary-btn gs-hide-mobile"
           onClick={onSaveOnly}
           disabled={saving || !hasItems}
           aria-label="Save design"
@@ -211,7 +216,8 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           aria-label="Save and add to cart"
         >
           <ToolbarIcon name="cart" />
-          {saving ? "Saving…" : "Save & Add to Cart"}
+          <span className="gs-hide-narrow">{saving ? "Saving…" : "Save & Add to Cart"}</span>
+          <span className="gs-show-narrow-only">{saving ? "…" : "Cart"}</span>
         </button>
 
         <details className="gs-overflow-menu">

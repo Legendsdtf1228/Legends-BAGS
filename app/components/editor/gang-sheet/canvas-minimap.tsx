@@ -12,7 +12,9 @@ export type CanvasMinimapProps = {
 
 export function CanvasMinimap(props: CanvasMinimapProps) {
   const { sheetWidth, sheetHeight, scrollTop, scrollHeight, clientHeight, onNavigate, visible } = props;
-  if (!visible || sheetHeight <= sheetWidth * 1.5) return null;
+  if (!visible) return null;
+  if (scrollHeight <= clientHeight + 12) return null;
+  if (sheetHeight <= sheetWidth * 1.35) return null;
 
   const viewRatio = clientHeight / Math.max(1, scrollHeight);
   const topRatio = scrollTop / Math.max(1, scrollHeight - clientHeight);

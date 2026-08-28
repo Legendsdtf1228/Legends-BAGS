@@ -1,17 +1,17 @@
 /** Gang Sheet Editor design tokens */
 export const GS_EDITOR_TOKENS = {
-  commandBarHeight: "56px",
-  railWidth: "68px",
+  commandBarHeight: "60px",
+  railWidth: "72px",
   panelWidth: "300px",
-  propertiesWidth: "288px",
+  propertiesWidth: "300px",
   canvasBg: "#e9edf2",
   sheetShadow: "0 12px 40px rgba(15,23,42,.12), 0 2px 8px rgba(15,23,42,.06)",
   panelBg: "#ffffff",
   railBg: "#111827",
   barBg: "#ffffff",
   accent: "var(--accent)",
-  radiusMd: "10px",
-  radiusLg: "14px",
+  radiusMd: "8px",
+  radiusLg: "12px",
 } as const;
 
 export const GS_EDITOR_TOKEN_CSS = `

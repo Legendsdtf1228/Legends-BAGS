@@ -1,0 +1,159 @@
+{
+  "phase": "after",
+  "base": "http://localhost:56497",
+  "shop": "legends-bags-in2lwdll.myshopify.com",
+  "editorUrl": "http://localhost:56497/editor/gang-sheet?shop=legends-bags-in2lwdll.myshopify.com",
+  "capturedAt": "2026-08-28T15:25:02.656Z",
+  "shots": [
+    {
+      "viewport": "1440x1000",
+      "state": "empty-canvas",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1440x1000\\empty-canvas.png"
+    },
+    {
+      "viewport": "1440x1000",
+      "state": "uploads-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1440x1000\\uploads-panel.png"
+    },
+    {
+      "viewport": "1440x1000",
+      "state": "layers-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1440x1000\\layers-panel.png"
+    },
+    {
+      "viewport": "1440x1000",
+      "state": "quality-inspector",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1440x1000\\quality-inspector.png"
+    },
+    {
+      "viewport": "1440x1000",
+      "state": "save-dialog",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1440x1000\\save-dialog.png"
+    },
+    {
+      "viewport": "1440x1000",
+      "state": "auto-arrange",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1440x1000\\auto-arrange.png"
+    },
+    {
+      "viewport": "1280x800",
+      "state": "empty-canvas",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1280x800\\empty-canvas.png"
+    },
+    {
+      "viewport": "1280x800",
+      "state": "uploads-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1280x800\\uploads-panel.png"
+    },
+    {
+      "viewport": "1280x800",
+      "state": "layers-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1280x800\\layers-panel.png"
+    },
+    {
+      "viewport": "1280x800",
+      "state": "quality-inspector",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1280x800\\quality-inspector.png"
+    },
+    {
+      "viewport": "1280x800",
+      "state": "save-dialog",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1280x800\\save-dialog.png"
+    },
+    {
+      "viewport": "1280x800",
+      "state": "auto-arrange",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1280x800\\auto-arrange.png"
+    },
+    {
+      "viewport": "1024x768",
+      "state": "empty-canvas",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1024x768\\empty-canvas.png"
+    },
+    {
+      "viewport": "1024x768",
+      "state": "uploads-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1024x768\\uploads-panel.png"
+    },
+    {
+      "viewport": "1024x768",
+      "state": "layers-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1024x768\\layers-panel.png"
+    },
+    {
+      "viewport": "1024x768",
+      "state": "quality-inspector",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1024x768\\quality-inspector.png"
+    },
+    {
+      "viewport": "1024x768",
+      "state": "save-dialog",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1024x768\\save-dialog.png"
+    },
+    {
+      "viewport": "1024x768",
+      "state": "auto-arrange",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\1024x768\\auto-arrange.png"
+    },
+    {
+      "viewport": "768x1024",
+      "state": "empty-canvas",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\768x1024\\empty-canvas.png"
+    },
+    {
+      "viewport": "768x1024",
+      "state": "uploads-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\768x1024\\uploads-panel.png"
+    },
+    {
+      "viewport": "768x1024",
+      "state": "layers-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\768x1024\\layers-panel.png"
+    },
+    {
+      "viewport": "768x1024",
+      "state": "error",
+      "error": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.gs-quality-btn')\n    - locator resolved to <button type=\"button\" title=\"Quality: OK\" aria-expanded=\"false\" aria-haspopup=\"dialog\" class=\"gs-quality-btn  \" aria-label=\"Quality: OK\">…</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n"
+    },
+    {
+      "viewport": "430x932",
+      "state": "empty-canvas",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\430x932\\empty-canvas.png"
+    },
+    {
+      "viewport": "430x932",
+      "state": "uploads-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\430x932\\uploads-panel.png"
+    },
+    {
+      "viewport": "430x932",
+      "state": "layers-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\430x932\\layers-panel.png"
+    },
+    {
+      "viewport": "430x932",
+      "state": "error",
+      "error": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.gs-quality-btn')\n    - locator resolved to <button type=\"button\" title=\"Quality: OK\" aria-expanded=\"false\" aria-haspopup=\"dialog\" class=\"gs-quality-btn  \" aria-label=\"Quality: OK\">…</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n"
+    },
+    {
+      "viewport": "390x844",
+      "state": "empty-canvas",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\390x844\\empty-canvas.png"
+    },
+    {
+      "viewport": "390x844",
+      "state": "uploads-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\390x844\\uploads-panel.png"
+    },
+    {
+      "viewport": "390x844",
+      "state": "layers-panel",
+      "file": "C:\\Users\\Mark\\Legends BAGS\\legends-gang-sheet\\docs\\qa\\screenshots\\gang-sheet-editor\\after\\390x844\\layers-panel.png"
+    },
+    {
+      "viewport": "390x844",
+      "state": "error",
+      "error": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('.gs-quality-btn')\n    - locator resolved to <button type=\"button\" title=\"Quality: OK\" aria-expanded=\"false\" aria-haspopup=\"dialog\" class=\"gs-quality-btn  \" aria-label=\"Quality: OK\">…</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    58 × waiting for element to be visible, enabled and stable\n       - element is not visible\n     - retrying click action\n       - waiting 500ms\n"
+    }
+  ]
+}

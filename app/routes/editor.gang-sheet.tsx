@@ -11,6 +11,7 @@ import {
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
+import { GANG_SHEET_SHELL_CSS } from "../components/editor/gang-sheet/gang-sheet-shell-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
@@ -395,6 +396,7 @@ export default function GangSheetEditor() {
   const [showFirstTip, setShowFirstTip] = useState(true);
   const [uploadSearch, setUploadSearch] = useState("");
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
+  const [uploadView, setUploadView] = useState<"grid" | "list">("grid");
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
@@ -453,6 +455,7 @@ export default function GangSheetEditor() {
     if (!id) {
       setSelectedId(null);
       setSelectedIds(new Set());
+      setMobileDrawer((drawer) => (drawer === "properties" ? null : drawer));
       return;
     }
     if (additive) {
@@ -467,6 +470,9 @@ export default function GangSheetEditor() {
     } else {
       setSelectedId(id);
       setSelectedIds(new Set([id]));
+    }
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1024px)").matches) {
+      setMobileDrawer("properties");
     }
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
@@ -802,12 +808,13 @@ export default function GangSheetEditor() {
   function fitToViewport(mode: "width" | "sheet" = "sheet") {
     const el = scrollRef.current;
     if (!el) return;
+    const pad = 24;
     if (mode === "width") {
-      setZoom(fitWidthZoomPercent(el.clientWidth, sheetWidth));
+      setZoom(fitWidthZoomPercent(el.clientWidth, sheetWidth, pad));
       setZoomMode("fit-width");
       return;
     }
-    const fit = smartFitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight);
+    const fit = smartFitZoomPercent(el.clientWidth, el.clientHeight, sheetWidth, sheetHeight, pad);
     setZoom(fit.zoom);
     setZoomMode(fit.mode);
   }
@@ -2025,7 +2032,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{GANG_SHEET_SHELL_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -2395,7 +2402,7 @@ export default function GangSheetEditor() {
 
     return (
       <div className="bags auto-mode lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{GANG_SHEET_SHELL_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         <header>
           <div className="brand">
             <b>L</b>
@@ -2880,7 +2887,7 @@ export default function GangSheetEditor() {
 
   return (
     <div className="bags lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{GANG_SHEET_SHELL_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <GangSheetSaveDialog
@@ -2995,7 +3002,7 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className="workspace">
+      <div className={`workspace ${selected ? "has-properties" : ""}`}>
         <nav className="icon-rail" aria-label="Builder navigation">
           <button
             type="button"
@@ -3051,49 +3058,76 @@ export default function GangSheetEditor() {
                   <ToolbarIcon name="refresh" />
                 </button>
               </div>
-              <div className="sidebar-tools">
-                <input
-                  type="search"
-                  placeholder="Search uploads…"
-                  value={uploadSearch}
-                  onChange={(e) => setUploadSearch(e.target.value)}
-                  aria-label="Search uploads"
-                />
-                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
-                  <option value="recent">Recent</option>
-                  <option value="name">Name</option>
-                </select>
-              </div>
-              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
-              <label
-                className="sidebar-upload-btn drop-target"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                }}
-              >
-                {uploading ? "Uploading…" : "Upload image(s)"}
-                <input
-                  ref={sidebarUploadRef}
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg"
-                  hidden
-                  onChange={(e) => {
-                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {!filteredPool.length ? (
-                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
-                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
-                  <small>Drop PNG/JPEG files here or browse above</small>
-                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
-                </label>
-              ) : (
-                <div className="pool-grid" key={poolTick}>
+              <div className="panel-body">
+                <div className="panel-section">
+                  <label
+                    className="gs-panel-primary drop-target"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
+                    }}
+                  >
+                    {uploading ? "Uploading…" : "Upload Artwork"}
+                    <input
+                      ref={sidebarUploadRef}
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg"
+                      hidden
+                      onChange={(e) => {
+                        void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="sidebar-tools">
+                  <input
+                    type="search"
+                    placeholder="Search uploads…"
+                    value={uploadSearch}
+                    onChange={(e) => setUploadSearch(e.target.value)}
+                    aria-label="Search uploads"
+                  />
+                  <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
+                    <option value="recent">Recent</option>
+                    <option value="name">Name</option>
+                  </select>
+                  <div className="view-toggle" role="group" aria-label="Upload view">
+                    <button type="button" className={uploadView === "grid" ? "active" : ""} onClick={() => setUploadView("grid")} aria-label="Grid view" aria-pressed={uploadView === "grid"}>
+                      ▦
+                    </button>
+                    <button type="button" className={uploadView === "list" ? "active" : ""} onClick={() => setUploadView("list")} aria-label="List view" aria-pressed={uploadView === "list"}>
+                      ☰
+                    </button>
+                  </div>
+                </div>
+                {!filteredPool.length ? (
+                  <label
+                    className="drop compact drop-target"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
+                    }}
+                  >
+                    <b>＋</b>
+                    <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
+                    <small>Drop PNG/JPEG here or use Upload Artwork above</small>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/png,image/jpeg"
+                      hidden
+                      onChange={(e) => {
+                        void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <div className={uploadView === "grid" ? "pool-grid" : "pool-list"} key={poolTick}>
                   {filteredPool.map((p) => {
                     const dpiInfo = dpiQualityTier(p.asset.dpi);
                     const onSheet = sheetCountForAsset(p.asset.assetId);
@@ -3118,7 +3152,8 @@ export default function GangSheetEditor() {
                     );
                   })}
                 </div>
-              )}
+                )}
+              </div>
             </>
           ) : sidebarTab === "gallery" ? (
             <>
@@ -3169,7 +3204,7 @@ export default function GangSheetEditor() {
                     <button key={p.id} type="button" className="chip" onClick={() => { setTextFontSize(p.fontSize); setTextColor(p.color); }}>{p.label}</button>
                   ))}
                 </div>
-                <button type="button" className="sidebar-upload-btn" onClick={() => addTextToSheet()}>Add text to sheet</button>
+                <button type="button" className="gs-panel-primary" onClick={() => addTextToSheet()}>Add text to sheet</button>
               </div>
             </>
           ) : sidebarTab === "names" ? (
@@ -3179,7 +3214,7 @@ export default function GangSheetEditor() {
               <div className="sidebar-form">
                 <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
                 <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
+                <button type="button" className="gs-panel-primary" onClick={generateRoster}>Generate on sheet</button>
               </div>
             </>
           ) : sidebarTab === "layers" ? (
@@ -3386,15 +3421,55 @@ export default function GangSheetEditor() {
               ))}
               {!items.length && (
                 <div className="empty">
-                  <b>＋</b>
-                  <strong>Your gang sheet starts here</strong>
-                  <small>Add artwork from Uploads, Gallery, or Text — then drag to position.</small>
+                  <span className="empty-icon" aria-hidden>＋</span>
+                  <strong>Add artwork to begin</strong>
+                  <small>Upload PNG or JPEG files, then click a thumbnail to place on the sheet.</small>
+                  <div className="empty-actions">
+                    <button
+                      type="button"
+                      className="gs-empty-primary"
+                      onClick={() => {
+                        setSidebarTab("uploads");
+                        handleSidebarTab("uploads");
+                        sidebarUploadRef.current?.click();
+                      }}
+                    >
+                      Upload Artwork
+                    </button>
+                    <button
+                      type="button"
+                      className="gs-empty-secondary"
+                      onClick={() => {
+                        setSidebarTab("gallery");
+                        handleSidebarTab("gallery");
+                      }}
+                    >
+                      Browse Gallery
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
             </div>
           </div>
+          {!selected && items.length > 0 ? (
+            <div className="gs-canvas-summary" aria-label="Sheet summary">
+              <p>
+                <span>Usage</span>
+                <strong>{utilization}%</strong>
+              </p>
+              <p>
+                <span>Printed</span>
+                <strong>{usedArea.toFixed(2)} in²</strong>
+              </p>
+              <p>
+                <span>Est. total</span>
+                <strong>${estimate.toFixed(2)}</strong>
+              </p>
+            </div>
+          ) : null}
         </main>
+        {selected ? (
         <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
           <button
             type="button"
@@ -3407,11 +3482,10 @@ export default function GangSheetEditor() {
           <div className="heading">
             <span>
               <strong>Properties</strong>
-              <small>{selected ? "Artwork selected" : "Select an item"}</small>
+              <small>Artwork selected</small>
             </span>
           </div>
-          {selected ? (
-            <>
+          <div className="panel-body">
               <div className="preview">
                 {selected.kind === "text" ? (
                   <span className="text-preview">{selected.textContent ?? selected.name}</span>
@@ -3524,13 +3598,7 @@ export default function GangSheetEditor() {
               >
                 Save to library
               </button>
-            </>
-          ) : (
-            <div className="none">
-              <b>↖</b>
-              <p>Click artwork on the sheet to resize, rotate, duplicate, or fill the sheet.</p>
-            </div>
-          )}
+          </div>
           <section className="summary">
             <p>
               <span>Printed area</span>
@@ -3546,6 +3614,7 @@ export default function GangSheetEditor() {
             </p>
           </section>
         </aside>
+        ) : null}
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
         <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
