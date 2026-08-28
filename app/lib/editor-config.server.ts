@@ -4,6 +4,7 @@ import {
   DEFAULT_UPLOAD_BY_SIZE_SHEET,
   type SheetConfig,
 } from "../domain/design/types";
+import { DEFAULT_GANG_SHEET_HEIGHT_IN, resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
 import { ensureShopConfig } from "./merchant-loaders.server";
 import { getShopAppearance, type ShopAppearance } from "./shop-appearance.server";
 
@@ -24,6 +25,8 @@ export type EditorBindingConfig = {
 export type EditorPageConfig = {
   pricePerSqIn: number;
   sheet: SheetConfig;
+  /** Gang sheet canvas height — never the upload-by-size roll cap (360 in). */
+  defaultSheetHeightIn: number;
   appearance: ShopAppearance;
   binding: EditorBindingConfig | null;
   gangSheetVariants: EditorBindingConfig[];
@@ -86,10 +89,20 @@ export async function loadEditorPageConfig(
       : Promise.resolve([]),
   ]);
 
+  const gangSheetVariants = gangRows.map(mapBinding);
+  const defaultSheetHeightIn = resolveGangSheetHeight({
+    variantId,
+    bindingSheetHeightIn: binding?.sheetHeightIn,
+    bindingMaxHeightIn: binding?.maxHeightIn,
+    gangSheetVariants,
+  });
+
   const sheet: SheetConfig = {
     widthIn: binding?.sheetWidthIn ?? config?.sheetWidthIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.widthIn,
     maxHeightIn:
-      binding?.maxHeightIn ?? config?.maxHeightIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.maxHeightIn,
+      binding?.builderType === "gang_sheet"
+        ? defaultSheetHeightIn
+        : binding?.maxHeightIn ?? config?.maxHeightIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.maxHeightIn,
     imageMarginIn:
       binding?.imageMarginIn ?? config?.imageMarginIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.imageMarginIn,
     artboardMarginIn:
@@ -101,8 +114,9 @@ export async function loadEditorPageConfig(
   return {
     pricePerSqIn: binding?.pricePerSqIn ?? config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
     sheet,
+    defaultSheetHeightIn,
     appearance,
     binding: binding ? mapBinding(binding) : null,
-    gangSheetVariants: gangRows.map(mapBinding),
+    gangSheetVariants,
   };
 }

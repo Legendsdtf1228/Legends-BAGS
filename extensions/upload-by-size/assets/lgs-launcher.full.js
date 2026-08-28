@@ -13,7 +13,17 @@
     var warn = root.querySelector("[data-lgs-design-warn]");
     var attached = root.querySelector("[data-lgs-design-attached]");
     var loading = root.querySelector("[data-lgs-loading]");
-    var base = (root.getAttribute("data-editor-base") || "").replace(/\/$/, "");
+    function resolveEditorBase(rootEl) {
+      var shopDomain = rootEl.getAttribute("data-shop") || "";
+      if (shopDomain) {
+        var host = window.location.hostname;
+        if (host === shopDomain || host.endsWith(".myshopify.com")) {
+          return window.location.origin.replace(/\/$/, "") + "/apps/legends-bags";
+        }
+      }
+      return (rootEl.getAttribute("data-editor-base") || "").replace(/\/$/, "");
+    }
+    var base = resolveEditorBase(root);
     var productGid = root.getAttribute("data-product-gid") || "";
     var variantId = root.getAttribute("data-variant-id") || "";
     var shop = root.getAttribute("data-shop") || "";

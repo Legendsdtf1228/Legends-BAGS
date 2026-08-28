@@ -52,7 +52,7 @@ Extension: `extensions/upload-by-size`
 | LGS Upload by Size | `/editor/upload-by-size` |
 | LGS Gang Sheet Builder | `/editor/gang-sheet` |
 
-Set each block’s **Editor base URL** to your app tunnel URL (from `shopify app dev`).
+On the development storefront, blocks use the **app proxy** at `/apps/legends-bags/` automatically. Leave **Editor base URL** blank in block settings — you do not need to update theme blocks when the dev tunnel restarts.
 
 ### Dev store setup
 

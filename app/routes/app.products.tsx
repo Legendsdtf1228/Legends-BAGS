@@ -7,10 +7,11 @@ import { Form, Link, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
-import { upsertProductBinding } from "../services/design-service";
+import { UPLOAD_BY_SIZE_ROLL_MAX_IN } from "../domain/design/gang-sheet-sheet";
 import {
   fetchShopifyCatalog,
   reconcileProductBindings,
+  resolveVariantGidForBinding,
 } from "../services/shopify-product-sync.server";
 import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-links";
 import { BagsPageHeader, BagsCard, BagsStatusBadge, BagsPageBody } from "../components/merchant/bags-admin-ui";
@@ -87,6 +88,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       handle: p.handle,
       imageUrl: p.imageUrl,
       variantCount: p.variants.length,
+      variants: p.variants.map((v) => ({ id: v.id, title: v.title, price: v.price })),
     })),
     lastProductSyncAt: shopConfig?.lastProductSyncAt?.toISOString() ?? null,
     lastProductSyncError: shopConfig?.lastProductSyncError ?? null,
@@ -127,12 +129,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { error: "Product GID must look like gid://shopify/Product/…" };
   }
 
-  const variantGid = variantGidRaw
-    ? variantGidRaw.startsWith("gid://")
-      ? variantGidRaw
-      : `gid://shopify/ProductVariant/${variantGidRaw}`
-    : undefined;
-
   const pricePerSqIn = form.get("pricePerSqIn")
     ? Number.parseFloat(String(form.get("pricePerSqIn")))
     : undefined;
@@ -145,57 +141,58 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const productTitle = String(form.get("productTitle") || "").trim() || undefined;
 
   try {
-    if (variantGid) {
-      const existing = await prisma.productBinding.findFirst({
-        where: { shop: session.shop, variantGid },
+    const resolved = await resolveVariantGidForBinding({
+      admin,
+      productGid,
+      variantGidRaw: variantGidRaw || undefined,
+    });
+    const variantGid = resolved.variantGid;
+    const gangHeight =
+      builderType === "gang_sheet" && Number.isFinite(sheetHeightIn!) ? sheetHeightIn : null;
+    const rollMax =
+      builderType === "upload_by_size"
+        ? UPLOAD_BY_SIZE_ROLL_MAX_IN
+        : gangHeight ?? undefined;
+
+    const existing = await prisma.productBinding.findFirst({
+      where: { shop: session.shop, variantGid },
+    });
+    if (existing) {
+      await prisma.productBinding.update({
+        where: { id: existing.id },
+        data: {
+          productGid,
+          builderType,
+          productTitle,
+          variantTitle: resolved.variantTitle ?? existing.variantTitle,
+          pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : existing.pricePerSqIn,
+          sheetHeightIn: gangHeight ?? existing.sheetHeightIn,
+          variantPriceCents:
+            variantPrice != null && Number.isFinite(variantPrice)
+              ? variantPrice
+              : existing.variantPriceCents,
+          maxHeightIn: rollMax ?? existing.maxHeightIn,
+          syncStatus: "manual",
+        },
       });
-      if (existing) {
-        await prisma.productBinding.update({
-          where: { id: existing.id },
-          data: {
-            productGid,
-            builderType,
-            productTitle,
-            pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : existing.pricePerSqIn,
-            sheetHeightIn: Number.isFinite(sheetHeightIn!) ? sheetHeightIn : existing.sheetHeightIn,
-            variantPriceCents:
-              variantPrice != null && Number.isFinite(variantPrice)
-                ? variantPrice
-                : existing.variantPriceCents,
-            syncStatus: "manual",
-          },
-        });
-      } else {
-        await prisma.productBinding.create({
-          data: {
-            shop: session.shop,
-            productGid,
-            variantGid,
-            builderType,
-            productTitle,
-            pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : null,
-            sheetHeightIn: Number.isFinite(sheetHeightIn!) ? sheetHeightIn : null,
-            variantPriceCents:
-              variantPrice != null && Number.isFinite(variantPrice) ? variantPrice : null,
-            sheetWidthIn: 22.5,
-            maxHeightIn: sheetHeightIn ?? 360,
-            syncStatus: "manual",
-          },
-        });
-      }
     } else {
-      await upsertProductBinding({
-        shop: session.shop,
-        productGid,
-        builderType,
-        pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : undefined,
+      await prisma.productBinding.create({
+        data: {
+          shop: session.shop,
+          productGid,
+          variantGid,
+          builderType,
+          productTitle,
+          variantTitle: resolved.variantTitle,
+          pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : null,
+          sheetHeightIn: gangHeight,
+          variantPriceCents:
+            variantPrice != null && Number.isFinite(variantPrice) ? variantPrice : null,
+          sheetWidthIn: 22.5,
+          maxHeightIn: rollMax ?? UPLOAD_BY_SIZE_ROLL_MAX_IN,
+          syncStatus: "manual",
+        },
       });
-      if (productTitle) {
-        await prisma.productBinding.updateMany({
-          where: { shop: session.shop, productGid, variantGid: null },
-          data: { productTitle, syncStatus: "manual" },
-        });
-      }
     }
     return { saved: true };
   } catch (err) {
@@ -318,18 +315,44 @@ export default function ProductsPage() {
                     </td>
                     <td>{p.variantCount}</td>
                     <td>
-                      <Form method="post" className="bags-admin-actions">
-                        <input type="hidden" name="intent" value="bind" />
-                        <input type="hidden" name="productGid" value={p.id} />
-                        <input type="hidden" name="productTitle" value={p.title} />
-                        <select name="builderType" defaultValue="upload_by_size">
-                          <option value="upload_by_size">Upload by Size</option>
-                          <option value="gang_sheet">Gang Sheet</option>
-                        </select>
-                        <button type="submit" className="bags-admin-btn primary">
-                          Assign
-                        </button>
-                      </Form>
+                      {p.variantCount === 1 ? (
+                        <Form method="post" className="bags-admin-actions">
+                          <input type="hidden" name="intent" value="bind" />
+                          <input type="hidden" name="productGid" value={p.id} />
+                          <input type="hidden" name="variantGid" value={p.variants[0]?.id ?? ""} />
+                          <input type="hidden" name="productTitle" value={p.title} />
+                          <select name="builderType" defaultValue="upload_by_size">
+                            <option value="upload_by_size">Upload by Size</option>
+                            <option value="gang_sheet">Gang Sheet</option>
+                          </select>
+                          <button type="submit" className="bags-admin-btn primary">
+                            Assign
+                          </button>
+                        </Form>
+                      ) : (
+                        <Form method="post" className="bags-admin-actions" style={{ flexWrap: "wrap" }}>
+                          <input type="hidden" name="intent" value="bind" />
+                          <input type="hidden" name="productGid" value={p.id} />
+                          <input type="hidden" name="productTitle" value={p.title} />
+                          <select name="variantGid" required defaultValue="">
+                            <option value="" disabled>
+                              Choose variant…
+                            </option>
+                            {p.variants.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.title} · ${v.price}
+                              </option>
+                            ))}
+                          </select>
+                          <select name="builderType" defaultValue="upload_by_size">
+                            <option value="upload_by_size">Upload by Size</option>
+                            <option value="gang_sheet">Gang Sheet</option>
+                          </select>
+                          <button type="submit" className="bags-admin-btn primary">
+                            Assign
+                          </button>
+                        </Form>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -34,7 +34,16 @@ Starting `main` commit: `1a12f19` (Merge PR #10 — editor modern parity)
 - `tests/request-context.test.ts` — correlation ID payloads
 - `tests/cart-properties.test.ts` — upload-by-size cart properties
 
-## Sprint completion status
+## Blocker fixes (2026-08-28)
+
+| Blocker | Fix |
+|---------|-----|
+| Assign without variant GID | Auto-resolves single-variant products; multi-variant requires picker |
+| UBS launcher error | Storefront always uses app proxy; ignores stale tunnel URLs in theme settings |
+| Gang sheet 24→360 bug | Separated roll max (360) from canvas height; `resolveGangSheetHeight()` + 45 regression tests |
+| Setup tunnel docs | Setup/README now document app-proxy-first; Editor base URL optional |
+| Unpublished dev product | Setup → Publish dev test products to Online Store (+ `write_publications` scope) |
+
 
 This sprint requires **browser-verified** end-to-end checkout for both builders. Automated tests alone do not satisfy completion.
 

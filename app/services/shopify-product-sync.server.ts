@@ -108,6 +108,77 @@ export async function fetchShopifyCatalog(
   return products;
 }
 
+const PRODUCT_VARIANTS = `#graphql
+  query LegendsBagsProductVariants($id: ID!) {
+    product(id: $id) {
+      id
+      title
+      variants(first: 100) {
+        nodes {
+          id
+          title
+          price
+        }
+      }
+    }
+  }
+`;
+
+export async function fetchShopifyProductVariants(
+  admin: AdminClient,
+  productGid: string,
+): Promise<Array<{ id: string; title: string; price: string }>> {
+  const res = await admin.graphql(PRODUCT_VARIANTS, { variables: { id: productGid } });
+  const json = (await res.json()) as {
+    data?: {
+      product?: {
+        variants?: { nodes?: Array<{ id: string; title: string; price: string }> };
+      };
+    };
+    errors?: Array<{ message: string }>;
+  };
+  if (json.errors?.length) {
+    throw new Error(json.errors.map((e) => e.message).join("; "));
+  }
+  return json.data?.product?.variants?.nodes ?? [];
+}
+
+function normalizeVariantGid(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("gid://") ? trimmed : `gid://shopify/ProductVariant/${trimmed}`;
+}
+
+export async function resolveVariantGidForBinding(params: {
+  admin: AdminClient;
+  productGid: string;
+  variantGidRaw?: string;
+}): Promise<{ variantGid: string; variantTitle?: string; variantCount: number }> {
+  const explicit = params.variantGidRaw ? normalizeVariantGid(params.variantGidRaw) : "";
+  if (explicit) {
+    const variants = await fetchShopifyProductVariants(params.admin, params.productGid);
+    const match = variants.find((v) => v.id === explicit);
+    return {
+      variantGid: explicit,
+      variantTitle: match?.title,
+      variantCount: variants.length,
+    };
+  }
+
+  const variants = await fetchShopifyProductVariants(params.admin, params.productGid);
+  if (variants.length === 1) {
+    return {
+      variantGid: variants[0].id,
+      variantTitle: variants[0].title,
+      variantCount: 1,
+    };
+  }
+  if (variants.length === 0) {
+    throw new Error("This product has no variants.");
+  }
+  throw new Error("Select a variant — this product has multiple variants.");
+}
+
 export async function reconcileProductBindings(params: {
   shop: string;
   admin: AdminClient;

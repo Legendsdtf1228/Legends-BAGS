@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_GANG_SHEET_HEIGHT_IN,
+  GANG_SHEET_HEIGHTS,
+  GANG_SHEET_WIDTHS,
+  UPLOAD_BY_SIZE_ROLL_MAX_IN,
+  gangSheetAreaPriceUsd,
+  gangSheetDesignSheet,
+  isGangSheetHeightIn,
+  resolveGangSheetHeight,
+} from "../app/domain/design/gang-sheet-sheet";
+
+describe("resolveGangSheetHeight", () => {
+  it("defaults to 24 when binding only has roll max 360", () => {
+    expect(
+      resolveGangSheetHeight({
+        bindingMaxHeightIn: UPLOAD_BY_SIZE_ROLL_MAX_IN,
+      }),
+    ).toBe(DEFAULT_GANG_SHEET_HEIGHT_IN);
+  });
+
+  it("uses binding sheetHeightIn when set", () => {
+    expect(resolveGangSheetHeight({ bindingSheetHeightIn: 36 })).toBe(36);
+  });
+
+  it("matches variant-specific gang sheet height", () => {
+    expect(
+      resolveGangSheetHeight({
+        variantId: "50252592382200",
+        gangSheetVariants: [
+          { variantGid: "gid://shopify/ProductVariant/111", sheetHeightIn: 24 },
+          { variantGid: "gid://shopify/ProductVariant/50252592382200", sheetHeightIn: 36 },
+        ],
+      }),
+    ).toBe(36);
+  });
+
+  it("never returns 360 for a 24 in preset selection path", () => {
+    for (const h of GANG_SHEET_HEIGHTS) {
+      const resolved = resolveGangSheetHeight({ bindingSheetHeightIn: h });
+      expect(resolved).toBe(h);
+      expect(resolved).not.toBe(UPLOAD_BY_SIZE_ROLL_MAX_IN);
+    }
+  });
+});
+
+describe("gang sheet dimensions regression", () => {
+  for (const width of GANG_SHEET_WIDTHS) {
+    for (const height of GANG_SHEET_HEIGHTS) {
+      it(`${width} × ${height} in maps consistently`, () => {
+        const sheet = gangSheetDesignSheet(width, height);
+        expect(sheet.widthIn).toBe(width);
+        expect(sheet.maxHeightIn).toBe(height);
+        expect(sheet.maxHeightIn).not.toBe(UPLOAD_BY_SIZE_ROLL_MAX_IN);
+
+        const price = gangSheetAreaPriceUsd(width, height, 0.049);
+        expect(price).toBe(Math.round(width * height * 0.049 * 100) / 100);
+        expect(price).not.toBe(gangSheetAreaPriceUsd(width, UPLOAD_BY_SIZE_ROLL_MAX_IN, 0.049));
+      });
+    }
+  }
+
+  it("22.5 × 24 pricing is not confused with 22.5 × 360", () => {
+    const short = gangSheetAreaPriceUsd(22.5, 24, 0.049);
+    const wrong = gangSheetAreaPriceUsd(22.5, 360, 0.049);
+    expect(short).toBeCloseTo(26.46, 2);
+    expect(wrong).toBeCloseTo(396.9, 2);
+    expect(short).not.toBe(wrong);
+  });
+});
+
+describe("isGangSheetHeightIn", () => {
+  it("rejects roll max as canvas height", () => {
+    expect(isGangSheetHeightIn(360)).toBe(false);
+    expect(isGangSheetHeightIn(24)).toBe(true);
+  });
+});

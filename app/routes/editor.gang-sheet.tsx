@@ -28,6 +28,11 @@ import {
 } from "../components/editor/gang-sheet/quality-inspector";
 import { SheetShrinkDialog } from "../components/editor/gang-sheet/sheet-shrink-dialog";
 import {
+  GANG_SHEET_HEIGHTS,
+  GANG_SHEET_WIDTHS,
+  gangSheetAreaPriceUsd,
+} from "../domain/design/gang-sheet-sheet";
+import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
   type ProcessedAsset,
@@ -203,8 +208,8 @@ type AutoNestPreview = {
   remainingCount?: number;
 };
 
-const SHEET_WIDTHS = [22.5, 24, 30] as const;
-const SHEET_HEIGHTS = [24, 36, 48, 60, 72, 84, 96, 108, 132, 150, 168, 192, 250];
+const SHEET_WIDTHS = GANG_SHEET_WIDTHS;
+const SHEET_HEIGHTS = [...GANG_SHEET_HEIGHTS];
 const AUTO_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12] as const;
 
 function buildNestItemsFromDrafts(drafts: AutoDraft[]) {
@@ -323,6 +328,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
       variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
       gangSheetVariants: editorConfig?.gangSheetVariants ?? [],
+      defaultSheetHeightIn: editorConfig?.defaultSheetHeightIn ?? 24,
       defaultSheet: editorConfig?.sheet ?? {
         widthIn: 22.5,
         maxHeightIn: 24,
@@ -354,12 +360,7 @@ export default function GangSheetEditor() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sheetWidth, setSheetWidth] = useState(page.defaultSheet.widthIn);
-  const [sheetHeight, setSheetHeight] = useState(() => {
-    const match = page.gangSheetVariants.find((v) =>
-      v.variantGid?.endsWith(`/${page.variantId}`),
-    );
-    return match?.sheetHeightIn ?? page.defaultSheet.maxHeightIn;
-  });
+  const [sheetHeight, setSheetHeight] = useState(page.defaultSheetHeightIn);
   const [zoom, setZoom] = useState(70);
   const [zoomMode, setZoomMode] = useState<ZoomMode>("custom");
   const [gridVisible, setGridVisible] = useState(true);
@@ -2327,7 +2328,7 @@ export default function GangSheetEditor() {
                   {sheetWidth}″ × {sheetHeight}″ ·{" "}
                   {page.variantPriceCents != null
                     ? `$${(page.variantPriceCents / 100).toFixed(2)} sheet price`
-                    : `$${((sheetWidth * sheetHeight) * page.pricePerSqIn).toFixed(2)} max · $${page.pricePerSqIn.toFixed(3)}/in² printed`}
+                    : `$${gangSheetAreaPriceUsd(sheetWidth, sheetHeight, page.pricePerSqIn).toFixed(2)} max · $${page.pricePerSqIn.toFixed(3)}/in² printed`}
                 </strong>
               </div>
             </div>

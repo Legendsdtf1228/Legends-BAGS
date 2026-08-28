@@ -7,6 +7,11 @@ import { Form, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { upsertProductBinding } from "../services/design-service";
+import { publishProductToOnlineStore } from "../services/shopify-publish.server";
+import {
+  DEFAULT_GANG_SHEET_HEIGHT_IN,
+  UPLOAD_BY_SIZE_ROLL_MAX_IN,
+} from "../domain/design/gang-sheet-sheet";
 import { customerEditorUrls } from "../lib/editor-links.server";
 import { builderLinksFromBindings, buildBuilderLaunchUrl } from "../lib/builder-links.server";
 import { numericIdFromGid } from "../domain/builder/builder-launch-context";
@@ -112,6 +117,17 @@ async function ensureProduct(
   return { ok: true as const, product, variantId };
 }
 
+async function publishDevProduct(
+  admin: Awaited<ReturnType<typeof authenticate.admin>>["admin"],
+  productGid: string,
+) {
+  const result = await publishProductToOnlineStore(admin, productGid);
+  if (!result.ok) {
+    return { published: false as const, error: result.error };
+  }
+  return { published: true as const };
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const appUrl = process.env.SHOPIFY_APP_URL || "";
@@ -158,13 +174,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       builderType: "upload_by_size",
       pricePerSqIn: 0.049,
       sheetWidthIn: 22.5,
-      maxHeightIn: 360,
+      maxHeightIn: UPLOAD_BY_SIZE_ROLL_MAX_IN,
     });
+
+    const published = await publishDevProduct(admin, result.product.id);
 
     return {
       ok: true as const,
       kind: "upload_by_size" as const,
       product: result.product,
+      published,
       themeBlock: "LGS Upload by Size",
       storeUrl: `https://${session.shop}/products/${result.product.handle}`,
       builderUrl: buildBuilderLaunchUrl({
@@ -197,13 +216,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       variantGid: result.variantId,
       builderType: "gang_sheet",
       sheetWidthIn: 22.5,
-      maxHeightIn: 360,
+      sheetHeightIn: DEFAULT_GANG_SHEET_HEIGHT_IN,
+      maxHeightIn: DEFAULT_GANG_SHEET_HEIGHT_IN,
     });
+
+    const published = await publishDevProduct(admin, result.product.id);
 
     return {
       ok: true as const,
       kind: "gang_sheet" as const,
       product: result.product,
+      published,
       themeBlock: "LGS Gang Sheet Builder",
       storeUrl: `https://${session.shop}/products/${result.product.handle}`,
       builderUrl: buildBuilderLaunchUrl({
@@ -213,6 +236,35 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         variantId: numericIdFromGid(result.variantId),
       }),
     };
+  }
+
+  if (intent === "publish_dev_products") {
+    const handles = [UBS_HANDLE, GS_HANDLE];
+    const results: Array<{ handle: string; published: boolean; error?: string }> = [];
+    for (const handle of handles) {
+      const findRes = await admin.graphql(
+        `#graphql
+        query FindDevProduct($query: String!) {
+          products(first: 1, query: $query) {
+            nodes { id handle title }
+          }
+        }`,
+        { variables: { query: `handle:${handle}` } },
+      );
+      const findJson = await findRes.json();
+      const product = findJson.data?.products?.nodes?.[0];
+      if (!product?.id) {
+        results.push({ handle, published: false, error: "Product not found" });
+        continue;
+      }
+      const pub = await publishDevProduct(admin, product.id);
+      results.push({
+        handle,
+        published: pub.published,
+        error: pub.published ? undefined : pub.error,
+      });
+    }
+    return { ok: true as const, kind: "publish" as const, results };
   }
 
   return { ok: false as const, step: "unknown", errors: [] };
@@ -251,21 +303,31 @@ export default function SetupPage() {
           </div>
         </BagsCard>
 
-        <BagsCard title="2. Theme blocks & /builder" style={{ marginTop: 16 }}>
+        <BagsCard title="2. Theme blocks & app proxy" style={{ marginTop: 16 }}>
           <p className="bags-admin-muted">
-            Storefront blocks launch <code>/builder</code> (BAGS-compatible). Editor base URL is still
-            required on each block:
+            Storefront blocks launch the editor through the stable Shopify app proxy at{" "}
+            <code>/apps/legends-bags/</code>. Leave <strong>Editor base URL</strong> blank in theme
+            block settings — no tunnel URL updates are required when the dev tunnel rotates.
           </p>
-          <code style={{ display: "block", marginTop: 8, wordBreak: "break-all", fontSize: 12 }}>
-            {data.appUrl || "(SHOPIFY_APP_URL — run shopify app dev)"}
-          </code>
+          <p className="bags-admin-muted" style={{ marginTop: 8 }}>
+            App URL (admin / webhooks only):{" "}
+            <code style={{ wordBreak: "break-all", fontSize: 12 }}>
+              {data.appUrl || "(SHOPIFY_APP_URL — run shopify app dev)"}
+            </code>
+          </p>
           <ol className="bags-admin-muted" style={{ marginTop: 12, paddingLeft: 20 }}>
+            <li>Publish dev test products to Online Store (button below).</li>
             <li>Open each test product in the Online Store theme editor.</li>
             <li>Add LGS Upload by Size or LGS Gang Sheet Builder block.</li>
-            <li>Set Editor base URL to the Railway or tunnel URL above.</li>
+            <li>Leave Editor base URL empty unless previewing outside the dev store.</li>
             <li>Add LGS Cart Edit Design block to the cart template.</li>
-            <li>Deploy theme extension: <code>shopify app deploy</code></li>
           </ol>
+          <Form method="post" style={{ marginTop: 12 }}>
+            <input type="hidden" name="intent" value="publish_dev_products" />
+            <button type="submit" className="bags-admin-btn secondary">
+              Publish dev test products to Online Store
+            </button>
+          </Form>
           {data.builderLinks.length ? (
             <div style={{ marginTop: 16 }}>
               <strong style={{ fontSize: 13 }}>Bound product /builder URLs</strong>
