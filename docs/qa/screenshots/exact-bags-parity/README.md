@@ -1,6 +1,6 @@
 # Exact BAGS Parity Screenshots
 
-Base URL: http://localhost:3000
+Base URL: http://localhost:63288
 Shop: legends-bags-in2lwdll.myshopify.com
 App proxy: https://legends-bags-in2lwdll.myshopify.com/apps/legends-bags/
 
@@ -12,7 +12,7 @@ App proxy: https://legends-bags-in2lwdll.myshopify.com/apps/legends-bags/
 - mobile-390: 390×844
 
 ## Screens
-- **empty-editor**: http://localhost:3000/editor/gang-sheet?shop=legends-bags-in2lwdll.myshopify.com
+- **empty-editor**: http://localhost:63288/editor/gang-sheet?shop=legends-bags-in2lwdll.myshopify.com
 - **uploads**: (from editor UI) — Open Uploads rail
 - **uploaded-image**: (from editor UI) — Place one image on sheet
 - **four-copy-layout**: (from editor UI) — Auto Fill Sheet on 11×11.28″ reference image

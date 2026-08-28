@@ -25,6 +25,7 @@ Status key: **Exact** | **Equivalent** | **Partial** | **Missing** | **Intention
 | Zoom + fit sheet | Yes | Toolbar | Exact |
 | Rulers + scroll + artboard | Yes | Canvas | Equivalent |
 | Selection toolbar | Yes | Align/distribute/layer/rotate/flip/stretch/undo | Equivalent |
+| Selected-image properties | Yes | Thumbnail, Edit Image, W/H, aspect lock, qty, spacing, color sliders, FitCheck | Equivalent |
 | Quality legend + warnings | Yes | BAGS tiers Optimal/Good/Bad/Terrible/Minimum | Equivalent |
 
 ## Part 2 — Bottom navigation
@@ -47,7 +48,7 @@ Status key: **Exact** | **Equivalent** | **Partial** | **Missing** | **Intention
 | Canva / Dropbox integrations | Partial | Dedicated panels with honest disconnected state; OAuth blocked |
 | Text workflow | Partial | Sidebar text panel |
 | Names & Numbers presets + CSV | Equivalent | S/M/L presets, sample CSV download, validation |
-| Auto Fill / Nest / Build | Equivalent | Confirmation modals with fitted/remaining report |
+| Auto Fill / Nest / Build | Equivalent | Confirmation modals with fitted/remaining report; Ctrl+Z undo after apply |
 | Save modal | Equivalent | `GangSheetSaveDialog` with BAGS DPI tiers |
 | Confirmation / Print Anyway modal | Partial | Save warns on overlap/OOB/low DPI |
 | Cart properties | Exact | Backend wired |
@@ -67,8 +68,8 @@ Status key: **Exact** | **Equivalent** | **Partial** | **Missing** | **Intention
 |-------------|--------|
 | BAGS white surface + blue/orange/red actions | Equivalent |
 | No dark Legends rail in customer editor | Exact |
-| Responsive 1440/1280/1024/768/390 | Partial — script + checklist |
-| Side-by-side screenshot evidence | Partial — `scripts/capture-gang-sheet-screenshots.mjs` |
+| Responsive 1440/1280/1024/768/390 | Equivalent | CSS breakpoints + empty-editor screenshots at all five viewports |
+| Side-by-side screenshot evidence | Partial | `docs/qa/screenshots/exact-bags-parity/{viewport}/empty-editor.png` captured; modal/UI states still manual |
 | E2E checkout + 300 DPI render | Partial — pipeline tests pass |
 
 ## Canvas interaction (Phase 3)
@@ -88,12 +89,15 @@ Status key: **Exact** | **Equivalent** | **Partial** | **Missing** | **Intention
 ## Verification
 
 ```bash
-npm test
+npm test                    # 226 tests (includes bags-phase4-parity)
 npm run typecheck
 npm run build
 cd extensions/upload-by-size && shopify theme check
+node scripts/generate-qa-fixture.mjs
 node scripts/capture-gang-sheet-screenshots.mjs --capture
 ```
+
+QA fixture: `tests/fixtures/qa-reference-11x11.png` — see `docs/qa/fixtures.md`
 
 ## Storefront verification (not localhost)
 
@@ -114,6 +118,6 @@ node scripts/capture-gang-sheet-screenshots.mjs --capture
 
 - Canva/Dropbox OAuth — blocked on merchant credentials
 - Add Image folder browsing / bulk format parity — partial
+- Modal-state screenshots (Image Editor tabs, auto-fill dialog, N&N modals) — manual capture still required
 - Pixel-perfect visual match to reference screenshots — not claimed
-- Playwright screenshots require dev server + optional `playwright` devDependency
 - Admin settings field depth vs BAGS — not in sprint scope
