@@ -10,8 +10,10 @@ import prisma from "../db.server";
 import { UPLOAD_BY_SIZE_ROLL_MAX_IN } from "../domain/design/gang-sheet-sheet";
 import {
   fetchShopifyCatalog,
+  fetchShopifyProductVariants,
   reconcileProductBindings,
   resolveVariantGidForBinding,
+  shopifyPriceToCents,
 } from "../services/shopify-product-sync.server";
 import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-links";
 import { BagsPageHeader, BagsCard, BagsStatusBadge, BagsPageBody } from "../components/merchant/bags-admin-ui";
@@ -147,6 +149,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       variantGidRaw: variantGidRaw || undefined,
     });
     const variantGid = resolved.variantGid;
+    const variants = await fetchShopifyProductVariants(admin, productGid);
+    const matchedVariant = variants.find((v) => v.id === variantGid);
+    const syncedVariantPriceCents = shopifyPriceToCents(matchedVariant?.price);
     const gangHeight =
       builderType === "gang_sheet" && Number.isFinite(sheetHeightIn!) ? sheetHeightIn : null;
     const rollMax =
@@ -170,7 +175,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           variantPriceCents:
             variantPrice != null && Number.isFinite(variantPrice)
               ? variantPrice
-              : existing.variantPriceCents,
+              : syncedVariantPriceCents ?? existing.variantPriceCents,
           maxHeightIn: rollMax ?? existing.maxHeightIn,
           syncStatus: "manual",
         },
@@ -187,7 +192,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : null,
           sheetHeightIn: gangHeight,
           variantPriceCents:
-            variantPrice != null && Number.isFinite(variantPrice) ? variantPrice : null,
+            variantPrice != null && Number.isFinite(variantPrice)
+              ? variantPrice
+              : syncedVariantPriceCents,
           sheetWidthIn: 22.5,
           maxHeightIn: rollMax ?? UPLOAD_BY_SIZE_ROLL_MAX_IN,
           syncStatus: "manual",

@@ -7,7 +7,12 @@ import {
   gangSheetAreaPriceUsd,
   gangSheetDesignSheet,
   isGangSheetHeightIn,
+  normalizeArtboardMarginIn,
+  resolveAllowedSheetHeights,
+  resolveAllowedSheetWidths,
   resolveGangSheetHeight,
+  resolveGangSheetVariantPriceCents,
+  resolveGangSheetProductPanelVariants,
 } from "../app/domain/design/gang-sheet-sheet";
 
 describe("resolveGangSheetHeight", () => {
@@ -69,9 +74,88 @@ describe("gang sheet dimensions regression", () => {
   });
 });
 
+describe("resolveAllowedSheetWidths", () => {
+  it("restricts to product width when bound", () => {
+    expect(resolveAllowedSheetWidths(22.5)).toEqual([22.5]);
+    expect(resolveAllowedSheetWidths(24)).toEqual([24]);
+  });
+
+  it("returns all widths when product width is unset", () => {
+    expect(resolveAllowedSheetWidths(null)).toEqual(GANG_SHEET_WIDTHS);
+  });
+});
+
+describe("resolveAllowedSheetHeights", () => {
+  it("uses variant heights when configured", () => {
+    expect(
+      resolveAllowedSheetHeights([
+        { variantGid: "gid://shopify/ProductVariant/1", sheetHeightIn: 24 },
+        { variantGid: "gid://shopify/ProductVariant/2", sheetHeightIn: 36 },
+      ]),
+    ).toEqual([24, 36]);
+  });
+});
+
 describe("isGangSheetHeightIn", () => {
   it("rejects roll max as canvas height", () => {
     expect(isGangSheetHeightIn(360)).toBe(false);
     expect(isGangSheetHeightIn(24)).toBe(true);
+  });
+});
+
+describe("resolveGangSheetVariantPriceCents", () => {
+  it("matches price by active sheet height", () => {
+    expect(
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: [
+          { sheetHeightIn: 24, variantPriceCents: 1700 },
+          { sheetHeightIn: 36, variantPriceCents: 2500 },
+        ],
+        sheetHeightIn: 36,
+      }),
+    ).toBe(2500);
+  });
+
+  it("returns $17 for 22.5 × 24 when 24 in variant is bound", () => {
+    expect(
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: [{ sheetHeightIn: 24, variantPriceCents: 1700 }],
+        sheetHeightIn: 24,
+      }),
+    ).toBe(1700);
+  });
+
+  it("prefers fixed variant price over area-pricing fallback", () => {
+    expect(
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: [{ sheetHeightIn: 24, variantPriceCents: 1700 }],
+        sheetHeightIn: 24,
+        fallbackVariantPriceCents: 9999,
+      }),
+    ).toBe(1700);
+  });
+});
+
+describe("resolveGangSheetProductPanelVariants", () => {
+  it("falls back to active binding when catalog is empty", () => {
+    const binding = {
+      builderType: "gang_sheet" as const,
+      sheetHeightIn: 24,
+      variantPriceCents: 1700,
+      variantTitle: "22.5 x 24",
+    };
+    expect(resolveGangSheetProductPanelVariants<typeof binding>([], binding)).toEqual([binding]);
+  });
+});
+
+describe("normalizeArtboardMarginIn", () => {
+  it("defaults to 0.125 for null and legacy 0.1", () => {
+    expect(normalizeArtboardMarginIn(null)).toBe(0.125);
+    expect(normalizeArtboardMarginIn(0.1)).toBe(0.125);
+  });
+
+  it("preserves user-chosen margins", () => {
+    expect(normalizeArtboardMarginIn(0.2)).toBe(0.2);
+    expect(normalizeArtboardMarginIn(0.125)).toBe(0.125);
   });
 });

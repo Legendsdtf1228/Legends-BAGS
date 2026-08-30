@@ -3,6 +3,7 @@ import {
   parseEditorLaunchParams,
   type BuilderLaunchContext,
 } from "../domain/builder/builder-launch-context";
+import { readStorefrontSessionClaims } from "./editor-auth.server";
 
 export type EditorLaunchPageContext = Omit<BuilderLaunchContext, "builderType"> & {
   designId: string;
@@ -34,9 +35,13 @@ export function mergeEditorLaunchFromUrl(
   designId: string;
   designVersion: string;
   parentOrigin: string;
+  customerName: string;
+  customerEmail: string;
+  customerKey: string;
 } {
   const url = new URL(request.url);
   const launch = parseEditorLaunchParams(url.searchParams);
+  const session = readStorefrontSessionClaims(request);
 
   return {
     shop: launch?.shop || url.searchParams.get("shop") || fallbackShop,
@@ -54,5 +59,9 @@ export function mergeEditorLaunchFromUrl(
     designId: url.searchParams.get("designId") ?? "",
     designVersion: url.searchParams.get("designVersion") ?? "",
     parentOrigin: url.searchParams.get("parentOrigin") ?? "",
+    // Customer identity from verified storefront session only — never unsigned URL params.
+    customerName: session?.customerName?.trim() || "",
+    customerEmail: session?.customerEmail?.trim() || "",
+    customerKey: session?.customerKey?.trim() || "",
   };
 }

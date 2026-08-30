@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>BAGS vs Legends Visual Clone Comparison</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 13px/1.4 Inter, system-ui, sans-serif; background: #f1f3f4; color: #202124; }
+    header { background: #fff; border-bottom: 1px solid #dadce0; padding: 12px 20px; position: sticky; top: 0; z-index: 2; }
+    header h1 { margin: 0 0 4px; font-size: 16px; }
+    header p { margin: 0; color: #5f6368; font-size: 12px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 20px; background: #fff; border-bottom: 1px solid #dadce0; }
+    label { display: grid; gap: 4px; font-size: 11px; font-weight: 600; color: #5f6368; }
+    select { height: 32px; min-width: 160px; border: 1px solid #dadce0; border-radius: 4px; padding: 0 8px; }
+    main { padding: 16px 20px 32px; }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .panel { background: #fff; border: 1px solid #dadce0; border-radius: 4px; overflow: hidden; }
+    .panel h2 { margin: 0; padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #dadce0; background: #f8f9fa; }
+    .frame { width: 100%; aspect-ratio: 1440 / 1000; background: #e8eaed; display: grid; place-items: center; overflow: hidden; }
+    .frame img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
+    .missing { color: #5f6368; font-size: 12px; padding: 24px; text-align: center; }
+    .diff-note { margin: 0 0 16px; padding: 10px 12px; background: #fff; border: 1px solid #dadce0; border-radius: 4px; font-size: 12px; }
+    @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BAGS vs Legends — Visual Clone Comparison</h1>
+    <p>Identical viewport dimensions. Place BAGS PNGs under docs/qa/screenshots/exact-bags-visual-clone/bags/</p>
+  </header>
+  <div class="controls">
+    <label>Viewport
+      <select id="viewport">
+        <option value="desktop-1440">Desktop 1440×1000</option>
+        <option value="laptop-1280">Laptop 1280×720</option>
+        <option value="tablet-1024">Tablet 1024×768</option>
+        <option value="tablet-portrait-768">Tablet portrait 768×1024</option>
+        <option value="mobile-390">Mobile 390×844</option>
+      </select>
+    </label>
+    <label>State
+      <select id="state">
+        <option value="empty-editor">Empty editor</option>
+        <option value="uploads">Uploads panel</option>
+        <option value="four-copy-sheet">Four-copy sheet</option>
+        <option value="selected-artwork">Selected artwork</option>
+        <option value="image-properties">Image properties</option>
+        <option value="enhance-modal">Image editor — Enhance</option>
+        <option value="names-numbers">Names &amp; Numbers</option>
+        <option value="settings">Settings</option>
+        <option value="active-gang-sheets">Active gang sheets</option>
+        <option value="mobile-editor">Mobile editor</option>
+      </select>
+    </label>
+  </div>
+  <main>
+    <p class="diff-note" id="diff-note">Select viewport and state. BAGS reference images require manual capture — see docs/qa/bags-visual-measurements.md.</p>
+    <div class="pair">
+      <section class="panel">
+        <h2>BAGS (reference)</h2>
+        <div class="frame" id="bags-frame"><span class="missing">No reference PNG — capture from live BAGS</span></div>
+      </section>
+      <section class="panel">
+        <h2>Legends (after)</h2>
+        <div class="frame" id="legends-frame"><span class="missing">Run capture script with dev server</span></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const vp = document.getElementById("viewport");
+    const st = document.getElementById("state");
+    const bagsFrame = document.getElementById("bags-frame");
+    const legendsFrame = document.getElementById("legends-frame");
+    const note = document.getElementById("diff-note");
+
+    const aspects = {
+      "desktop-1440": "1440 / 1000",
+      "laptop-1280": "1280 / 720",
+      "tablet-1024": "1024 / 768",
+      "tablet-portrait-768": "768 / 1024",
+      "mobile-390": "390 / 844",
+    };
+
+    const stateNotes = {
+      "four-copy-sheet": "Uses QA fixture qa-reference-11x11.png × 4 on sheet.",
+      "active-gang-sheets": "Desktop capture opens drawer via mobile nav (hidden at 1440px).",
+    };
+
+    function loadImg(frame, base, label) {
+      const v = vp.value;
+      const s = st.value;
+      const src = `screenshots/exact-bags-visual-clone/${base}/${v}/${s}.png`;
+      frame.style.aspectRatio = aspects[v] || "1440 / 1000";
+      frame.innerHTML = "";
+      const img = document.createElement("img");
+      img.alt = label;
+      img.src = src;
+      img.onerror = () => {
+        frame.innerHTML = `<span class="missing">Missing: ${src}</span>`;
+      };
+      frame.appendChild(img);
+    }
+
+    function refresh() {
+      loadImg(bagsFrame, "bags", "BAGS reference");
+      loadImg(legendsFrame, "legends-after", "Legends after");
+      const extra = stateNotes[st.value] ? ` ${stateNotes[st.value]}` : "";
+      note.textContent = `Comparing ${vp.value} / ${st.value}.${extra} See docs/qa/visual-clone-parity-report.md for measured deltas.`;
+    }
+
+    vp.addEventListener("change", refresh);
+    st.addEventListener("change", refresh);
+    refresh();
+  </script>
+</body>
+</html>

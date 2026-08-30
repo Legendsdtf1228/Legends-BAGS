@@ -5,6 +5,7 @@ import {
   buildUploadBySizeStateFromLines,
   nestAndRenderDesign,
 } from "../domain/design/pipeline";
+import { DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN, resolveGangSheetVariantPriceCents } from "../domain/design/gang-sheet-sheet";
 import type { DesignStateV1 } from "../domain/design/types";
 import { DEFAULT_PRICE_PER_SQ_IN, DESIGN_STATE_SCHEMA_VERSION } from "../domain/design/types";
 import { buildGangSheetPricingSnapshot, buildPricingSnapshot } from "../domain/pricing";
@@ -63,12 +64,46 @@ async function gangSheetPricingForDesign(
   items: DesignStateV1["items"],
   productGid?: string,
   variantGid?: string,
+  sheet?: DesignStateV1["sheet"],
 ) {
   const config = await prisma.shopConfig.findUnique({ where: { shop } });
   const binding = await resolveProductBinding(shop, productGid, variantGid);
+  const gangRows = productGid
+    ? await prisma.productBinding.findMany({
+        where: { shop, productGid, builderType: "gang_sheet" },
+        orderBy: { sheetHeightIn: "asc" },
+      })
+    : [];
+  const resolvedProductGid =
+    productGid ??
+    (
+      await prisma.productBinding.findFirst({
+        where: { shop, builderType: "gang_sheet" },
+        orderBy: { updatedAt: "desc" },
+        select: { productGid: true },
+      })
+    )?.productGid;
+  const catalogRows = resolvedProductGid
+    ? gangRows.length && gangRows[0]?.productGid === resolvedProductGid
+      ? gangRows
+      : await prisma.productBinding.findMany({
+          where: { shop, productGid: resolvedProductGid, builderType: "gang_sheet" },
+          orderBy: { sheetHeightIn: "asc" },
+        })
+    : gangRows;
+  const variantPriceCents = resolveGangSheetVariantPriceCents({
+    gangSheetVariants: catalogRows.map((row) => ({
+      sheetHeightIn: row.sheetHeightIn,
+      variantPriceCents: row.variantPriceCents,
+    })),
+    sheetHeightIn: sheet?.maxHeightIn ?? binding?.sheetHeightIn ?? 24,
+    fallbackVariantPriceCents: binding?.variantPriceCents ?? null,
+  });
   return buildGangSheetPricingSnapshot(items, {
     pricePerSqIn: binding?.pricePerSqIn ?? config?.pricePerSqIn ?? DEFAULT_PRICE_PER_SQ_IN,
-    variantPriceCents: binding?.variantPriceCents ?? null,
+    variantPriceCents,
+    sheetWidthIn: sheet?.widthIn,
+    sheetHeightIn: sheet?.maxHeightIn,
   });
 }
 
@@ -409,6 +444,7 @@ export async function createGangSheetDesign(params: {
     normalizedItems,
     params.productGid,
     params.variantGid,
+    params.sheet,
   );
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,
@@ -515,6 +551,7 @@ export async function saveGangSheetNewVersion(params: {
     normalizedItems,
     params.productGid ?? existing.productGid ?? undefined,
     params.variantGid ?? existing.variantGid ?? undefined,
+    params.sheet,
   );
 
   const state: DesignStateV1 = {
@@ -640,6 +677,8 @@ export async function saveUploadBySizeNewVersion(params: {
 export async function listDesignLibrary(params: {
   shop: string;
   customerKey?: string | null;
+  productGid?: string;
+  workflow?: "upload_by_size" | "gang_sheet";
   search?: string;
   sort?: "recent" | "name";
   includeArchived?: boolean;
@@ -653,6 +692,9 @@ export async function listDesignLibrary(params: {
       : { not: null },
     ...(params.includeArchived ? {} : { archived: false }),
     ...(params.customerKey ? { customerKey: params.customerKey } : {}),
+    ...(params.productGid
+      ? { OR: [{ productGid: params.productGid }, { productGid: null }] }
+      : {}),
   };
 
   const rows = await prisma.design.findMany({
@@ -661,7 +703,7 @@ export async function listDesignLibrary(params: {
     take: params.limit ?? 50,
   });
 
-  return Promise.all(
+  const designs = await Promise.all(
     rows.map(async (d) => {
       const v = await prisma.designVersion.findUnique({
         where: { designId_version: { designId: d.id, version: d.currentVersion } },
@@ -669,12 +711,23 @@ export async function listDesignLibrary(params: {
       let workflow = "upload_by_size";
       let pieceCount = 0;
       let sheetLabel = "";
+      let priceCents = v?.priceCents ?? 0;
       if (v) {
         try {
           const state = JSON.parse(v.stateJson) as DesignStateV1;
           workflow = state.workflow;
           pieceCount = state.items.reduce((n, i) => n + (i.quantity || 1), 0);
           sheetLabel = `${state.sheet.widthIn}″ × ${state.sheet.maxHeightIn}″`;
+          if (workflow === "gang_sheet") {
+            const pricing = await gangSheetPricingForDesign(
+              params.shop,
+              state.items,
+              d.productGid ?? undefined,
+              d.variantGid ?? undefined,
+              state.sheet,
+            );
+            priceCents = pricing.totalCents;
+          }
         } catch {
           /* ignore */
         }
@@ -703,7 +756,7 @@ export async function listDesignLibrary(params: {
         archived: d.archived,
         pieceCount,
         sheetLabel,
-        priceCents: v?.priceCents ?? 0,
+        priceCents,
         updatedAt: d.updatedAt.toISOString(),
         createdAt: d.createdAt.toISOString(),
         sourceDesignId: d.sourceDesignId,
@@ -712,6 +765,10 @@ export async function listDesignLibrary(params: {
       };
     }),
   );
+  if (params.workflow) {
+    return designs.filter((d) => d.workflow === params.workflow);
+  }
+  return designs;
 }
 
 export async function createStaffSheet(params: {
@@ -725,7 +782,7 @@ export async function createStaffSheet(params: {
     widthIn: params.sheetWidthIn ?? config?.sheetWidthIn ?? 22.5,
     maxHeightIn: params.sheetHeightIn ?? 24,
     imageMarginIn: config?.imageMarginIn ?? 0.15,
-    artboardMarginIn: config?.artboardMarginIn ?? 0.1,
+    artboardMarginIn: config?.artboardMarginIn ?? DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   };
   const state: DesignStateV1 = {
     schemaVersion: DESIGN_STATE_SCHEMA_VERSION,

@@ -7,7 +7,9 @@ import { Form, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { upsertProductBinding } from "../services/design-service";
-import { publishProductToOnlineStore } from "../services/shopify-publish.server";
+import { publishProductToOnlineStore, verifyProductOnOnlineStore } from "../services/shopify-publish.server";
+import { merchantActionError } from "../lib/merchant-error.server";
+import { createRequestId } from "../lib/request-context.server";
 import {
   DEFAULT_GANG_SHEET_HEIGHT_IN,
   UPLOAD_BY_SIZE_ROLL_MAX_IN,
@@ -239,32 +241,66 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "publish_dev_products") {
+    const requestId = createRequestId();
     const handles = [UBS_HANDLE, GS_HANDLE];
-    const results: Array<{ handle: string; published: boolean; error?: string }> = [];
-    for (const handle of handles) {
-      const findRes = await admin.graphql(
-        `#graphql
-        query FindDevProduct($query: String!) {
-          products(first: 1, query: $query) {
-            nodes { id handle title }
-          }
-        }`,
-        { variables: { query: `handle:${handle}` } },
-      );
-      const findJson = await findRes.json();
-      const product = findJson.data?.products?.nodes?.[0];
-      if (!product?.id) {
-        results.push({ handle, published: false, error: "Product not found" });
-        continue;
+    const results: Array<{
+      handle: string;
+      title?: string;
+      published: boolean;
+      error?: string;
+      storeUrl?: string;
+    }> = [];
+    try {
+      for (const handle of handles) {
+        const findRes = await admin.graphql(
+          `#graphql
+          query FindDevProduct($query: String!) {
+            products(first: 1, query: $query) {
+              nodes { id handle title }
+            }
+          }`,
+          { variables: { query: `handle:${handle}` } },
+        );
+        const findJson = (await findRes.json()) as {
+          data?: { products?: { nodes?: Array<{ id: string; handle: string; title: string }> } };
+          errors?: Array<{ message: string }>;
+        };
+        if (findJson.errors?.length) {
+          const { error } = merchantActionError(new Error(findJson.errors[0].message));
+          results.push({ handle, published: false, error });
+          continue;
+        }
+        const product = findJson.data?.products?.nodes?.[0];
+        if (!product?.id) {
+          results.push({ handle, published: false, error: "Product not found — create it first." });
+          continue;
+        }
+        const pub = await publishDevProduct(admin, product.id);
+        if (!pub.published) {
+          results.push({
+            handle: product.handle,
+            title: product.title,
+            published: false,
+            error: pub.error,
+          });
+          continue;
+        }
+        const verify = await verifyProductOnOnlineStore(admin, product.id);
+        results.push({
+          handle: product.handle,
+          title: product.title,
+          published: verify.published,
+          error: verify.error,
+          storeUrl: verify.published
+            ? `https://${session.shop}/products/${product.handle}`
+            : undefined,
+        });
       }
-      const pub = await publishDevProduct(admin, product.id);
-      results.push({
-        handle,
-        published: pub.published,
-        error: pub.published ? undefined : pub.error,
-      });
+      return { ok: true as const, kind: "publish" as const, requestId, results };
+    } catch (err) {
+      const { error } = merchantActionError(err, "Could not publish dev test products.");
+      return { ok: false as const, kind: "publish" as const, requestId, error, results };
     }
-    return { ok: true as const, kind: "publish" as const, results };
   }
 
   return { ok: false as const, step: "unknown", errors: [] };
@@ -322,6 +358,10 @@ export default function SetupPage() {
             <li>Leave Editor base URL empty unless previewing outside the dev store.</li>
             <li>Add LGS Cart Edit Design block to the cart template.</li>
           </ol>
+          <p className="bags-admin-muted" style={{ marginTop: 8 }}>
+            After adding publication scopes, restart <code>npm run dev</code> and reauthorize the app when
+            Shopify prompts for updated permissions.
+          </p>
           <Form method="post" style={{ marginTop: 12 }}>
             <input type="hidden" name="intent" value="publish_dev_products" />
             <button type="submit" className="bags-admin-btn secondary">
@@ -388,7 +428,43 @@ export default function SetupPage() {
 
         {result ? (
           <BagsCard title="Result" style={{ marginTop: 16 }}>
-            <pre style={{ margin: 0, fontSize: 12, overflow: "auto" }}>{JSON.stringify(result, null, 2)}</pre>
+            {"error" in result && result.error ? (
+              <p style={{ color: "#b42318", margin: "0 0 8px" }}>
+                {result.error}
+                {"requestId" in result && result.requestId ? (
+                  <> Reference: <code>{result.requestId}</code></>
+                ) : null}
+              </p>
+            ) : null}
+            {"results" in result && result.results ? (
+              <ul className="bags-admin-muted" style={{ margin: 0, paddingLeft: 20 }}>
+                {result.results.map((row) => (
+                  <li key={row.handle} style={{ marginBottom: 8 }}>
+                    <strong>{row.title ?? row.handle}</strong>
+                    {" — "}
+                    {row.published ? (
+                      <>
+                        Published to Online Store
+                        {row.storeUrl ? (
+                          <>
+                            {" · "}
+                            <a href={row.storeUrl} target="_blank" rel="noopener noreferrer">
+                              View storefront
+                            </a>
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span style={{ color: "#b42318" }}>{row.error ?? "Not published"}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <pre style={{ margin: 0, fontSize: 12, overflow: "auto" }}>
+                {JSON.stringify(result, null, 2)}
+              </pre>
+            )}
           </BagsCard>
         ) : null}
       </div>
@@ -397,3 +473,5 @@ export default function SetupPage() {
 }
 
 export const headers: HeadersFunction = (headersArgs) => boundary.headers(headersArgs);
+
+export { BagsAdminErrorBoundary as ErrorBoundary } from "../components/merchant/bags-admin-error";

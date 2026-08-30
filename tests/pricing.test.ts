@@ -3,6 +3,7 @@ import {
   assertPriceMatches,
   buildGangSheetPricingSnapshot,
   buildPricingSnapshot,
+  computeGangSheetEstimateUsd,
   resolvePhysicalSize,
 } from "../app/domain/pricing";
 
@@ -69,5 +70,69 @@ describe("pricing", () => {
     const snap = buildGangSheetPricingSnapshot(items, { variantPriceCents: 1700 });
     expect(snap.totalCents).toBe(1700);
     expect(snap.areaSqIn).toBe(8);
+  });
+
+  it("uses full sheet area for empty gang sheet estimate without variant price", () => {
+    expect(
+      computeGangSheetEstimateUsd({
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+        usedAreaSqIn: 0,
+      }),
+    ).toBe(26.46);
+  });
+
+  it("uses variant price for empty gang sheet when configured", () => {
+    expect(
+      computeGangSheetEstimateUsd({
+        variantPriceCents: 1700,
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+      }),
+    ).toBe(17);
+  });
+
+  it("22.5 × 24 bound variant shows $17 not area fallback", () => {
+    expect(
+      computeGangSheetEstimateUsd({
+        variantPriceCents: 1700,
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+        usedAreaSqIn: 0,
+      }),
+    ).toBe(17);
+    expect(
+      computeGangSheetEstimateUsd({
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+      }),
+    ).toBe(26.46);
+  });
+
+  it("uses full sheet area for gang sheet with artwork when variant price is absent", () => {
+    expect(
+      computeGangSheetEstimateUsd({
+        pricePerSqIn: 0.049,
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+        usedAreaSqIn: 8,
+      }),
+    ).toBe(26.46);
+  });
+
+  it("uses full sheet dimensions for gang sheet pricing snapshot without variant", () => {
+    const items = [
+      { assetId: "a", widthIn: 4, heightIn: 2, quantity: 1, rotationDeg: 0 as const },
+    ];
+    const snap = buildGangSheetPricingSnapshot(items, {
+      pricePerSqIn: 0.049,
+      sheetWidthIn: 22.5,
+      sheetHeightIn: 24,
+    });
+    expect(snap.totalCents).toBe(2646);
   });
 });

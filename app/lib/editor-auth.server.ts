@@ -2,6 +2,7 @@ import {
   signStorefrontSession,
   STOREFRONT_SESSION_COOKIE,
   verifyStorefrontSession,
+  type StorefrontSessionClaims,
 } from "../domain/security/storefront-access";
 import {
   CUSTOMER_KEY_COOKIE,
@@ -62,14 +63,50 @@ export function buildEditorAuthHeaders(request: Request, shop: string): {
   return { headers, hasApiAuth: false };
 }
 
+/** Read verified storefront session claims from URL param or cookie. */
+export function readStorefrontSessionClaims(request: Request): StorefrontSessionClaims | null {
+  const url = new URL(request.url);
+  const sessionParam =
+    url.searchParams.get("lgs_session")?.trim() ||
+    parseCookieValue(request.headers.get("Cookie"), STOREFRONT_SESSION_COOKIE);
+  if (!sessionParam) return null;
+  try {
+    return verifyStorefrontSession(sessionParam);
+  } catch {
+    return null;
+  }
+}
+
+function parseCookieValue(cookieHeader: string | null, name: string): string | null {
+  if (!cookieHeader) return null;
+  const prefix = `${name}=`;
+  for (const part of cookieHeader.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
 /** Issue session JSON payload for app proxy /session endpoint. */
-export function createStorefrontSessionResponse(shop: string, customerKey?: string | null) {
+export function createStorefrontSessionResponse(
+  shop: string,
+  customerKey?: string | null,
+  customer?: { customerName?: string | null; customerEmail?: string | null },
+) {
   const normalized = normalizeCustomerKey(customerKey);
-  const { token, exp } = signStorefrontSession(shop, { customerKey: normalized });
+  const { token, exp } = signStorefrontSession(shop, {
+    customerKey: normalized,
+    customerName: customer?.customerName,
+    customerEmail: customer?.customerEmail,
+  });
   return Response.json({
     shop,
     sessionToken: token,
     expiresAt: exp,
     customerKey: normalized,
+    customerName: customer?.customerName?.trim() || null,
+    customerEmail: customer?.customerEmail?.trim() || null,
   });
 }

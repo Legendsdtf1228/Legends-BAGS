@@ -56,13 +56,44 @@ export function resolveGangSheetHeight(params: {
 }
 
 /** Gang sheet design state stores canvas length in sheet.maxHeightIn. */
+export const DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN = 0.125;
+
+/** Migrate legacy 0.1″ default to BAGS 0.125″ unless the user chose another value. */
+export function normalizeArtboardMarginIn(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
+  if (Math.abs(value - 0.1) < 0.001) return DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN;
+  return value;
+}
+
 export function gangSheetDesignSheet(widthIn: number, heightIn: number) {
   return {
     widthIn,
     maxHeightIn: heightIn,
     imageMarginIn: 0.15,
-    artboardMarginIn: 0.1,
+    artboardMarginIn: DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   };
+}
+
+/** Restrict sheet width choices to the product binding (e.g. 22.5″ only). */
+export function resolveAllowedSheetWidths(productWidthIn?: number | null): readonly number[] {
+  if (productWidthIn != null && Number.isFinite(productWidthIn) && productWidthIn > 0) {
+    const exact = GANG_SHEET_WIDTHS.find((w) => w === productWidthIn);
+    return exact != null ? [exact] : [productWidthIn];
+  }
+  return GANG_SHEET_WIDTHS;
+}
+
+/** Restrict length presets to variants configured for this product when present. */
+export function resolveAllowedSheetHeights(
+  gangSheetVariants: GangSheetVariantBinding[] = [],
+): readonly number[] {
+  const fromVariants = gangSheetVariants
+    .map((v) => v.sheetHeightIn)
+    .filter(isGangSheetHeightIn);
+  if (fromVariants.length) {
+    return [...new Set(fromVariants)].sort((a, b) => a - b);
+  }
+  return GANG_SHEET_HEIGHTS;
 }
 
 export function gangSheetAreaPriceUsd(
@@ -71,4 +102,54 @@ export function gangSheetAreaPriceUsd(
   pricePerSqIn: number,
 ): number {
   return Math.round(widthIn * heightIn * pricePerSqIn * 100) / 100;
+}
+
+export type GangSheetVariantPriceBinding = {
+  sheetHeightIn?: number | null;
+  variantPriceCents?: number | null;
+};
+
+/** Normalize sheet height for stable variant lookup (DB floats vs UI integers). */
+export function normalizeSheetHeightIn(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value * 1000) / 1000;
+}
+
+/** Resolve configured flat variant price for the active sheet height. */
+export function resolveGangSheetVariantPriceCents(params: {
+  gangSheetVariants?: GangSheetVariantPriceBinding[];
+  sheetHeightIn: number;
+  fallbackVariantPriceCents?: number | null;
+}): number | null {
+  const { gangSheetVariants = [], sheetHeightIn, fallbackVariantPriceCents } = params;
+  const targetHeight = normalizeSheetHeightIn(sheetHeightIn);
+  const byHeight = gangSheetVariants.find((v) => {
+    const h = normalizeSheetHeightIn(v.sheetHeightIn);
+    return h != null && targetHeight != null && h === targetHeight;
+  });
+  if (byHeight?.variantPriceCents != null && byHeight.variantPriceCents >= 0) {
+    return byHeight.variantPriceCents;
+  }
+  if (fallbackVariantPriceCents != null && fallbackVariantPriceCents >= 0) {
+    return fallbackVariantPriceCents;
+  }
+  const firstPriced = gangSheetVariants.find(
+    (v) => v.variantPriceCents != null && v.variantPriceCents >= 0,
+  );
+  return firstPriced?.variantPriceCents ?? null;
+}
+
+/** Product panel rows — fall back to the active binding when variant catalog is empty. */
+export function resolveGangSheetProductPanelVariants<
+  T extends GangSheetVariantPriceBinding & { variantTitle?: string | null },
+>(gangSheetVariants: T[], binding: (T & { builderType?: string }) | null): T[] {
+  const rows = gangSheetVariants.filter(
+    (v) => v.sheetHeightIn != null && Number.isFinite(v.sheetHeightIn),
+  );
+  if (rows.length) {
+    return [...rows].sort((a, b) => (a.sheetHeightIn ?? 0) - (b.sheetHeightIn ?? 0));
+  }
+  if (!binding || binding.builderType !== "gang_sheet") return [];
+  if (binding.sheetHeightIn == null || !Number.isFinite(binding.sheetHeightIn)) return [];
+  return [binding];
 }

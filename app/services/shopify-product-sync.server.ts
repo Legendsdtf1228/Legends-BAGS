@@ -143,6 +143,14 @@ export async function fetchShopifyProductVariants(
   return json.data?.product?.variants?.nodes ?? [];
 }
 
+/** Convert Shopify Admin decimal price string to integer cents. */
+export function shopifyPriceToCents(price: string | null | undefined): number | null {
+  if (price == null || price === "") return null;
+  const n = Number.parseFloat(price);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
 function normalizeVariantGid(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
@@ -205,6 +213,8 @@ export async function reconcileProductBindings(params: {
       ? product.variants.find((v) => v.id === binding.variantGid)
       : undefined;
 
+    const variantPriceCents = shopifyPriceToCents(variant?.price);
+
     await prisma.productBinding.update({
       where: { id: binding.id },
       data: {
@@ -214,6 +224,7 @@ export async function reconcileProductBindings(params: {
         variantTitle: variant?.title,
         shopifyUpdatedAt: new Date(product.updatedAt),
         syncStatus: "synced",
+        ...(variantPriceCents != null ? { variantPriceCents } : {}),
       },
     });
     updated += 1;

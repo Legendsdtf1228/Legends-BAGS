@@ -88,6 +88,32 @@ export const EDITOR_RAIL_ICONS: Record<string, () => ReactNode> = {
       <path d="M7 9h4v4H7zM13 9h4v4h-4z" />
     </RailIcon>
   ),
+  products: () => (
+    <RailIcon>
+      <path d="M6 4h12v4H6z" />
+      <path d="M4 10h16v10H4z" />
+      <path d="M8 14h8" />
+    </RailIcon>
+  ),
+  canva: () => (
+    <RailIcon>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M8 15l2-5 2 3 2-4 2 6" />
+    </RailIcon>
+  ),
+  dropbox: () => (
+    <RailIcon>
+      <path d="M6 8 12 4l6 4-6 4-6-4Z" />
+      <path d="M6 16l6 4 6-4" />
+      <path d="M6 12l6 4 6-4" />
+    </RailIcon>
+  ),
+  settings: () => (
+    <RailIcon>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </RailIcon>
+  ),
 };
 
 export function EditorRailIcon(props: { name: string; label: string }) {

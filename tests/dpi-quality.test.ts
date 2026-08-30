@@ -8,13 +8,17 @@ import {
 } from "../app/components/editor/gang-sheet/editor-zoom";
 
 describe("dpi quality tiers", () => {
-  it("classifies excellent at 300+ DPI", () => {
-    expect(dpiQualityTier(300).tier).toBe("excellent");
-    expect(dpiQualityTier(320).label).toBe("Excellent");
+  it("classifies optimal at 300+ DPI", () => {
+    expect(dpiQualityTier(300).tier).toBe("optimal");
+    expect(dpiQualityTier(320).label).toBe("Optimal");
   });
 
-  it("classifies poor below 200 DPI", () => {
-    expect(dpiQualityTier(150).tier).toBe("poor");
+  it("classifies terrible below 200 DPI", () => {
+    expect(dpiQualityTier(150).tier).toBe("terrible");
+  });
+
+  it("classifies minimum below 72 DPI", () => {
+    expect(dpiQualityTier(50).tier).toBe("minimum");
   });
 
   it("computes effective DPI from pixels and inches", () => {
@@ -42,8 +46,8 @@ describe("dpi quality tiers", () => {
       new Set(["b"]),
       new Set(),
     );
-    expect(summary.excellent).toBe(1);
-    expect(summary.poor).toBe(1);
+    expect(summary.optimal).toBe(1);
+    expect(summary.terrible).toBe(1);
     expect(summary.overlap).toBe(1);
   });
 });

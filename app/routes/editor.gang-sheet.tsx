@@ -9,12 +9,35 @@ import {
   StepperField,
 } from "../components/editor/bags-ui";
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
-import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
+import type { OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
+import { BagsGangSheetHeader } from "../components/editor/bags-parity/bags-gang-sheet-header";
+import { BagsSheetToolbar } from "../components/editor/bags-parity/bags-sheet-toolbar";
+import { BagsBottomNav, type BagsBottomNavTab } from "../components/editor/bags-parity/bags-bottom-nav";
+import { BagsLeftRail, isBagsLeftRailPanelTab, type BagsLeftRailTab } from "../components/editor/bags-parity/bags-left-rail";
+import { BagsProductsPanel } from "../components/editor/bags-parity/bags-products-panel";
+import { BagsUploadsPanel } from "../components/editor/bags-parity/bags-uploads-panel";
+import { BagsPropertiesPanel } from "../components/editor/bags-parity/bags-properties-panel";
+import { BagsActiveSheetsDrawer } from "../components/editor/bags-parity/bags-active-sheets-drawer";
+import { BagsAddImageModal, type AddImageTab } from "../components/editor/bags-parity/bags-add-image-modal";
+import { BagsEditorSettingsDrawer } from "../components/editor/bags-parity/bags-editor-settings-drawer";
+import { BagsSelectionToolbar } from "../components/editor/bags-parity/bags-selection-toolbar";
+import { BagsQualityLegend } from "../components/editor/bags-parity/bags-quality-legend";
+import { BagsImageEditorModal, type BagsImageEditorResult } from "../components/editor/bags-parity/bags-image-editor-modal";
+import { BagsAutomationModal, type AutomationKind } from "../components/editor/bags-parity/bags-automation-modal";
+import { BagsIntegrationPanel } from "../components/editor/bags-parity/bags-integration-panel";
+import { BagsNamesNumbersModal } from "../components/editor/bags-parity/bags-names-numbers-modal";
+import { BagsNamesNumbersContent, type NamesNumbersSizePresetId, type NamesNumbersWorkflow } from "../components/editor/bags-parity/bags-names-numbers-content";
+import { BagsDesignPickerModal, type DesignPickerTab } from "../components/editor/bags-parity/bags-design-picker-modal";
+import { BagsWelcomeCenter, BagsWelcomeAction } from "../components/editor/bags-parity/bags-welcome-center";
+import type { BagsCustomerAccount } from "../components/editor/bags-parity/bags-gang-sheet-header";
+import { BAGS_PARITY_EDITOR_CSS } from "../components/editor/bags-parity/bags-parity-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
-import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import { dpiQualityTier, isLowQualityTier, liveDpi, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import { autoFillCopyCount, applyCropToDimensions } from "../domain/image/image-adjustments";
+import type { ImageAdjustments } from "../domain/image/image-adjustments";
 import {
   fitWidthZoomPercent,
   smartFitZoomPercent,
@@ -23,15 +46,19 @@ import {
 } from "../components/editor/gang-sheet/editor-zoom";
 import {
   QualityInspectorPanel,
-  QualityStatusButton,
   type QualityDisplayPrefs,
 } from "../components/editor/gang-sheet/quality-inspector";
 import { SheetShrinkDialog } from "../components/editor/gang-sheet/sheet-shrink-dialog";
 import {
   GANG_SHEET_HEIGHTS,
-  GANG_SHEET_WIDTHS,
+  DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
   gangSheetAreaPriceUsd,
+  normalizeArtboardMarginIn,
+  resolveAllowedSheetHeights,
+  resolveAllowedSheetWidths,
+  resolveGangSheetVariantPriceCents,
 } from "../domain/design/gang-sheet-sheet";
+import { computeGangSheetEstimateUsd } from "../domain/pricing";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
   BackgroundRemovalModal,
@@ -53,6 +80,7 @@ import {
   readDraft,
   reorderLayer,
   round,
+  shelfPackLayout,
   sortByZIndex,
   writeDraft,
   type GangDraftV1,
@@ -61,6 +89,8 @@ import {
   FONT_OPTIONS,
   GALLERY_CATEGORIES,
   HELP_SHORTCUTS,
+  NAME_SIZE_PRESETS,
+  NUMBER_SIZE_PRESETS,
   SHEET_TEMPLATES,
   TEXT_STYLE_PRESETS,
   type GalleryItem,
@@ -102,7 +132,13 @@ type CanvasItem = Asset & {
   textColor?: string;
   lockPosition?: boolean;
   lockAspect?: boolean;
+  quantity?: number;
+  adjustments?: ImageAdjustments;
 };
+
+type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
+const RESIZE_HANDLES: ResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 type Interaction =
   | {
@@ -117,13 +153,82 @@ type Interaction =
   | {
       mode: "resize";
       id: string;
+      handle: ResizeHandle;
       startW: number;
       startH: number;
+      startX: number;
+      startY: number;
       aspect: number;
+      lockAspect: boolean;
       sx: number;
       sy: number;
       snapshot: CanvasItem[];
+    }
+  | {
+      mode: "rotate";
+      id: string;
+      startRotation: 0 | 90;
+      startW: number;
+      startH: number;
+      startAngle: number;
+      snapshot: CanvasItem[];
+    }
+  | {
+      mode: "marquee";
+      sx: number;
+      sy: number;
+      ex: number;
+      ey: number;
     };
+
+function resizeFromHandle(
+  handle: ResizeHandle,
+  start: { xIn: number; yIn: number; widthIn: number; heightIn: number },
+  dx: number,
+  dy: number,
+  aspect: number,
+  lockAspect: boolean,
+): { xIn: number; yIn: number; widthIn: number; heightIn: number } {
+  const min = 0.1;
+  let { xIn, yIn, widthIn, heightIn } = start;
+
+  if (handle.includes("e")) widthIn = start.widthIn + dx;
+  if (handle.includes("w")) {
+    widthIn = start.widthIn - dx;
+    xIn = start.xIn + dx;
+  }
+  if (handle.includes("s")) heightIn = start.heightIn + dy;
+  if (handle.includes("n")) {
+    heightIn = start.heightIn - dy;
+    yIn = start.yIn + dy;
+  }
+
+  if (lockAspect) {
+    const isCorner = handle.length === 2;
+    if (isCorner) {
+      const scaleW = widthIn / start.widthIn;
+      const scaleH = heightIn / start.heightIn;
+      const scale = Math.abs(scaleW - 1) >= Math.abs(scaleH - 1) ? scaleW : scaleH;
+      widthIn = Math.max(min, start.widthIn * scale);
+      heightIn = Math.max(min, widthIn / aspect);
+      if (handle.includes("w")) xIn = start.xIn + start.widthIn - widthIn;
+      if (handle.includes("n")) yIn = start.yIn + start.heightIn - heightIn;
+    } else if (handle === "e" || handle === "w") {
+      widthIn = Math.max(min, widthIn);
+      heightIn = Math.max(min, widthIn / aspect);
+      if (handle === "w") xIn = start.xIn + start.widthIn - widthIn;
+    } else {
+      heightIn = Math.max(min, heightIn);
+      widthIn = Math.max(min, heightIn * aspect);
+      if (handle === "n") yIn = start.yIn + start.heightIn - heightIn;
+    }
+  } else {
+    widthIn = Math.max(min, widthIn);
+    heightIn = Math.max(min, heightIn);
+  }
+
+  return { xIn, yIn, widthIn, heightIn };
+}
 
 type AutoDraft = {
   id: string;
@@ -154,6 +259,7 @@ type PoolItem = {
 type SidebarTab =
   | "uploads"
   | "gallery"
+  | "products"
   | "text"
   | "names"
   | "auto"
@@ -208,9 +314,26 @@ type AutoNestPreview = {
   remainingCount?: number;
 };
 
-const SHEET_WIDTHS = GANG_SHEET_WIDTHS;
 const SHEET_HEIGHTS = [...GANG_SHEET_HEIGHTS];
 const AUTO_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12] as const;
+
+function sheetVisualAidStyle(
+  visualAid: "checkerboard" | "gray" | "black" | "white" | "custom",
+  customColor: string,
+): CSSProperties | undefined {
+  switch (visualAid) {
+    case "gray":
+      return { backgroundColor: "#9ca3af" };
+    case "black":
+      return { backgroundColor: "#111827" };
+    case "white":
+      return { backgroundColor: "#ffffff" };
+    case "custom":
+      return { backgroundColor: customColor };
+    default:
+      return undefined;
+  }
+}
 
 function buildNestItemsFromDrafts(drafts: AutoDraft[]) {
   return drafts.flatMap((d) =>
@@ -270,6 +393,7 @@ type LibraryDesign = {
   status: string;
   archived: boolean;
   previewPath?: string | null;
+  sourceOrderId?: string | null;
 };
 
 type RemoteDesignPayload = {
@@ -315,7 +439,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return data(
     {
       shop: launch.shop,
-      productGid: launch.productGid,
+      productGid: launch.productGid || editorConfig?.resolvedProductGid || "",
       variantId: launch.variantId,
       designId: launch.designId,
       designVersion: launch.designVersion,
@@ -327,14 +451,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
       appearance,
       pricePerSqIn: editorConfig?.pricePerSqIn ?? 0.049,
       variantPriceCents: editorConfig?.binding?.variantPriceCents ?? null,
+      productSheetWidthIn: editorConfig?.binding?.sheetWidthIn ?? editorConfig?.sheet.widthIn ?? null,
       gangSheetVariants: editorConfig?.gangSheetVariants ?? [],
+      productTitle: editorConfig?.binding?.productTitle ?? null,
+      productStatus: editorConfig?.binding?.productStatus ?? null,
+      syncStatus: editorConfig?.binding?.syncStatus ?? null,
       defaultSheetHeightIn: editorConfig?.defaultSheetHeightIn ?? 24,
       defaultSheet: editorConfig?.sheet ?? {
         widthIn: 22.5,
         maxHeightIn: 24,
         imageMarginIn: 0.15,
-        artboardMarginIn: 0.1,
+        artboardMarginIn: DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN,
       },
+      customerName: launch.customerName,
+      customerEmail: launch.customerEmail,
+      customerKey: launch.customerKey,
     },
     { headers },
   );
@@ -368,7 +499,7 @@ export default function GangSheetEditor() {
   const [qualityPrefs, setQualityPrefs] = useState<QualityDisplayPrefs>({
     showResolutionOutlines: true,
     showOverlapOutlines: true,
-    showSafeZone: false,
+    showSafeZone: true,
     showOobShading: true,
   });
   const [scrollMetrics, setScrollMetrics] = useState({ top: 0, height: 0, client: 0 });
@@ -395,6 +526,22 @@ export default function GangSheetEditor() {
   const [showFirstTip, setShowFirstTip] = useState(true);
   const [uploadSearch, setUploadSearch] = useState("");
   const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
+  const [uploadView, setUploadView] = useState<"grid" | "list">("grid");
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [upscaling, setUpscaling] = useState(false);
+  const [sheetQuantity, setSheetQuantity] = useState(page.quantity ?? 1);
+  const [bottomNav, setBottomNav] = useState<BagsBottomNavTab | null>(null);
+  const [leftRailTab, setLeftRailTab] = useState<BagsLeftRailTab>("uploads");
+  const [settingsDrawerOpen, setSettingsDrawerOpen] = useState(false);
+  const [addImageOpen, setAddImageOpen] = useState(false);
+  const [addImageTab, setAddImageTab] = useState<AddImageTab>("recent");
+  const [sheetsDrawerCollapsed, setSheetsDrawerCollapsed] = useState(false);
+  const [visualAid, setVisualAid] = useState<"checkerboard" | "gray" | "black" | "white" | "custom">("checkerboard");
+  const [visualAidCustomColor, setVisualAidCustomColor] = useState("#c4c4c4");
+  const [artboardMarginEnabled, setArtboardMarginEnabled] = useState(true);
+  const [artboardMarginIn, setArtboardMarginIn] = useState(() =>
+    normalizeArtboardMarginIn(page.defaultSheet.artboardMarginIn),
+  );
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
@@ -410,9 +557,26 @@ export default function GangSheetEditor() {
   const [textFontSize, setTextFontSize] = useState(36);
   const [textFontFamily, setTextFontFamily] = useState("Arial");
   const [textColor, setTextColor] = useState("#111827");
-  const [rosterCsv, setRosterCsv] = useState("");
-  const [rosterFontSize, setRosterFontSize] = useState(24);
+  const [namesList, setNamesList] = useState("");
+  const [numbersList, setNumbersList] = useState("");
+  const [namesNumbersWorkflow, setNamesNumbersWorkflow] = useState<NamesNumbersWorkflow>("names");
+  const [rosterNameFontFamily, setRosterNameFontFamily] = useState("Impact");
+  const [rosterNumberFontFamily, setRosterNumberFontFamily] = useState("Impact");
+  const [rosterNameFontSize, setRosterNameFontSize] = useState(28);
+  const [rosterNumberFontSize, setRosterNumberFontSize] = useState(36);
+  const [rosterNameWidthIn, setRosterNameWidthIn] = useState(5);
+  const [rosterNumberWidthIn, setRosterNumberWidthIn] = useState(2);
+  const [rosterNameStrokeWidth, setRosterNameStrokeWidth] = useState(0);
+  const [rosterNumberStrokeWidth, setRosterNumberStrokeWidth] = useState(0);
+  const [rosterStrokeColor, setRosterStrokeColor] = useState("#111827");
+  const [rosterTextColor, setRosterTextColor] = useState("#111827");
+  const [rosterQuantity, setRosterQuantity] = useState(1);
+  const [designPickerOpen, setDesignPickerOpen] = useState(false);
+  const [designPickerTab, setDesignPickerTab] = useState<DesignPickerTab>("mine");
   const [savedDesigns, setSavedDesigns] = useState<LibraryDesign[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState("");
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
   const [librarySort, setLibrarySort] = useState<"recent" | "name">("recent");
   const [libraryIncludeArchived, setLibraryIncludeArchived] = useState(false);
@@ -429,13 +593,18 @@ export default function GangSheetEditor() {
   const [designName, setDesignName] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
-  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapEnabled, setSnapEnabled] = useState(false);
   const [spacePan, setSpacePan] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState<"sidebar" | "properties" | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveDialogError, setSaveDialogError] = useState("");
   const [saveDialogRequestId, setSaveDialogRequestId] = useState("");
+  const [imageEditorOpen, setImageEditorOpen] = useState(false);
+  const [automationOpen, setAutomationOpen] = useState(false);
+  const [automationKind, setAutomationKind] = useState<AutomationKind>("auto-fill");
+  const [nestPreview, setNestPreview] = useState<ReturnType<typeof shelfPackLayout> | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const sidebarUploadRef = useRef<HTMLInputElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
@@ -465,17 +634,68 @@ export default function GangSheetEditor() {
       setSelectedId(id);
       setSelectedIds(new Set([id]));
     }
+    if (id && typeof window !== "undefined" && window.innerWidth <= 768) {
+      setMobileDrawer("properties");
+    }
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
+
+  const allowedSheetWidths = useMemo(
+    () => resolveAllowedSheetWidths(page.productSheetWidthIn),
+    [page.productSheetWidthIn],
+  );
+  const allowedSheetHeights = useMemo(
+    () => resolveAllowedSheetHeights(page.gangSheetVariants),
+    [page.gangSheetVariants],
+  );
+  const activeVariantPriceCents = useMemo(
+    () =>
+      resolveGangSheetVariantPriceCents({
+        gangSheetVariants: page.gangSheetVariants,
+        sheetHeightIn: sheetHeight,
+        fallbackVariantPriceCents: page.variantPriceCents,
+      }),
+    [page.gangSheetVariants, page.variantPriceCents, sheetHeight],
+  );
+
+  const activeVariantMeta = useMemo(() => {
+    const match = page.gangSheetVariants.find((v) => v.sheetHeightIn === sheetHeight);
+    return {
+      title: match?.variantTitle ?? null,
+      id: page.variantId || match?.variantGid?.replace("gid://shopify/ProductVariant/", "") || null,
+    };
+  }, [page.gangSheetVariants, page.variantId, sheetHeight]);
+
+  const storefrontCustomer = useMemo<BagsCustomerAccount | null>(() => {
+    const name = page.customerName?.trim();
+    const email = page.customerEmail?.trim();
+    const key = page.customerKey?.trim();
+    const isLoggedIn = Boolean(key?.startsWith("gid://shopify/Customer/"));
+    if (name && email) return { name, email };
+    if (name) return { name, email: email ?? "" };
+    if (email) return { name: email.split("@")[0] || "Customer", email };
+    if (isLoggedIn) return { name: "Customer", email: "" };
+    return null;
+  }, [page.customerName, page.customerEmail, page.customerKey]);
 
   const usedArea = useMemo(
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
     [items],
   );
-  const estimate =
-    page.variantPriceCents != null
-      ? page.variantPriceCents / 100
-      : Math.round(usedArea * page.pricePerSqIn * 100) / 100;
+  const estimate = useMemo(
+    () =>
+      computeGangSheetEstimateUsd({
+        variantPriceCents: activeVariantPriceCents,
+        pricePerSqIn: page.pricePerSqIn,
+        sheetWidthIn: sheetWidth,
+        sheetHeightIn: sheetHeight,
+      }),
+    [activeVariantPriceCents, page.pricePerSqIn, sheetWidth, sheetHeight],
+  );
+  const welcomePriceLabel =
+    activeVariantPriceCents != null
+      ? `$${(activeVariantPriceCents / 100).toFixed(2)}`
+      : `$${gangSheetAreaPriceUsd(sheetWidth, sheetHeight, page.pricePerSqIn).toFixed(2)}`;
   const utilization = Math.min(100, Math.round((usedArea / (sheetWidth * sheetHeight)) * 100));
 
   const overlappingIds = useMemo(() => findOverlappingIds(items), [items]);
@@ -488,7 +708,7 @@ export default function GangSheetEditor() {
       items.filter((i) => {
         if (i.kind === "text") return false;
         const tier = dpiQualityTier(i.dpi).tier;
-        return tier === "low" || tier === "poor" || tier === "unknown";
+        return isLowQualityTier(tier);
       }).length,
     [items],
   );
@@ -529,12 +749,28 @@ export default function GangSheetEditor() {
   }, []);
 
   useEffect(() => {
+    if (!allowedSheetWidths.includes(sheetWidth)) {
+      setSheetWidth(allowedSheetWidths[0] ?? page.defaultSheet.widthIn);
+    }
+  }, [allowedSheetWidths, sheetWidth, page.defaultSheet.widthIn]);
+
+  useEffect(() => {
+    if (!allowedSheetHeights.includes(sheetHeight)) {
+      setSheetHeight(allowedSheetHeights[0] ?? page.defaultSheetHeightIn);
+    }
+  }, [allowedSheetHeights, sheetHeight, page.defaultSheetHeightIn]);
+
+  useEffect(() => {
     const draft = readDraft(page.shop);
     setHasStoredDraft(Boolean(draft?.items.length));
     if (draft?.items.length && !page.designId) setDraftOffer(draft);
-    void refreshLibrary();
     void refreshGallery();
   }, [page.shop, page.designId]);
+
+  useEffect(() => {
+    if (screen !== "welcome") return;
+    void refreshLibrary();
+  }, [screen, page.shop, page.productGid, librarySearch, librarySort, libraryIncludeArchived]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -663,6 +899,18 @@ export default function GangSheetEditor() {
       const c = canvas.current;
       if (!d || !c) return;
       const r = c.getBoundingClientRect();
+      if (d.mode === "marquee") {
+        interaction.current = { ...d, ex: e.clientX, ey: e.clientY };
+        const c = canvas.current;
+        if (!c) return;
+        const r = c.getBoundingClientRect();
+        const x1 = Math.min(d.sx, e.clientX) - r.left;
+        const y1 = Math.min(d.sy, e.clientY) - r.top;
+        const x2 = Math.max(d.sx, e.clientX) - r.left;
+        const y2 = Math.max(d.sy, e.clientY) - r.top;
+        setMarqueeRect({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+        return;
+      }
       if (d.mode === "drag") {
         setItems((all) =>
           all.map((i) => {
@@ -692,20 +940,75 @@ export default function GangSheetEditor() {
         );
         return;
       }
+      if (d.mode === "rotate") {
+        const item = itemsRef.current.find((i) => i.id === d.id);
+        if (!item) return;
+        const cx = r.left + ((item.xIn + item.widthIn / 2) / sheetWidth) * r.width;
+        const cy = r.top + ((item.yIn + item.heightIn / 2) / sheetHeight) * r.height;
+        const angle = Math.atan2(e.clientY - cy, e.clientX - cx);
+        let delta = angle - d.startAngle;
+        while (delta > Math.PI) delta -= 2 * Math.PI;
+        while (delta < -Math.PI) delta += 2 * Math.PI;
+        const rotated = Math.abs(delta) >= Math.PI / 4;
+        const targetRot: 0 | 90 = rotated ? (d.startRotation ? 0 : 90) : d.startRotation;
+        setItems((all) =>
+          all.map((i) => {
+            if (i.id !== d.id) return i;
+            if (targetRot === d.startRotation) {
+              return { ...i, rotationDeg: d.startRotation, widthIn: d.startW, heightIn: d.startH };
+            }
+            return { ...i, rotationDeg: targetRot, widthIn: d.startH, heightIn: d.startW };
+          }),
+        );
+        return;
+      }
       const dx = ((e.clientX - d.sx) / r.width) * sheetWidth;
-      let widthIn = Math.max(0.1, d.startW + dx);
-      let heightIn = widthIn / d.aspect;
+      const dy = ((e.clientY - d.sy) / r.height) * sheetHeight;
       setItems((all) =>
-        all.map((i) =>
-          i.id === d.id
-            ? inside({ ...i, widthIn, heightIn }, sheetWidth, sheetHeight)
-            : i,
-        ),
+        all.map((i) => {
+          if (i.id !== d.id) return i;
+          const next = resizeFromHandle(
+            d.handle,
+            { xIn: d.startX, yIn: d.startY, widthIn: d.startW, heightIn: d.startH },
+            dx,
+            dy,
+            d.aspect,
+            d.lockAspect,
+          );
+          return inside(withLiveDpi(i, next), sheetWidth, sheetHeight);
+        }),
       );
     };
     const up = () => {
       const d = interaction.current;
       if (!d) return;
+      if (d.mode === "marquee") {
+        const c = canvas.current;
+        if (c) {
+          const r = c.getBoundingClientRect();
+          const x1 = Math.min(d.sx, d.ex) - r.left;
+          const y1 = Math.min(d.sy, d.ey) - r.top;
+          const x2 = Math.max(d.sx, d.ex) - r.left;
+          const y2 = Math.max(d.sy, d.ey) - r.top;
+          const ids = new Set<string>();
+          for (const item of itemsRef.current) {
+            const px = (item.xIn / sheetWidth) * r.width;
+            const py = (item.yIn / sheetHeight) * r.height;
+            const pw = (item.widthIn / sheetWidth) * r.width;
+            const ph = (item.heightIn / sheetHeight) * r.height;
+            if (px + pw >= x1 && px <= x2 && py + ph >= y1 && py <= y2) ids.add(item.id);
+          }
+          if (ids.size) {
+            setSelectedIds(ids);
+            setSelectedId([...ids].pop() ?? null);
+          } else {
+            selectItem(null);
+          }
+        }
+        setMarqueeRect(null);
+        interaction.current = null;
+        return;
+      }
       setSnapGuides([]);
       const next = itemsRef.current;
       const before = d.snapshot.find((i) => i.id === d.id);
@@ -716,7 +1019,8 @@ export default function GangSheetEditor() {
         (before.xIn !== after.xIn ||
           before.yIn !== after.yIn ||
           before.widthIn !== after.widthIn ||
-          before.heightIn !== after.heightIn);
+          before.heightIn !== after.heightIn ||
+          before.rotationDeg !== after.rotationDeg);
       if (moved) commitFromSnapshot(d.snapshot, next);
       interaction.current = null;
     };
@@ -748,12 +1052,16 @@ export default function GangSheetEditor() {
       heightIn: h,
       rotationDeg: 0,
       zIndex: nextZIndex(existing) + index,
+      quantity: 1,
+      dpi: Math.round(liveDpi(asset.widthPx, asset.heightPx, w, h) ?? 0) || undefined,
     };
   }
 
   function openCanvas(options?: { tab?: SidebarTab; pickUpload?: boolean }) {
     setScreen("canvas");
-    setSidebarTab(options?.tab ?? "uploads");
+    const tab = options?.tab ?? "uploads";
+    setSidebarTab(tab);
+    setLeftRailTab(tab === "products" ? "products" : tab === "gallery" ? "gallery" : "uploads");
     setMobileDrawer("sidebar");
     setMessage("");
     setShowFirstTip(true);
@@ -761,6 +1069,46 @@ export default function GangSheetEditor() {
       window.setTimeout(() => sidebarUploadRef.current?.click(), 50);
     }
   }
+
+  function handleLeftRail(tab: BagsLeftRailTab) {
+    if (tab === "home") {
+      setScreen("welcome");
+      return;
+    }
+    if (tab === "settings") {
+      setLeftRailTab("settings");
+      setSettingsDrawerOpen(true);
+      setBottomNav(null);
+      return;
+    }
+    if (tab === "canva") {
+      setLeftRailTab("canva");
+      setMobileDrawer("sidebar");
+      return;
+    }
+    if (tab === "dropbox") {
+      setLeftRailTab("dropbox");
+      setMobileDrawer("sidebar");
+      return;
+    }
+    if (tab === "names-numbers") {
+      setLeftRailTab("names-numbers");
+      setMobileDrawer("sidebar");
+      return;
+    }
+    setLeftRailTab(tab);
+    if (tab === "products") setSidebarTab("products");
+    if (tab === "uploads") setSidebarTab("uploads");
+    if (tab === "gallery") setSidebarTab("gallery");
+    setMobileDrawer("sidebar");
+  }
+
+  const desktopSidePanelOpen =
+    isBagsLeftRailPanelTab(leftRailTab) ||
+    leftRailTab === "canva" ||
+    leftRailTab === "dropbox" ||
+    leftRailTab === "names-numbers";
+  const desktopPropertiesOpen = Boolean(selected);
 
   function commitSheetSize(w: number, h: number, mode: "clamp" | "scale") {
     if (itemsRef.current.length) {
@@ -842,6 +1190,38 @@ export default function GangSheetEditor() {
     }
   }
 
+  function handleBottomNav(tab: BagsBottomNavTab) {
+    if (tab === "add-image") {
+      setAddImageOpen(true);
+      setBottomNav(null);
+      return;
+    }
+    setBottomNav((prev) => (prev === tab ? null : tab));
+  }
+
+  function stretchToArtboardWidth() {
+    if (!selected) return;
+    change({ widthIn: sheetWidth, xIn: 0 });
+  }
+
+  function stretchToArtboardHeight() {
+    if (!selected) return;
+    change({ heightIn: sheetHeight, yIn: 0 });
+  }
+
+  function centerBothSelection() {
+    alignSelection("center-h");
+    alignSelection("center-v");
+  }
+
+  function closeEditor() {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: "lgs:close-editor" }, page.parentOrigin || page.editorOrigin || "*");
+    } else {
+      setScreen("welcome");
+    }
+  }
+
   async function restoreDraft(draft: GangDraftV1) {
     setSheetWidth(draft.sheetWidth);
     setSheetHeight(draft.sheetHeight);
@@ -882,7 +1262,7 @@ export default function GangSheetEditor() {
     setHistory([]);
     setFuture([]);
     setItems(restored);
-    selectItem(null);
+    selectItem(restored[0]?.id ?? null);
     setDraftOffer(null);
     setScreen("canvas");
     setMessage(`Restored draft · ${restored.length} piece${restored.length === 1 ? "" : "s"}.`);
@@ -931,6 +1311,7 @@ export default function GangSheetEditor() {
   ) {
     if (!files.length) return;
     setUploading(true);
+    setUploadProgress(`Uploading 0/${files.length}…`);
     setError("");
     setSaved(false);
     try {
@@ -939,7 +1320,10 @@ export default function GangSheetEditor() {
         const placed: CanvasItem[] = [];
         const placeOnSheet = options?.placeOnSheet ?? false;
         let base = items;
+        let index = 0;
         for (const file of files) {
+          index += 1;
+          setUploadProgress(`Uploading ${index}/${files.length}: ${file.name}`);
           const asset = await postUpload(file);
           const previewUrl = URL.createObjectURL(file);
           poolAdded.push({
@@ -993,6 +1377,30 @@ export default function GangSheetEditor() {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
+    }
+  }
+
+  async function upscaleSelected() {
+    if (!selected || selected.kind === "text") return;
+    setUpscaling(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/assets/${encodeURIComponent(selected.assetId)}/upscale`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
+        body: JSON.stringify({ widthIn: selected.widthIn, heightIn: selected.heightIn }),
+      });
+      const json = (await res.json()) as { assetId?: string; error?: string };
+      if (!res.ok || !json.assetId) throw new Error(json.error || "Upscale failed");
+      const previewUrl = assetPreviewUrl(json.assetId);
+      change({ assetId: json.assetId, previewUrl });
+      setMessage("Artwork upscaled for print.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upscale failed");
+    } finally {
+      setUpscaling(false);
     }
   }
 
@@ -1010,11 +1418,26 @@ export default function GangSheetEditor() {
     return json;
   }
 
+  function selectionIds(): Set<string> {
+    return selectedIds.size ? selectedIds : selectedId ? new Set([selectedId]) : new Set<string>();
+  }
+
+  function withLiveDpi(item: CanvasItem, patch: Partial<CanvasItem>): CanvasItem {
+    const next = { ...item, ...patch };
+    if (next.kind === "text") return next;
+    if (patch.widthIn != null || patch.heightIn != null) {
+      const dpi = liveDpi(next.widthPx, next.heightPx, next.widthIn, next.heightIn);
+      if (dpi != null) next.dpi = Math.round(dpi);
+    }
+    return next;
+  }
+
   function change(patch: Partial<CanvasItem>) {
-    if (!selectedId) return;
+    const ids = selectionIds();
+    if (!ids.size) return;
     pushHistory(
       items.map((i) =>
-        i.id === selectedId ? inside({ ...i, ...patch }, sheetWidth, sheetHeight) : i,
+        ids.has(i.id) ? inside(withLiveDpi(i, patch), sheetWidth, sheetHeight) : i,
       ),
     );
   }
@@ -1061,13 +1484,27 @@ export default function GangSheetEditor() {
     selectItem(null);
   }
 
-  function rotate() {
+  function rotateCcw() {
     if (!selected) return;
     change({
       widthIn: selected.heightIn,
       heightIn: selected.widthIn,
       rotationDeg: selected.rotationDeg ? 0 : 90,
     });
+  }
+
+  function rotateCw() {
+    if (!selected) return;
+    change({
+      widthIn: selected.heightIn,
+      heightIn: selected.widthIn,
+      rotationDeg: selected.rotationDeg ? 0 : 90,
+      flipX: !selected.flipX,
+    });
+  }
+
+  function rotate() {
+    rotateCcw();
   }
 
   function flipHorizontal() {
@@ -1126,6 +1563,12 @@ export default function GangSheetEditor() {
 
   function fillSheet() {
     if (!selected) return;
+    setAutomationKind("auto-fill");
+    setAutomationOpen(true);
+  }
+
+  function confirmFillSheet() {
+    if (!selected) return;
     const copies: CanvasItem[] = [];
     let z = nextZIndex(items);
     for (let y = 0.1; y + selected.heightIn <= sheetHeight; y += selected.heightIn + gap) {
@@ -1137,28 +1580,63 @@ export default function GangSheetEditor() {
     }
     pushHistory([...items.filter((i) => i.id !== selected.id), ...copies]);
     selectItem(copies[0]?.id ?? null);
-    setMessage(`Filled sheet with ${copies.length} copies.`);
+    setMessage(`Filled sheet with ${copies.length} copies. Undo with Ctrl+Z.`);
+    setAutomationOpen(false);
   }
 
+  function openAutoNestModal() {
+    setAutomationKind("auto-nest");
+    setNestPreview(shelfPackLayout(items, sheetWidth, sheetHeight, gap));
+    setAutomationOpen(true);
+  }
+
+  function confirmAutoNest() {
+    const preview = shelfPackLayout(items, sheetWidth, sheetHeight, gap);
+    if (preview.remainingCount > 0) {
+      setMessage(
+        `Nested ${preview.fittedCount} of ${items.length} pieces — ${preview.remainingCount} did not fit. Undo with Ctrl+Z.`,
+      );
+    } else {
+      setMessage(`Artwork automatically arranged. Undo with Ctrl+Z.`);
+    }
+    pushHistory(preview.placed);
+    setNestPreview(null);
+    setAutomationOpen(false);
+  }
+
+  function applyImageEditorResult(result: BagsImageEditorResult) {
+    if (!selected) return;
+    const dims = applyCropToDimensions(
+      selected.widthPx,
+      selected.heightPx,
+      selected.widthIn,
+      selected.heightIn,
+      result.crop,
+    );
+    change({
+      previewUrl: result.previewUrl,
+      adjustments: result.adjustments,
+      widthPx: dims.widthPx,
+      heightPx: dims.heightPx,
+      widthIn: dims.widthIn,
+      heightIn: dims.heightIn,
+    });
+    setImageEditorOpen(false);
+    setMessage("Image adjustments applied.");
+  }
+
+  const autoFillPreviewCount = selected
+    ? autoFillCopyCount(selected.widthIn, selected.heightIn, sheetWidth, sheetHeight, gap)
+    : 0;
+
   function autoArrange() {
-    let x = gap;
-    let y = gap;
-    let row = 0;
-    const placed = [...items]
-      .sort((a, b) => b.widthIn * b.heightIn - a.widthIn * a.heightIn)
-      .map((i) => {
-        if (x + i.widthIn > sheetWidth - gap) {
-          x = gap;
-          y += row + gap;
-          row = 0;
-        }
-        const n = inside({ ...i, xIn: x, yIn: y }, sheetWidth, sheetHeight);
-        x += i.widthIn + gap;
-        row = Math.max(row, i.heightIn);
-        return n;
-      });
-    pushHistory(placed);
-    setMessage("Artwork automatically arranged.");
+    const preview = shelfPackLayout(items, sheetWidth, sheetHeight, gap);
+    pushHistory(preview.placed);
+    setMessage(
+      preview.remainingCount > 0
+        ? `Arranged ${preview.fittedCount} pieces — ${preview.remainingCount} did not fit. Undo with Ctrl+Z.`
+        : "Artwork automatically arranged. Undo with Ctrl+Z.",
+    );
   }
 
   useEffect(() => {
@@ -1198,7 +1676,7 @@ export default function GangSheetEditor() {
         setSpacePan(true);
         return;
       }
-      if (!selectedId || screen !== "canvas") return;
+      if (!selectionIds().size || screen !== "canvas") return;
       let dx = 0;
       let dy = 0;
       const step = e.shiftKey ? NUDGE_SHIFT_IN : NUDGE_IN;
@@ -1208,9 +1686,10 @@ export default function GangSheetEditor() {
       else if (e.key === "ArrowDown") dy = step;
       else return;
       e.preventDefault();
+      const ids = selectionIds();
       const cur = itemsRef.current;
       const next = cur.map((i) =>
-        i.id === selectedId && !i.lockPosition
+        ids.has(i.id) && !i.lockPosition
           ? inside({ ...i, xIn: i.xIn + dx, yIn: i.yIn + dy }, sheetWidth, sheetHeight)
           : i,
       );
@@ -1227,9 +1706,37 @@ export default function GangSheetEditor() {
     };
   }, [draftOffer, pushHistory, screen, selectedId, sheetHeight, sheetWidth, spacePan]);
 
-  function textPreviewDataUrl(content: string, fontSize: number, fontFamily: string, color: string) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120"><text x="8" y="${fontSize + 8}" font-size="${fontSize}" font-family="${fontFamily}" fill="${color}">${content.replace(/[<>&"]/g, "")}</text></svg>`;
+  function textPreviewDataUrl(
+    content: string,
+    fontSize: number,
+    fontFamily: string,
+    color: string,
+    strokeWidth = 0,
+    strokeColor = "#111827",
+  ) {
+    const safe = content.replace(/[<>&"]/g, "");
+    const stroke =
+      strokeWidth > 0
+        ? ` stroke="${strokeColor}" stroke-width="${strokeWidth}" paint-order="stroke fill"`
+        : "";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120"><text x="8" y="${fontSize + 8}" font-size="${fontSize}" font-family="${fontFamily}" fill="${color}"${stroke}>${safe}</text></svg>`;
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+
+  function applyNameSizePreset(presetId: NamesNumbersSizePresetId) {
+    const preset = NAME_SIZE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setRosterNameFontSize(preset.fontSize);
+    setRosterNameWidthIn(preset.widthIn);
+    setRosterNameStrokeWidth(preset.strokeWidth);
+  }
+
+  function applyNumberSizePreset(presetId: NamesNumbersSizePresetId) {
+    const preset = NUMBER_SIZE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setRosterNumberFontSize(preset.fontSize);
+    setRosterNumberWidthIn(preset.widthIn);
+    setRosterNumberStrokeWidth(preset.strokeWidth);
   }
 
   function addTextToSheet(content?: string) {
@@ -1308,62 +1815,121 @@ export default function GangSheetEditor() {
     }
   }
 
-  function parseRoster(csv: string) {
-    return csv
+  function parseLineList(raw: string): string[] {
+    return raw
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split(/[,\t]/).map((p) => p.trim());
-        return { name: parts[0] ?? "", number: parts[1] ?? "" };
-      })
-      .filter((r) => r.name || r.number);
+      .filter(Boolean);
   }
 
-  function generateRoster() {
-    const rows = parseRoster(rosterCsv);
-    if (!rows.length) {
-      setError("Add roster rows — one name and number per line.");
-      return;
-    }
-    const dupes = rows.filter(
-      (r, i) => rows.findIndex((x) => x.number && x.number === r.number) !== i,
-    );
-    if (dupes.length) {
-      setError(`Duplicate numbers found: ${dupes.map((d) => d.number).join(", ")}`);
+  function generateNames() {
+    const labels = parseLineList(namesList);
+    if (!labels.length) {
+      setError("Add at least one name — one per line.");
       return;
     }
     const next: CanvasItem[] = [...items];
     let z = nextZIndex(next);
-    rows.forEach((row, idx) => {
-      const label = `${row.name}${row.number ? ` #${row.number}` : ""}`.trim();
-      const w = Math.min(6, sheetWidth - 0.4);
-      const h = Math.max(0.4, rosterFontSize / 72);
-      next.push({
-        assetId: `text-roster-${crypto.randomUUID()}`,
-        widthPx: 400,
-        heightPx: 80,
-        contentType: "image/svg+xml",
-        id: crypto.randomUUID(),
-        name: label,
-        previewUrl: textPreviewDataUrl(label, rosterFontSize, "Impact", "#111827"),
-        xIn: 0.2,
-        yIn: 0.2 + idx * (h + gap),
-        widthIn: w,
-        heightIn: h,
-        rotationDeg: 0,
-        zIndex: z++,
-        kind: "text",
-        textContent: label,
-        fontSize: rosterFontSize,
-        fontFamily: "Impact",
-        textColor: "#111827",
-      });
+    labels.forEach((label, idx) => {
+      for (let copy = 0; copy < rosterQuantity; copy += 1) {
+        const nameH = Math.max(0.35, rosterNameFontSize / 72);
+        const nameW = Math.min(rosterNameWidthIn, sheetWidth - 0.4);
+        const yBase = 0.2 + (idx * rosterQuantity + copy) * (nameH + gap);
+        next.push({
+          assetId: `text-roster-name-${crypto.randomUUID()}`,
+          widthPx: 400,
+          heightPx: 80,
+          contentType: "image/svg+xml",
+          id: crypto.randomUUID(),
+          name: label,
+          previewUrl: textPreviewDataUrl(
+            label,
+            rosterNameFontSize,
+            rosterNameFontFamily,
+            rosterTextColor,
+            rosterNameStrokeWidth,
+            rosterStrokeColor,
+          ),
+          xIn: 0.2,
+          yIn: yBase,
+          widthIn: nameW,
+          heightIn: nameH,
+          rotationDeg: 0,
+          zIndex: z++,
+          kind: "text",
+          textContent: label,
+          fontSize: rosterNameFontSize,
+          fontFamily: rosterNameFontFamily,
+          textColor: rosterTextColor,
+        });
+      }
     });
     pushHistory(next);
-    setMessage(`Generated ${rows.length} name/number set${rows.length === 1 ? "" : "s"}.`);
+    selectItem(next.at(-1)?.id ?? null);
+    setMessage(`Generated ${labels.length} name layer${labels.length === 1 ? "" : "s"}.`);
     setSidebarTab("layers");
     setMobileDrawer("sidebar");
+  }
+
+  function generateNumbers() {
+    const labels = parseLineList(numbersList);
+    if (!labels.length) {
+      setError("Add at least one number — one per line.");
+      return;
+    }
+    const dupes = labels.filter((n, i) => labels.indexOf(n) !== i);
+    if (dupes.length) {
+      setError(`Duplicate numbers found: ${[...new Set(dupes)].join(", ")}`);
+      return;
+    }
+    const next: CanvasItem[] = [...items];
+    let z = nextZIndex(next);
+    labels.forEach((raw, idx) => {
+      const label = raw.startsWith("#") ? raw : `#${raw}`;
+      for (let copy = 0; copy < rosterQuantity; copy += 1) {
+        const numH = Math.max(0.35, rosterNumberFontSize / 72);
+        const numW = Math.min(rosterNumberWidthIn, sheetWidth - 0.4);
+        const yBase = 0.2 + (idx * rosterQuantity + copy) * (numH + gap);
+        next.push({
+          assetId: `text-roster-number-${crypto.randomUUID()}`,
+          widthPx: 400,
+          heightPx: 80,
+          contentType: "image/svg+xml",
+          id: crypto.randomUUID(),
+          name: label,
+          previewUrl: textPreviewDataUrl(
+            label,
+            rosterNumberFontSize,
+            rosterNumberFontFamily,
+            rosterTextColor,
+            rosterNumberStrokeWidth,
+            rosterStrokeColor,
+          ),
+          xIn: 0.2,
+          yIn: yBase,
+          widthIn: numW,
+          heightIn: numH,
+          rotationDeg: 0,
+          zIndex: z++,
+          kind: "text",
+          textContent: label,
+          fontSize: rosterNumberFontSize,
+          fontFamily: rosterNumberFontFamily,
+          textColor: rosterTextColor,
+        });
+      }
+    });
+    pushHistory(next);
+    selectItem(next.at(-1)?.id ?? null);
+    setMessage(`Generated ${labels.length} number layer${labels.length === 1 ? "" : "s"}.`);
+    setSidebarTab("layers");
+    setMobileDrawer("sidebar");
+  }
+
+  function openDesignPicker(tab: DesignPickerTab = "mine") {
+    setDesignPickerTab(tab);
+    setDesignPickerOpen(true);
+    void refreshLibrary(true);
   }
 
   function renamePoolItem(poolId: string, name: string) {
@@ -1481,16 +2047,34 @@ export default function GangSheetEditor() {
   }
 
   async function refreshLibrary(includeArchived = libraryIncludeArchived) {
+    setLibraryLoading(true);
+    setLibraryError("");
     try {
       const q = librarySearch.trim();
-      const res = await fetch(
-        `/api/design-library?sort=${librarySort}${q ? `&search=${encodeURIComponent(q)}` : ""}${includeArchived ? "&archived=1" : ""}`,
-        { credentials: "include", headers: { "X-LGS-Shop": page.shop } },
-      );
-      const json = (await res.json()) as { designs?: LibraryDesign[] };
-      if (res.ok && json.designs) setSavedDesigns(json.designs);
+      const params = new URLSearchParams({
+        sort: librarySort,
+        workflow: "gang_sheet",
+      });
+      if (q) params.set("search", q);
+      if (includeArchived) params.set("archived", "1");
+      if (page.productGid) params.set("productGid", page.productGid);
+      const res = await fetch(`/api/design-library?${params.toString()}`, {
+        credentials: "include",
+        headers: { "X-LGS-Shop": page.shop },
+      });
+      const json = (await res.json()) as { designs?: LibraryDesign[]; error?: string };
+      if (!res.ok) {
+        setSavedDesigns([]);
+        setLibraryError(json.error || "Could not load saved designs.");
+        return;
+      }
+      setSavedDesigns(json.designs ?? []);
     } catch {
-      /* offline */
+      setSavedDesigns([]);
+      setLibraryError("Could not load saved designs. Check your connection and try again.");
+    } finally {
+      setLibraryLoading(false);
+      setLibraryLoaded(true);
     }
   }
 
@@ -1587,13 +2171,21 @@ export default function GangSheetEditor() {
       setSheetWidth(json.state.sheet.widthIn);
       setSheetHeight(json.state.sheet.maxHeightIn);
       setGap(json.state.sheet.imageMarginIn);
+      const marginIn = json.state.sheet.artboardMarginIn;
+      if (marginIn != null && marginIn > 0) {
+        setArtboardMarginEnabled(true);
+        setArtboardMarginIn(normalizeArtboardMarginIn(marginIn));
+      } else {
+        setArtboardMarginEnabled(false);
+      }
       setHistory([]);
       setFuture([]);
       setItems(restored);
-      selectItem(null);
+      selectItem(restored[0]?.id ?? null);
       setEditingDesignId(json.designId);
       setEditingVersion(json.version);
       setDesignName(json.name);
+      setDesignPickerOpen(false);
       setScreen("canvas");
       setSaved(true);
       setDirty(false);
@@ -1697,7 +2289,7 @@ export default function GangSheetEditor() {
             widthIn: sheetWidth,
             maxHeightIn: sheetHeight,
             imageMarginIn: gap,
-            artboardMarginIn: 0.1,
+            artboardMarginIn: artboardMarginEnabled ? artboardMarginIn : 0,
           },
           allowRotate90,
         }),
@@ -1865,7 +2457,7 @@ export default function GangSheetEditor() {
           widthIn: sheetWidth,
           maxHeightIn: sheetHeight,
           imageMarginIn: gap,
-          artboardMarginIn: 0.1,
+          artboardMarginIn: artboardMarginEnabled ? artboardMarginIn : 0,
         },
         items: resolved,
         name: designName ?? undefined,
@@ -1999,342 +2591,146 @@ export default function GangSheetEditor() {
   if (screen === "welcome") {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
-      <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+      <>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BAGS_PARITY_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
-        <div className="home-shell">
-          <nav className="icon-rail" aria-label="Builder navigation">
-            <button type="button" className="rail-btn active" title="Home" aria-label="Home">
-              <EditorRailIcon name="home" label="Home" />
-              <span className="rail-label">Home</span>
-            </button>
-            {SIDEBAR_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className="rail-btn"
-                title={tab.label}
-                aria-label={tab.label}
-                onClick={() => openCanvas({ tab: tab.id === "auto" ? "uploads" : tab.id })}
-              >
-                <EditorRailIcon name={tab.icon} label={tab.label} />
-                <span className="rail-label">{tab.label}</span>
-              </button>
-            ))}
-          </nav>
-
-          <div className="home-main">
-            <div className="welcome-card">
-              <div className="brand center">
-                <b>L</b>
-                <span>
-                  <strong>LEGENDS BAGS</strong>
-                  <small>Welcome Center</small>
-                </span>
-              </div>
-              <h1>{page.appearance.welcomeTitle}</h1>
-              <p className="welcome-lead">{page.appearance.welcomeSubtitle}</p>
-              {!page.hasDevAuth ? (
-                <p className="error block">Dev auth not configured — check DEV_SHOP / TEST_API_TOKEN.</p>
-              ) : null}
-
-              <div className="welcome-sheet-pick">
-                <label>
-                  Sheet width
-                  <select
-                    value={sheetWidth}
-                    onChange={(e) => setSheetWidth(+e.target.value)}
-                    aria-label="Sheet width"
-                  >
-                    {SHEET_WIDTHS.map((w) => (
-                      <option key={w} value={w}>
-                        {w} in
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Sheet length
-                  <select
-                    value={sheetHeight}
-                    onChange={(e) => setSheetHeight(+e.target.value)}
-                    aria-label="Sheet length"
-                  >
-                    {SHEET_HEIGHTS.map((h) => (
-                      <option key={h} value={h}>
-                        {h} in
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <p className="welcome-tip">
-                Upload is inside the canvas: choose <strong>Build a Gang Sheet</strong> below, then use{" "}
-                <strong>＋ Upload image(s)</strong> in the left sidebar (or drag PNG/JPEG onto the drop
-                zone).
-              </p>
-
-              <div className="welcome-grid two-col">
-                <button
-                  type="button"
-                  className="welcome-opt primary featured"
-                  onClick={() => openCanvas({ tab: "uploads" })}
-                >
-                  <div className="welcome-icon"><EditorRailIcon name="sheet" label="Build" /></div>
-                  <strong>Build a Gang Sheet</strong>
-                  <span>Open the canvas with your selected sheet size — upload, place, and arrange.</span>
-                </button>
-                <a className="welcome-opt" href={ubsHref}>
-                  <div className="welcome-icon"><EditorRailIcon name="upload" label="Upload by Size" /></div>
-                  <strong>Upload by Size</strong>
-                  <span>Single-design workflow with presets and live pricing.</span>
-                </a>
-                <button
-                  type="button"
-                  className="welcome-opt"
-                  onClick={() => {
-                    setScreen("auto_build");
-                    setAutoPhase("setup");
-                    setAutoDrafts([]);
-                    setAutoPreview(null);
-                    setAutoPreviewError("");
-                    setSelectedAutoId(null);
-                    setMessage("Upload all designs, set size & quantity — preview updates live.");
-                  }}
-                >
-                  <div className="welcome-icon"><EditorRailIcon name="auto" label="Auto Build" /></div>
-                  <strong>Auto Arrange</strong>
-                  <span>Bulk upload with live nest preview — fastest for many designs.</span>
-                </button>
-                <button type="button" className="welcome-opt" onClick={() => setShowTemplates((v) => !v)}>
-                  <div className="welcome-icon"><EditorRailIcon name="template" label="Templates" /></div>
-                  <strong>Start from a template</strong>
-                  <span>Pick a preset sheet layout and open the editor.</span>
-                </button>
-                {savedDesigns.length ? (
+        <BagsWelcomeCenter
+          appearance={page.appearance}
+          appearanceVars={appearanceVars(page.appearance)}
+          welcomeTitle={page.appearance.welcomeTitle}
+          welcomeSubtitle={page.appearance.welcomeSubtitle}
+          sheetWidth={sheetWidth}
+          sheetHeight={sheetHeight}
+          sheetWidths={allowedSheetWidths}
+          sheetHeights={allowedSheetHeights}
+          onSheetWidthChange={setSheetWidth}
+          onSheetHeightChange={setSheetHeight}
+          priceLabel={welcomePriceLabel}
+          hasDevAuth={page.hasDevAuth}
+          footer={
+            savedDesigns.length ? (
+              <div className="saved-designs-list" style={{ marginTop: 16 }}>
+                <h3>Saved designs</h3>
+                {savedDesigns.slice(0, 6).map((d) => (
                   <button
+                    key={d.id}
                     type="button"
-                    className="welcome-opt"
-                    onClick={() => void loadRemoteDesign(savedDesigns[0].id, savedDesigns[0].version)}
+                    className="saved-design-row"
+                    onClick={() => void loadRemoteDesign(d.id, d.version)}
                   >
-                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
-                    <strong>Open saved design</strong>
-                    <span>
-                      {savedDesigns.length} saved design{savedDesigns.length === 1 ? "" : "s"} in your library.
+                    <span className="saved-design-copy">
+                      <strong>{d.name || "Untitled design"}</strong>
+                      <small>
+                        {d.sheetLabel} · ${(d.priceCents / 100).toFixed(2)}
+                      </small>
                     </span>
                   </button>
-                ) : (
-                  <button type="button" className="welcome-opt" disabled>
-                    <div className="welcome-icon"><EditorRailIcon name="saved" label="Saved" /></div>
-                    <strong>Open saved design</strong>
-                    <span>Save a design from the editor to build your library.</span>
-                  </button>
-                )}
-                {hasStoredDraft ? (
+                ))}
+              </div>
+            ) : null
+          }
+        >
+          <BagsWelcomeAction
+            featured
+            title="Build a Gang Sheet"
+            description="Open the canvas with your selected sheet size — upload, place, and arrange."
+            icon={<EditorRailIcon name="sheet" label="Build" />}
+            onClick={() => openCanvas({ tab: "uploads" })}
+          />
+          <BagsWelcomeAction
+            title="Upload by Size"
+            description="Single-design workflow with presets and live pricing."
+            icon={<EditorRailIcon name="upload" label="Upload by Size" />}
+            href={ubsHref}
+          />
+          <BagsWelcomeAction
+            title="Auto Arrange"
+            description="Bulk upload with live nest preview — fastest for many designs."
+            icon={<EditorRailIcon name="auto" label="Auto Build" />}
+            onClick={() => {
+              setScreen("auto_build");
+              setAutoPhase("setup");
+              setAutoDrafts([]);
+              setAutoPreview(null);
+              setAutoPreviewError("");
+              setSelectedAutoId(null);
+            }}
+          />
+          <BagsWelcomeAction
+            title="Start from a template"
+            description="Pick a preset sheet layout and open the editor."
+            icon={<EditorRailIcon name="template" label="Templates" />}
+            onClick={() => setShowTemplates((v) => !v)}
+          />
+          <BagsWelcomeAction
+            title="Open saved design"
+            description={
+              libraryLoading
+                ? "Loading your saved gang sheets…"
+                : libraryError
+                  ? `${libraryError} Tap to retry.`
+                  : savedDesigns.length
+                    ? `${savedDesigns.length} saved design${savedDesigns.length === 1 ? "" : "s"} in your library.`
+                    : libraryLoaded
+                      ? "No saved gang sheets yet — save from the canvas to build your library."
+                      : "Checking your saved designs…"
+            }
+            icon={<EditorRailIcon name="saved" label="Saved" />}
+            disabled={libraryLoading || (!libraryError && !savedDesigns.length && libraryLoaded)}
+            busy={libraryLoading}
+            onClick={() => {
+              if (libraryError) void refreshLibrary();
+              else if (savedDesigns.length) openDesignPicker("mine");
+            }}
+          />
+          {hasStoredDraft ? (
+            <BagsWelcomeAction
+              title="Continue draft"
+              description="Resume the local draft saved on this device."
+              icon={<EditorRailIcon name="upload" label="Continue" />}
+              onClick={() => {
+                const d = readDraft(page.shop);
+                if (d) void restoreDraft(d);
+              }}
+            />
+          ) : null}
+          <BagsWelcomeAction
+            title="Upload image(s)"
+            description="Add files to Uploads, then click each one to place on the gang sheet."
+            icon={<EditorRailIcon name="uploads" label="Upload" />}
+            onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
+          />
+        </BagsWelcomeCenter>
+        {showTemplates ? (
+          <div className="bags-parity-modal-backdrop" role="presentation" onClick={() => setShowTemplates(false)}>
+            <div className="bags-parity-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+              <header className="bags-modal-head">
+                <h2>Sheet templates</h2>
+                <button type="button" className="bags-icon-btn" onClick={() => setShowTemplates(false)} aria-label="Close">
+                  ×
+                </button>
+              </header>
+              <div className="bags-modal-body template-picker">
+                {SHEET_TEMPLATES.map((tpl) => (
                   <button
+                    key={tpl.id}
                     type="button"
-                    className="welcome-opt continue-draft"
+                    className="template-card"
                     onClick={() => {
-                      const d = readDraft(page.shop);
-                      if (d) void restoreDraft(d);
+                      applySheetSize(tpl.widthIn, tpl.heightIn);
+                      setShowTemplates(false);
+                      openCanvas({ tab: "uploads" });
                     }}
                   >
-                    <div className="welcome-icon"><EditorRailIcon name="upload" label="Continue" /></div>
-                    <strong>Continue draft</strong>
-                    <span>Resume the local draft saved on this device.</span>
+                    <strong>{tpl.name}</strong>
+                    <span>{tpl.description}</span>
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="welcome-opt"
-                  onClick={() => openCanvas({ tab: "uploads", pickUpload: true })}
-                >
-                  <div className="welcome-icon"><EditorRailIcon name="uploads" label="Upload" /></div>
-                  <strong>Upload image(s)</strong>
-                  <span>Add files to Uploads, then click each one to place on the gang sheet.</span>
-                </button>
-              </div>
-
-              {showTemplates ? (
-                <div className="template-picker">
-                  {SHEET_TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      className="template-card"
-                      onClick={() => {
-                        applySheetSize(tpl.widthIn, tpl.heightIn);
-                        openCanvas({ tab: "uploads" });
-                      }}
-                    >
-                      <strong>{tpl.name}</strong>
-                      <span>{tpl.description}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {savedDesigns.length ? (
-                <div className="saved-designs-list">
-                  <div className="sidebar-tools">
-                    <input
-                      type="search"
-                      placeholder="Search saved designs…"
-                      value={librarySearch}
-                      onChange={(e) => setLibrarySearch(e.target.value)}
-                      onBlur={() => void refreshLibrary()}
-                      aria-label="Search saved designs"
-                    />
-                    <select
-                      value={librarySort}
-                      onChange={(e) => {
-                        setLibrarySort(e.target.value as "recent" | "name");
-                        void refreshLibrary();
-                      }}
-                      aria-label="Sort saved designs"
-                    >
-                      <option value="recent">Recent</option>
-                      <option value="name">Name</option>
-                    </select>
-                    <label className="library-archived-toggle">
-                      <input
-                        type="checkbox"
-                        checked={libraryIncludeArchived}
-                        onChange={(e) => {
-                          const next = e.target.checked;
-                          setLibraryIncludeArchived(next);
-                          void refreshLibrary(next);
-                        }}
-                      />
-                      Show archived
-                    </label>
-                  </div>
-                  <h3>Saved designs (server)</h3>
-                  {savedDesigns.slice(0, 8).map((d) => (
-                    <div key={d.id} className="saved-design-row-wrap">
-                      {libraryRenamingId === d.id ? (
-                        <form
-                          className="saved-design-rename"
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            void renameLibraryDesign(d.id, libraryRenameValue);
-                          }}
-                        >
-                          <input
-                            value={libraryRenameValue}
-                            onChange={(e) => setLibraryRenameValue(e.target.value)}
-                            aria-label="Design name"
-                            autoFocus
-                          />
-                          <button type="submit" className="saved-design-action">
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            className="saved-design-action"
-                            onClick={() => {
-                              setLibraryRenamingId(null);
-                              setLibraryRenameValue("");
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="saved-design-row"
-                            onClick={() => void loadRemoteDesign(d.id, d.version)}
-                          >
-                            {d.previewPath ? (
-                              <span className="saved-design-thumb checkerboard">
-                                <img src={d.previewPath} alt="" />
-                              </span>
-                            ) : null}
-                            <span className="saved-design-copy">
-                              <strong>{d.name || "Untitled design"}</strong>
-                              <small>
-                                {d.pieceCount} piece{d.pieceCount === 1 ? "" : "s"} · {d.sheetLabel} · v{d.version} ·{" "}
-                                ${(d.priceCents / 100).toFixed(2)} · {new Date(d.updatedAt).toLocaleDateString()}
-                                {d.archived ? " · archived" : ""}
-                              </small>
-                            </span>
-                          </button>
-                          <div className="saved-design-actions">
-                            <button
-                              type="button"
-                              className="saved-design-action"
-                              onClick={() => {
-                                setLibraryRenamingId(d.id);
-                                setLibraryRenameValue(d.name || "");
-                              }}
-                            >
-                              Rename
-                            </button>
-                            {!d.archived ? (
-                              <button
-                                type="button"
-                                className="saved-design-action"
-                                onClick={() => void archiveLibraryDesign(d.id)}
-                              >
-                                Archive
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="saved-design-action"
-                              onClick={() =>
-                                void fetch("/api/design-library", {
-                                  method: "POST",
-                                  credentials: "include",
-                                  headers: { "Content-Type": "application/json", "X-LGS-Shop": page.shop },
-                                  body: JSON.stringify({
-                                    intent: "duplicate",
-                                    sourceDesignId: d.id,
-                                    sourceVersion: d.version,
-                                    productGid: page.productGid,
-                                    variantGid: page.variantId
-                                      ? `gid://shopify/ProductVariant/${page.variantId}`
-                                      : undefined,
-                                  }),
-                                }).then(async (res) => {
-                                  const json = (await res.json()) as { designId?: string; error?: string };
-                                  if (!res.ok || !json.designId) throw new Error(json.error || "Duplicate failed");
-                                  void loadRemoteDesign(json.designId!);
-                                })
-                              }
-                            >
-                              Duplicate
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <p className="welcome-tip">
-                {hasStoredDraft ? <>Local draft on this device is separate from your saved library. </> : null}
-                Tip: Arrow keys nudge selected art by 0.05″ (Shift = 0.25″). Drag the corner handle to
-                resize with aspect lock.
-              </p>
-
-              <div className="welcome-foot">
-                <span>Selected sheet · est. empty sheet</span>
-                <strong>
-                  {sheetWidth}″ × {sheetHeight}″ ·{" "}
-                  {page.variantPriceCents != null
-                    ? `$${(page.variantPriceCents / 100).toFixed(2)} sheet price`
-                    : `$${gangSheetAreaPriceUsd(sheetWidth, sheetHeight, page.pricePerSqIn).toFixed(2)} max · $${page.pricePerSqIn.toFixed(3)}/in² printed`}
-                </strong>
+                ))}
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        ) : null}
+      </>
     );
   }
 
@@ -2514,7 +2910,7 @@ export default function GangSheetEditor() {
                       value={sheetWidth}
                       onChange={(e) => setSheetWidth(+e.target.value)}
                     >
-                      {SHEET_WIDTHS.map((w) => (
+                      {allowedSheetWidths.map((w) => (
                         <option key={w} value={w}>
                           {w} in
                         </option>
@@ -2527,7 +2923,7 @@ export default function GangSheetEditor() {
                       value={sheetHeight}
                       onChange={(e) => setSheetHeight(+e.target.value)}
                     >
-                      {SHEET_HEIGHTS.map((h) => (
+                      {allowedSheetHeights.map((h) => (
                         <option key={h} value={h}>
                           {h} in
                         </option>
@@ -2832,8 +3228,8 @@ export default function GangSheetEditor() {
   }
 
   return (
-    <div className="bags lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+    <div className="bags lgs-editor bags-parity-editor" style={appearanceVars(page.appearance)}>
+      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BAGS_PARITY_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <GangSheetSaveDialog
@@ -2877,20 +3273,33 @@ export default function GangSheetEditor() {
           if (shrinkPrompt) commitSheetSize(shrinkPrompt.w, shrinkPrompt.h, "scale");
         }}
       />
-      <GangSheetCommandBar
-        designName={designName}
-        onDesignNameChange={(name) => {
-          setDesignName(name);
-          setDirty(true);
-        }}
-        dirty={dirty}
-        saved={saved}
+      <BagsGangSheetHeader
+        quantity={sheetQuantity}
+        onQuantityChange={setSheetQuantity}
+        estimateUsd={estimate}
+        saving={saving}
+        hasItems={items.length > 0}
+        onSaveAndCart={openSaveDialog}
+        onSave={openSaveDialog}
+        onClose={closeEditor}
+        customer={storefrontCustomer}
+        onMyDesigns={() => openDesignPicker("mine")}
+      />
+      <BagsSheetToolbar
         sheetWidth={sheetWidth}
         sheetHeight={sheetHeight}
-        sheetWidths={SHEET_WIDTHS}
-        sheetHeights={SHEET_HEIGHTS}
+        sheetWidths={allowedSheetWidths}
+        sheetHeights={allowedSheetHeights}
         onSheetSizeChange={requestSheetSize}
-        estimateUsd={estimate}
+        canUndo={history.length > 0}
+        canRedo={future.length > 0}
+        onUndo={undo}
+        onRedo={redo}
+        panMode={spacePan}
+        onTogglePan={() => setSpacePan((v) => !v)}
+        gridVisible={gridVisible}
+        onToggleGrid={() => setGridVisible((v) => !v)}
+        onAutoNest={openAutoNestModal}
         zoomLabel={zoomLabel}
         onZoomOut={() => {
           setZoom((z) => Math.max(15, z - 10));
@@ -2900,30 +3309,40 @@ export default function GangSheetEditor() {
           setZoom((z) => Math.min(200, z + 10));
           setZoomMode("custom");
         }}
-        onFitWidth={() => fitToViewport("width")}
         onFitSheet={() => fitToViewport("sheet")}
-        panMode={spacePan}
-        onTogglePan={() => setSpacePan((v) => !v)}
-        gridVisible={gridVisible}
-        onToggleGrid={() => setGridVisible((v) => !v)}
-        canUndo={history.length > 0}
-        canRedo={future.length > 0}
-        onUndo={undo}
-        onRedo={redo}
-        onHome={() => setScreen("welcome")}
-        onSaveOnly={openSaveDialog}
-        onSaveAndCart={openSaveDialog}
-        saving={saving}
-        hasItems={items.length > 0}
-        onOverflowAction={handleOverflowAction}
-        qualityButton={
-          <QualityStatusButton
-            summary={qualitySummary}
-            active={qualityPanelOpen}
-            onClick={() => setQualityPanelOpen((v) => !v)}
-          />
-        }
       />
+      {selected ? (
+        <BagsSelectionToolbar
+          selected={selected}
+          multiCount={selectedIds.size || 1}
+          sheetWidth={sheetWidth}
+          sheetHeight={sheetHeight}
+          canUndo={history.length > 0}
+          canRedo={future.length > 0}
+          onChange={(patch) => change(patch)}
+          onAlign={(mode) => alignSelection(mode as Parameters<typeof alignSelected>[2])}
+          onDistribute={distributeSelection}
+          onLayer={(action) => layerAction(action)}
+          onRotateCcw={rotateCcw}
+          onRotateCw={rotateCw}
+          onFlipH={flipHorizontal}
+          onFlipV={flipVertical}
+          onStretchWidth={stretchToArtboardWidth}
+          onStretchHeight={stretchToArtboardHeight}
+          onCenterH={() => alignSelection("center-h")}
+          onCenterV={() => alignSelection("center-v")}
+          onCenterBoth={centerBothSelection}
+          onSnapLeft={() => alignSelection("left")}
+          onSnapRight={() => alignSelection("right")}
+          onSnapTop={() => alignSelection("top")}
+          onSnapBottom={() => alignSelection("bottom")}
+          onDelete={removeSelected}
+          onDuplicate={duplicate}
+          onUndo={undo}
+          onRedo={redo}
+        />
+      ) : null}
+      <div className="bags-parity-body">
       <QualityInspectorPanel
         open={qualityPanelOpen}
         onOpenChange={setQualityPanelOpen}
@@ -2948,37 +3367,18 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className="workspace">
-        <nav className="icon-rail" aria-label="Builder navigation">
-          <button
-            type="button"
-            className="rail-btn"
-            title="Home"
-            aria-label="Home"
-            onClick={() => setScreen("welcome")}
-          >
-            <EditorRailIcon name="home" label="Home" />
-            <span className="rail-label">Home</span>
-          </button>
-          {SIDEBAR_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`rail-btn ${sidebarTab === tab.id ? "active" : ""}`}
-              title={tab.label}
-              aria-label={tab.label}
-              onClick={() => handleSidebarTab(tab.id)}
-            >
-              <EditorRailIcon name={tab.icon} label={tab.label} />
-              <span className="rail-label">{tab.label}</span>
-              {tab.id === "uploads" && uploadPool.length ? (
-                <span className="rail-badge">{uploadPool.length}</span>
-              ) : null}
-            </button>
-          ))}
-        </nav>
-
-        <aside className={`sidebar-panel ${mobileDrawer === "sidebar" ? "mobile-open" : ""}`}>
+      <div
+        className={`workspace bags-parity-workspace${desktopSidePanelOpen ? " has-side-panel" : ""}${desktopPropertiesOpen ? " has-properties" : ""}`}
+      >
+        <BagsLeftRail
+          active={leftRailTab}
+          onSelect={handleLeftRail}
+          uploadCount={uploadPool.length}
+        />
+        <aside
+          className={`sidebar-panel bags-parity-sidebar ${desktopSidePanelOpen ? "open" : ""} ${mobileDrawer === "sidebar" ? "mobile-open" : ""}`}
+          aria-hidden={!desktopSidePanelOpen && mobileDrawer !== "sidebar"}
+        >
           <button
             type="button"
             className="mobile-drawer-close"
@@ -2987,96 +3387,114 @@ export default function GangSheetEditor() {
           >
             ×
           </button>
-          {sidebarTab === "uploads" ? (
-            <>
-              <div className="heading">
-                <span>
-                  <strong>Uploads</strong>
-                  <small>{uploadPool.length} file{uploadPool.length === 1 ? "" : "s"}</small>
-                </span>
-                <button
-                  type="button"
-                  className="refresh-btn"
-                  title="Refresh uploads"
-                  aria-label="Refresh uploads"
-                  onClick={() => setPoolTick((t) => t + 1)}
-                >
-                  <ToolbarIcon name="refresh" />
-                </button>
-              </div>
-              <div className="sidebar-tools">
-                <input
-                  type="search"
-                  placeholder="Search uploads…"
-                  value={uploadSearch}
-                  onChange={(e) => setUploadSearch(e.target.value)}
-                  aria-label="Search uploads"
-                />
-                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
-                  <option value="recent">Recent</option>
-                  <option value="name">Name</option>
-                </select>
-              </div>
-              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
-              <label
-                className="sidebar-upload-btn drop-target"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                }}
-              >
-                {uploading ? "Uploading…" : "Upload image(s)"}
-                <input
-                  ref={sidebarUploadRef}
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg"
-                  hidden
-                  onChange={(e) => {
-                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {!filteredPool.length ? (
-                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
-                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
-                  <small>Drop PNG/JPEG files here or browse above</small>
-                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
-                </label>
-              ) : (
-                <div className="pool-grid" key={poolTick}>
-                  {filteredPool.map((p) => {
-                    const dpiInfo = dpiQualityTier(p.asset.dpi);
-                    const onSheet = sheetCountForAsset(p.asset.assetId);
-                    return (
-                      <div key={p.id} className="pool-item-wrap">
-                        <button type="button" className="pool-item" onClick={() => placeFromPool(p.id)} title="Click to place on gang sheet" draggable onDragStart={(e) => e.dataTransfer.setData("text/pool-id", p.id)}>
-                          <img src={p.previewUrl} alt="" className="checkerboard" />
-                          <span>{p.name}</span>
-                          {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
-                          {dpiInfo.tier !== "excellent" && dpiInfo.tier !== "good" ? (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label} DPI</em>
-                          ) : (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label}</em>
-                          )}
-                        </button>
-                        <div className="pool-item-actions">
-                          <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
-                          <button type="button" aria-label="Remove background" title="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>Cut</button>
-                          <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>Del</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          ) : sidebarTab === "gallery" ? (
-            <>
-              <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
-              <p className="panel-lead">Artwork from your shop&apos;s Gallery Settings — not sample placeholders.</p>
+          {leftRailTab === "canva" ? (
+            <BagsIntegrationPanel
+              provider="canva"
+              status="disconnected"
+              onConnect={() => setMessage("Canva OAuth is not configured for this shop.")}
+            />
+          ) : leftRailTab === "dropbox" ? (
+            <BagsIntegrationPanel
+              provider="dropbox"
+              status="disconnected"
+              onConnect={() => setMessage("Dropbox OAuth is not configured for this shop.")}
+            />
+          ) : leftRailTab === "names-numbers" ? (
+            <div className="bags-names-numbers-panel">
+              <BagsNamesNumbersContent
+                workflow={namesNumbersWorkflow}
+                onWorkflowChange={setNamesNumbersWorkflow}
+                namesList={namesList}
+                onNamesListChange={setNamesList}
+                numbersList={numbersList}
+                onNumbersListChange={setNumbersList}
+                nameFontFamily={rosterNameFontFamily}
+                onNameFontFamilyChange={setRosterNameFontFamily}
+                numberFontFamily={rosterNumberFontFamily}
+                onNumberFontFamilyChange={setRosterNumberFontFamily}
+                nameFontSize={rosterNameFontSize}
+                onNameFontSizeChange={setRosterNameFontSize}
+                numberFontSize={rosterNumberFontSize}
+                onNumberFontSizeChange={setRosterNumberFontSize}
+                nameWidthIn={rosterNameWidthIn}
+                onNameWidthInChange={setRosterNameWidthIn}
+                numberWidthIn={rosterNumberWidthIn}
+                onNumberWidthInChange={setRosterNumberWidthIn}
+                nameStrokeWidth={rosterNameStrokeWidth}
+                onNameStrokeWidthChange={setRosterNameStrokeWidth}
+                numberStrokeWidth={rosterNumberStrokeWidth}
+                onNumberStrokeWidthChange={setRosterNumberStrokeWidth}
+                strokeColor={rosterStrokeColor}
+                onStrokeColorChange={setRosterStrokeColor}
+                textColor={rosterTextColor}
+                onTextColorChange={setRosterTextColor}
+                quantity={rosterQuantity}
+                onQuantityChange={setRosterQuantity}
+                onApplyNamePreset={applyNameSizePreset}
+                onApplyNumberPreset={applyNumberSizePreset}
+                onGenerateNames={generateNames}
+                onGenerateNumbers={generateNumbers}
+              />
+            </div>
+          ) : sidebarTab === "products" || leftRailTab === "products" ? (
+            <BagsProductsPanel
+              sheetWidth={sheetWidth}
+              activeHeight={sheetHeight}
+              variants={page.gangSheetVariants.map((v) => ({
+                sheetHeightIn: v.sheetHeightIn,
+                variantPriceCents: v.variantPriceCents,
+                variantTitle: v.variantTitle ?? null,
+                variantId: v.variantGid?.replace("gid://shopify/ProductVariant/", "") ?? null,
+              }))}
+              pricePerSqIn={page.pricePerSqIn}
+              productTitle={page.productTitle}
+              productStatus={page.productStatus}
+              syncStatus={page.syncStatus}
+              selectedVariantId={activeVariantMeta.id}
+              selectedVariantTitle={activeVariantMeta.title}
+              onSelectHeight={(heightIn) => requestSheetSize(sheetWidth, heightIn)}
+            />
+          ) : sidebarTab === "uploads" || leftRailTab === "uploads" ? (
+            <BagsUploadsPanel
+              uploadPool={uploadPool}
+              filteredPool={filteredPool}
+              uploadSearch={uploadSearch}
+              onUploadSearchChange={setUploadSearch}
+              uploadSort={uploadSort}
+              onUploadSortChange={setUploadSort}
+              uploadView={uploadView}
+              onUploadViewChange={setUploadView}
+              uploading={uploading}
+              uploadProgress={uploadProgress}
+              poolTick={poolTick}
+              sidebarUploadRef={sidebarUploadRef}
+              onRefresh={() => setPoolTick((t) => t + 1)}
+              onUploadFiles={(files) => void uploadFiles(files, "canvas")}
+              onPlace={placeFromPool}
+              onRename={renamePoolItem}
+              onRemoveBg={openBgRemoveForAsset}
+              onDelete={deletePoolItem}
+              sheetCountForAsset={sheetCountForAsset}
+              onAddText={() => {
+                setSidebarTab("text");
+                setLeftRailTab("uploads");
+              }}
+            />
+          ) : leftRailTab === "gallery" || sidebarTab === "gallery" ? (
+            <BagsIntegrationPanel
+              provider="gallery"
+              status={
+                galleryLoading
+                  ? "loading"
+                  : galleryError
+                    ? "error"
+                    : !filteredGallery.length
+                      ? "empty"
+                      : "ready"
+              }
+              error={galleryError}
+              onRetry={() => void refreshGallery()}
+            >
               <div className="sidebar-tools">
                 <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
                 <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
@@ -3088,27 +3506,16 @@ export default function GangSheetEditor() {
                   <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
                 ))}
               </div>
-              {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
-              {galleryError ? (
-                <p className="gs-save-error" style={{ margin: "0 16px 12px" }}>
-                  {galleryError}{" "}
-                  <button type="button" className="gs-ghost-btn" onClick={() => void refreshGallery()}>Retry</button>
-                </p>
-              ) : null}
-              {!galleryLoading && !filteredGallery.length ? (
-                <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
-              ) : (
-                <div className="pool-grid">
-                  {filteredGallery.map((g) => (
-                    <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
-                      <img src={g.thumb} alt="" />
-                      <span>{g.name}</span>
-                      <em>{g.widthIn}×{g.heightIn}″</em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+              <div className="pool-grid">
+                {filteredGallery.map((g) => (
+                  <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
+                    <img src={g.thumb} alt="" />
+                    <span>{g.name}</span>
+                    <em>{g.widthIn}×{g.heightIn}″</em>
+                  </button>
+                ))}
+              </div>
+            </BagsIntegrationPanel>
           ) : sidebarTab === "text" ? (
             <>
               <div className="heading"><span><strong>Text</strong><small>Add labels &amp; titles</small></span></div>
@@ -3127,12 +3534,15 @@ export default function GangSheetEditor() {
             </>
           ) : sidebarTab === "names" ? (
             <>
-              <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Roster generator</small></span></div>
-              <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+              <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Separate workflows</small></span></div>
+              <p className="sidebar-hint">Use the bottom nav Names &amp; Numbers modal for Add Names or Add Numbers with S/M/L presets.</p>
               <div className="sidebar-form">
-                <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-                <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
+                <button type="button" className="sidebar-upload-btn" onClick={() => { setNamesNumbersWorkflow("names"); setBottomNav("names-numbers"); }}>
+                  Add Names
+                </button>
+                <button type="button" className="sidebar-upload-btn" onClick={() => { setNamesNumbersWorkflow("numbers"); setBottomNav("names-numbers"); }}>
+                  Add Numbers
+                </button>
               </div>
             </>
           ) : sidebarTab === "layers" ? (
@@ -3185,6 +3595,9 @@ export default function GangSheetEditor() {
           ) : null}
         </aside>
         <main className="canvas-main">
+          <div className="bags-canvas-row">
+          <BagsQualityLegend qualityPrefs={qualityPrefs} onQualityPrefsChange={setQualityPrefs} />
+          <div className="bags-canvas-scroll-wrap">
           <div className="canvas-meta">
             <strong>{sheetWidth} × {sheetHeight} in</strong>
             <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
@@ -3193,12 +3606,31 @@ export default function GangSheetEditor() {
           <div
             className={`scroll ${spacePan ? "pan-mode" : ""}`}
             ref={scrollRef}
-            onClick={() => selectItem(null)}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (!target.closest(".piece")) selectItem(null);
+            }}
             onPointerDown={(e) => {
-              if (!spacePan || e.button !== 0) return;
-              const el = scrollRef.current;
-              if (!el) return;
-              panRef.current = { sx: e.clientX, sy: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+              if (spacePan && e.button === 0) {
+                const el = scrollRef.current;
+                if (!el) return;
+                panRef.current = { sx: e.clientX, sy: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+                return;
+              }
+              const target = e.target as HTMLElement;
+              if (target.closest(".piece") || target.closest(".resize-handle") || target.closest(".rotate-handle")) return;
+              if (e.button !== 0) return;
+              const c = canvas.current;
+              if (!c) return;
+              const r = c.getBoundingClientRect();
+              interaction.current = {
+                mode: "marquee",
+                sx: e.clientX,
+                sy: e.clientY,
+                ex: e.clientX,
+                ey: e.clientY,
+              };
+              setMarqueeRect({ x: e.clientX - r.left, y: e.clientY - r.top, w: 0, h: 0 });
             }}
             onPointerMove={(e) => {
               const p = panRef.current;
@@ -3243,8 +3675,12 @@ export default function GangSheetEditor() {
             />
             <div
               ref={canvas}
-              className={`sheet ${gridVisible ? "grid-on" : "grid-off"} ${qualityPrefs.showSafeZone ? "safe-zone-on" : ""}`}
-              style={{ width: `${zoom}%`, aspectRatio: `${sheetWidth}/${sheetHeight}` }}
+              className={`sheet ${visualAid === "checkerboard" ? "checkerboard" : ""} ${gridVisible ? "grid-on" : "grid-off"} ${qualityPrefs.showSafeZone ? "safe-zone-on" : ""}`}
+              style={{
+                width: `${zoom}%`,
+                aspectRatio: `${sheetWidth}/${sheetHeight}`,
+                ...sheetVisualAidStyle(visualAid, visualAidCustomColor),
+              }}
             >
               <i className={qualityPrefs.showSafeZone ? "safe-zone" : undefined} />
               {snapGuides.map((g, idx) => (
@@ -3312,43 +3748,98 @@ export default function GangSheetEditor() {
                       draggable={false}
                     />
                   )}
-                  <em>{i.widthIn.toFixed(1)}″</em>
+                  <em>
+                    {i.widthIn.toFixed(1)}″ × {i.heightIn.toFixed(1)}″
+                    {i.kind !== "text" && i.dpi ? ` · ${Math.round(i.dpi)} DPI` : ""}
+                  </em>
+                  {selectedIds.has(i.id) && i.kind !== "text" && i.dpi ? (
+                    <span className="dpi-badge">{Math.round(i.dpi)} DPI</span>
+                  ) : null}
                   {selectedIds.has(i.id) && !i.lockPosition ? (
+                    <>
                     <button
                       type="button"
-                      className="resize-handle se"
-                      aria-label="Resize piece"
+                      className="rotate-handle"
+                      aria-label="Rotate artwork"
                       onPointerDown={(e: ReactPointerEvent) => {
                         e.stopPropagation();
                         e.preventDefault();
                         selectItem(i.id);
+                        const c = canvas.current;
+                        if (!c) return;
+                        const rect = c.getBoundingClientRect();
+                        const cx =
+                          rect.left + ((i.xIn + i.widthIn / 2) / sheetWidth) * rect.width;
+                        const cy =
+                          rect.top + ((i.yIn + i.heightIn / 2) / sheetHeight) * rect.height;
                         interaction.current = {
-                          mode: "resize",
+                          mode: "rotate",
                           id: i.id,
+                          startRotation: i.rotationDeg,
                           startW: i.widthIn,
                           startH: i.heightIn,
-                          aspect: i.widthIn / Math.max(0.01, i.heightIn),
-                          sx: e.clientX,
-                          sy: e.clientY,
+                          startAngle: Math.atan2(e.clientY - cy, e.clientX - cx),
                           snapshot: itemsRef.current,
                         };
                       }}
                     />
+                    {RESIZE_HANDLES.map((handle) => (
+                      <button
+                        key={handle}
+                        type="button"
+                        className={`resize-handle ${handle}`}
+                        aria-label={`Resize ${handle}`}
+                        onPointerDown={(e: ReactPointerEvent) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          selectItem(i.id);
+                          interaction.current = {
+                            mode: "resize",
+                            id: i.id,
+                            handle,
+                            startW: i.widthIn,
+                            startH: i.heightIn,
+                            startX: i.xIn,
+                            startY: i.yIn,
+                            aspect: i.widthIn / Math.max(0.01, i.heightIn),
+                            lockAspect: i.lockAspect !== false,
+                            sx: e.clientX,
+                            sy: e.clientY,
+                            snapshot: itemsRef.current,
+                          };
+                        }}
+                      />
+                    ))}
+                    </>
                   ) : null}
                 </div>
               ))}
               {!items.length && (
                 <div className="empty">
-                  <b>＋</b>
-                  <strong>Your gang sheet starts here</strong>
-                  <small>Add artwork from Uploads, Gallery, or Text — then drag to position.</small>
+                  <small>Use Add Image below to place artwork on your gang sheet.</small>
                 </div>
               )}
+              {marqueeRect ? (
+                <div
+                  className="marquee-select"
+                  style={{
+                    left: marqueeRect.x,
+                    top: marqueeRect.y,
+                    width: marqueeRect.w,
+                    height: marqueeRect.h,
+                  }}
+                />
+              ) : null}
             </div>
             </div>
           </div>
+          </div>
+          </div>
         </main>
-        <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
+        <aside
+          className={`properties bags-parity-properties ${desktopPropertiesOpen ? "open" : ""} ${mobileDrawer === "properties" ? "mobile-open" : ""}`}
+          aria-hidden={!desktopPropertiesOpen && mobileDrawer !== "properties"}
+        >
           <button
             type="button"
             className="mobile-drawer-close"
@@ -3357,133 +3848,43 @@ export default function GangSheetEditor() {
           >
             ×
           </button>
-          <div className="heading">
-            <span>
-              <strong>Properties</strong>
-              <small>{selected ? "Artwork selected" : "Select an item"}</small>
-            </span>
-          </div>
-          {selected ? (
-            <>
-              <div className="preview">
-                {selected.kind === "text" ? (
-                  <span className="text-preview">{selected.textContent ?? selected.name}</span>
-                ) : (
-                  <img src={selected.previewUrl} alt="" className="checkerboard" />
-                )}
-                <strong>{selected.name}</strong>
-                <small>
-                  {selected.kind === "text"
-                    ? `${selected.fontFamily} · ${selected.fontSize}pt`
-                    : `${selected.widthPx} × ${selected.heightPx}px · ${selected.dpi ? `${selected.dpi} DPI` : "DPI not tagged"}`}
-                </small>
-              </div>
-              <div className="fields grid-2">
-                <label>
-                  X (in)
-                  <input type="number" step={0.05} value={round(selected.xIn)} disabled={selected.lockPosition} onChange={(e) => change({ xIn: +e.target.value })} />
-                </label>
-                <label>
-                  Y (in)
-                  <input type="number" step={0.05} value={round(selected.yIn)} disabled={selected.lockPosition} onChange={(e) => change({ yIn: +e.target.value })} />
-                </label>
-                <label>
-                  Width (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.widthIn)}
-                    onChange={(e) => {
-                      const w = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ widthIn: w });
-                      else change({ widthIn: w, heightIn: w / (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Height (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.heightIn)}
-                    onChange={(e) => {
-                      const h = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ heightIn: h });
-                      else change({ heightIn: h, widthIn: h * (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Rotation
-                  <select value={selected.rotationDeg} onChange={(e) => change({ rotationDeg: +e.target.value as 0 | 90 })}>
-                    <option value={0}>0°</option>
-                    <option value={90}>90°</option>
-                  </select>
-                </label>
-              </div>
-              <div className="align-row">
-                <span>Align</span>
-                <button type="button" onClick={() => alignSelection("left")} aria-label="Align left">⫷</button>
-                <button type="button" onClick={() => alignSelection("center-h")} aria-label="Align center">⫿</button>
-                <button type="button" onClick={() => alignSelection("right")} aria-label="Align right">⫸</button>
-                <button type="button" onClick={() => alignSelection("top")} aria-label="Align top">⫠</button>
-                <button type="button" onClick={() => alignSelection("center-v")} aria-label="Align middle">⫟</button>
-                <button type="button" onClick={() => alignSelection("bottom")} aria-label="Align bottom">⫡</button>
-              </div>
-              <div className="align-row">
-                <span>Distribute</span>
-                <button type="button" onClick={() => distributeSelection("horizontal")}>Horizontal</button>
-                <button type="button" onClick={() => distributeSelection("vertical")}>Vertical</button>
-              </div>
-              <label className="toggle-row"><input type="checkbox" checked={selected.lockAspect !== false && selected.kind !== "text"} onChange={(e) => change({ lockAspect: e.target.checked })} /> Lock aspect ratio</label>
-              <label className="toggle-row"><input type="checkbox" checked={Boolean(selected.lockPosition)} onChange={(e) => change({ lockPosition: e.target.checked })} /> Lock position</label>
-              <div className="actions">
-                <button type="button" onClick={duplicate} aria-label="Duplicate selected">⧉ Duplicate</button>
-                <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
-                <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
-                <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
-                {selected.kind !== "text" && !selected.assetId.startsWith("text-") ? (
-                  <button
-                    type="button"
-                    onClick={() => openBgRemoveForAsset(selected.assetId, selected.previewUrl)}
-                    aria-label="Remove background"
-                  >
-                    ✂ Remove BG
-                  </button>
-                ) : null}
-                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
-                <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
-              </div>
-              <div className="layer-actions">
-                <span>Layer</span>
-                <button type="button" onClick={() => layerAction("forward")} aria-label="Bring forward">Forward</button>
-                <button type="button" onClick={() => layerAction("backward")} aria-label="Send backward">Backward</button>
-                <button type="button" onClick={() => layerAction("front")} aria-label="Bring to front">To front</button>
-                <button type="button" onClick={() => layerAction("back")} aria-label="Send to back">To back</button>
-              </div>
-              <label className="spacing">
-                Spacing <span>{gap.toFixed(2)} in</span>
-                <input type="range" min={0} max={0.5} step={0.05} value={gap} aria-label="Spacing between pieces" onChange={(e) => setGap(+e.target.value)} />
-              </label>
-              <button
-                type="button"
-                className="ghost-save-btn"
-                onClick={() => {
-                  setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
-                  setShowLibrarySave(true);
-                }}
-              >
-                Save to library
-              </button>
-            </>
-          ) : (
-            <div className="none">
-              <b>↖</b>
-              <p>Click artwork on the sheet to resize, rotate, duplicate, or fill the sheet.</p>
-            </div>
-          )}
+          <BagsPropertiesPanel
+            selected={selected}
+            multiCount={selectedIds.size}
+            sheetWidth={sheetWidth}
+            sheetHeight={sheetHeight}
+            gap={gap}
+            artboardMarginEnabled={artboardMarginEnabled}
+            artboardMarginIn={artboardMarginIn}
+            onArtboardMarginChange={(enabled, value) => {
+              setArtboardMarginEnabled(enabled);
+              setArtboardMarginIn(value);
+            }}
+            onChange={(patch) => change(patch)}
+            onAlign={(mode) => alignSelection(mode as Parameters<typeof alignSelected>[2])}
+            onDistribute={distributeSelection}
+            onDuplicate={duplicate}
+            onRotate={rotate}
+            onFlipH={flipHorizontal}
+            onFlipV={flipVertical}
+            onOpenImageEditor={
+              selected && selected.kind !== "text"
+                ? () => setImageEditorOpen(true)
+                : undefined
+            }
+            onRemoveBg={
+              selected && selected.kind !== "text" && !selected.assetId.startsWith("text-")
+                ? () => openBgRemoveForAsset(selected.assetId, selected.previewUrl)
+                : undefined
+            }
+            onUpscale={selected && selected.kind !== "text" ? () => void upscaleSelected() : undefined}
+            upscaling={upscaling}
+            onAutoFill={fillSheet}
+            onDelete={removeSelected}
+            onLayer={layerAction}
+            onGapChange={setGap}
+            round={round}
+          />
           <section className="summary">
             <p>
               <span>Printed area</span>
@@ -3500,15 +3901,290 @@ export default function GangSheetEditor() {
           </section>
         </aside>
       </div>
-      <nav className="mobile-bar" aria-label="Mobile toolbar">
-        <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
-        <button type="button" onClick={() => { setSidebarTab("gallery"); setMobileDrawer("sidebar"); }}>Gallery</button>
-        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto Arrange</button>
-        <button type="button" onClick={() => { setSidebarTab("layers"); setMobileDrawer("sidebar"); }}>Layers</button>
-        <button type="button" className="save" onClick={openSaveDialog} disabled={saving || !items.length}>
-          {saving ? "Saving…" : "Save"}
-        </button>
-      </nav>
+      </div>
+      <BagsBottomNav active={bottomNav} onSelect={handleBottomNav} />
+      <BagsActiveSheetsDrawer
+        open={bottomNav === "select"}
+        collapsed={sheetsDrawerCollapsed}
+        onToggleCollapse={() => setSheetsDrawerCollapsed((v) => !v)}
+        onClose={() => setBottomNav(null)}
+        designName={designName}
+        onDesignNameChange={(name) => {
+          setDesignName(name);
+          setDirty(true);
+        }}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        artworkCount={items.length}
+        quantity={sheetQuantity}
+        onQuantityChange={setSheetQuantity}
+        onDuplicateSheet={() => handleOverflowAction("duplicate-design")}
+        onAddNewDesign={() => setScreen("welcome")}
+        onOpenPreviousDesigns={() => openDesignPicker("mine")}
+        onAutoBuild={() => handleOverflowAction("arrange")}
+        onStartOver={clearSheet}
+      />
+      <BagsEditorSettingsDrawer
+        open={bottomNav === "settings" || settingsDrawerOpen}
+        onClose={() => {
+          setBottomNav(null);
+          setSettingsDrawerOpen(false);
+        }}
+        snapEnabled={snapEnabled}
+        onSnapChange={setSnapEnabled}
+        qualityPrefs={qualityPrefs}
+        onQualityPrefsChange={setQualityPrefs}
+        visualAid={visualAid}
+        onVisualAidChange={setVisualAid}
+        visualAidCustomColor={visualAidCustomColor}
+        onVisualAidCustomColorChange={setVisualAidCustomColor}
+        artboardMarginEnabled={artboardMarginEnabled}
+        artboardMarginIn={artboardMarginIn}
+        onArtboardMarginChange={(enabled, value) => {
+          setArtboardMarginEnabled(enabled);
+          setArtboardMarginIn(value);
+        }}
+      />
+      {bottomNav === "names-numbers" ? (
+        <BagsNamesNumbersModal open onClose={() => setBottomNav(null)}>
+          <BagsNamesNumbersContent
+            workflow={namesNumbersWorkflow}
+            onWorkflowChange={setNamesNumbersWorkflow}
+            namesList={namesList}
+            onNamesListChange={setNamesList}
+            numbersList={numbersList}
+            onNumbersListChange={setNumbersList}
+            nameFontFamily={rosterNameFontFamily}
+            onNameFontFamilyChange={setRosterNameFontFamily}
+            numberFontFamily={rosterNumberFontFamily}
+            onNumberFontFamilyChange={setRosterNumberFontFamily}
+            nameFontSize={rosterNameFontSize}
+            onNameFontSizeChange={setRosterNameFontSize}
+            numberFontSize={rosterNumberFontSize}
+            onNumberFontSizeChange={setRosterNumberFontSize}
+            nameWidthIn={rosterNameWidthIn}
+            onNameWidthInChange={setRosterNameWidthIn}
+            numberWidthIn={rosterNumberWidthIn}
+            onNumberWidthInChange={setRosterNumberWidthIn}
+            nameStrokeWidth={rosterNameStrokeWidth}
+            onNameStrokeWidthChange={setRosterNameStrokeWidth}
+            numberStrokeWidth={rosterNumberStrokeWidth}
+            onNumberStrokeWidthChange={setRosterNumberStrokeWidth}
+            strokeColor={rosterStrokeColor}
+            onStrokeColorChange={setRosterStrokeColor}
+            textColor={rosterTextColor}
+            onTextColorChange={setRosterTextColor}
+            quantity={rosterQuantity}
+            onQuantityChange={setRosterQuantity}
+            onApplyNamePreset={applyNameSizePreset}
+            onApplyNumberPreset={applyNumberSizePreset}
+            onGenerateNames={() => {
+              generateNames();
+              setBottomNav(null);
+            }}
+            onGenerateNumbers={() => {
+              generateNumbers();
+              setBottomNav(null);
+            }}
+          />
+        </BagsNamesNumbersModal>
+      ) : null}
+      <BagsDesignPickerModal
+        open={designPickerOpen}
+        onClose={() => setDesignPickerOpen(false)}
+        activeTab={designPickerTab}
+        onTabChange={setDesignPickerTab}
+        designs={savedDesigns}
+        loading={libraryLoading}
+        error={libraryError}
+        onRetry={() => void refreshLibrary(true)}
+        onSelect={(designId, version) => void loadRemoteDesign(designId, version)}
+      />
+      <BagsAddImageModal
+        open={addImageOpen}
+        onClose={() => setAddImageOpen(false)}
+        activeTab={addImageTab}
+        onTabChange={setAddImageTab}
+        canvaEnabled={false}
+        dropboxEnabled={false}
+        recentPanel={
+          <>
+            <div className="sidebar-tools">
+              <input
+                type="search"
+                placeholder="Search recent uploads…"
+                value={uploadSearch}
+                onChange={(e) => setUploadSearch(e.target.value)}
+                aria-label="Search recent uploads"
+              />
+            </div>
+            <div className="pool-grid">
+              {uploadPool.slice(0, 24).filter((p) =>
+                !uploadSearch.trim() || p.name.toLowerCase().includes(uploadSearch.trim().toLowerCase()),
+              ).map((p) => (
+                <button key={p.id} type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
+                  <img src={p.previewUrl} alt="" className="checkerboard" />
+                  <span>{p.name}</span>
+                </button>
+              ))}
+              {!uploadPool.length ? <p className="sidebar-empty">No recent uploads yet.</p> : null}
+            </div>
+          </>
+        }
+        uploadsPanel={
+          <>
+            <p className="sidebar-hint">Drag PNG/JPEG files here or browse — then click a thumbnail to place on the sheet.</p>
+            <label
+              className="sidebar-upload-btn drop-target"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
+              }}
+            >
+              {uploading ? "Uploading…" : "Upload Image(s)"}
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                onChange={(e) => {
+                  void uploadFiles(Array.from(e.target.files ?? []), "canvas");
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <div className="sidebar-tools">
+              <input
+                type="search"
+                placeholder="Search uploads…"
+                value={uploadSearch}
+                onChange={(e) => setUploadSearch(e.target.value)}
+                aria-label="Search uploads"
+              />
+              <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
+                <option value="recent">Recent</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <div className="pool-grid">
+              {filteredPool.map((p) => (
+                <div key={p.id} className="pool-item-wrap">
+                  <button type="button" className="pool-item" onClick={() => { placeFromPool(p.id); setAddImageOpen(false); }}>
+                    <img src={p.previewUrl} alt="" className="checkerboard" />
+                    <span>{p.name}</span>
+                  </button>
+                  <div className="pool-item-actions">
+                    <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
+                    <button type="button" aria-label="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>Cut</button>
+                    <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>Del</button>
+                  </div>
+                </div>
+              ))}
+              {!filteredPool.length ? <p className="sidebar-empty">{uploadPool.length ? "No matches" : "No uploads yet"}</p> : null}
+            </div>
+          </>
+        }
+        galleryPanel={
+          <>
+            <div className="sidebar-tools">
+              <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
+              <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
+                <ToolbarIcon name="refresh" />
+              </button>
+            </div>
+            <div className="chip-row">
+              {galleryCategories.map((cat) => (
+                <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
+              ))}
+            </div>
+            {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
+            {galleryError ? (
+              <p className="sidebar-empty">
+                {galleryError}{" "}
+                <button type="button" className="bags-link-btn" onClick={() => void refreshGallery()}>Retry</button>
+              </p>
+            ) : null}
+            {!galleryLoading && !filteredGallery.length ? (
+              <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
+            ) : (
+              <div className="pool-grid">
+                {filteredGallery.map((g) => (
+                  <button key={g.id} type="button" className="pool-item" onClick={() => { void placeGalleryItem(g); setAddImageOpen(false); }} disabled={uploading}>
+                    <img src={g.thumb} alt="" />
+                    <span>{g.name}</span>
+                    <em>{g.widthIn}×{g.heightIn}″</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        }
+      />
+
+      {selected && selected.kind !== "text" && imageEditorOpen ? (
+        <BagsImageEditorModal
+          open
+          sourcePreviewUrl={selected.previewUrl}
+          sourceName={selected.name}
+          onClose={() => setImageEditorOpen(false)}
+          onApply={applyImageEditorResult}
+          onRemoveBg={() => {
+            setImageEditorOpen(false);
+            openBgRemoveForAsset(selected.assetId, selected.previewUrl);
+          }}
+          onUpscale={() => void upscaleSelected()}
+          upscaling={upscaling}
+        />
+      ) : null}
+
+      <BagsAutomationModal
+        open={automationOpen}
+        kind={automationKind}
+        onClose={() => {
+          setAutomationOpen(false);
+          setNestPreview(null);
+        }}
+        onApply={() => {
+          if (automationKind === "auto-fill") confirmFillSheet();
+          else if (automationKind === "auto-nest") confirmAutoNest();
+          else setAutomationOpen(false);
+        }}
+        copyCount={autoFillPreviewCount}
+        gap={gap}
+        onGapChange={(nextGap) => {
+          setGap(nextGap);
+          if (automationKind === "auto-nest") {
+            setNestPreview(shelfPackLayout(items, sheetWidth, sheetHeight, nextGap));
+          }
+        }}
+        sheetLabel={`${sheetWidth}″ × ${sheetHeight}″`}
+        fittedCount={
+          automationKind === "auto-nest"
+            ? (nestPreview?.fittedCount ?? items.length)
+            : autoPreview?.fittedCount
+        }
+        remainingCount={
+          automationKind === "auto-nest"
+            ? (nestPreview?.remainingCount ?? 0)
+            : (autoPreview?.remainingCount ?? 0)
+        }
+        utilization={
+          automationKind === "auto-nest" ? nestPreview?.utilization : autoPreview?.utilization
+        }
+        loading={automationKind === "auto-build" ? autoPreviewLoading : false}
+        error={automationKind === "auto-build" ? autoPreviewError : undefined}
+        allowRotate={allowRotate90}
+        onAllowRotateChange={setAllowRotate90}
+        onRegenerate={
+          automationKind === "auto-build"
+            ? () => void refreshAutoPreview()
+            : automationKind === "auto-nest"
+              ? () => setNestPreview(shelfPackLayout(items, sheetWidth, sheetHeight, gap))
+              : undefined
+        }
+        busy={autoBusy}
+      />
 
       {bgRemove ? (
         <BackgroundRemovalModal

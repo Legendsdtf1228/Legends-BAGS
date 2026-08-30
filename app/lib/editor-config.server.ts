@@ -4,7 +4,7 @@ import {
   DEFAULT_UPLOAD_BY_SIZE_SHEET,
   type SheetConfig,
 } from "../domain/design/types";
-import { DEFAULT_GANG_SHEET_HEIGHT_IN, resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
+import { DEFAULT_GANG_SHEET_HEIGHT_IN, DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN, normalizeArtboardMarginIn, resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
 import { ensureShopConfig } from "./merchant-loaders.server";
 import { getShopAppearance, type ShopAppearance } from "./shop-appearance.server";
 
@@ -20,6 +20,10 @@ export type EditorBindingConfig = {
   sheetHeightIn: number | null;
   imageMarginIn: number | null;
   artboardMarginIn: number | null;
+  variantTitle?: string | null;
+  productTitle?: string | null;
+  productStatus?: string | null;
+  syncStatus?: string | null;
 };
 
 export type EditorPageConfig = {
@@ -30,7 +34,19 @@ export type EditorPageConfig = {
   appearance: ShopAppearance;
   binding: EditorBindingConfig | null;
   gangSheetVariants: EditorBindingConfig[];
+  /** Product used for gang sheet variant catalog (from URL or shop default). */
+  resolvedProductGid: string | null;
 };
+
+async function resolveGangSheetProductGid(shop: string, productGid?: string): Promise<string | null> {
+  if (productGid?.trim()) return productGid.trim();
+  const primary = await prisma.productBinding.findFirst({
+    where: { shop, builderType: "gang_sheet" },
+    orderBy: { updatedAt: "desc" },
+    select: { productGid: true },
+  });
+  return primary?.productGid ?? null;
+}
 
 function toVariantGid(variantId: string | undefined): string | undefined {
   if (!variantId) return undefined;
@@ -68,6 +84,10 @@ function mapBinding(row: NonNullable<Awaited<ReturnType<typeof resolveProductBin
     sheetHeightIn: row.sheetHeightIn,
     imageMarginIn: row.imageMarginIn,
     artboardMarginIn: row.artboardMarginIn,
+    variantTitle: row.variantTitle,
+    productTitle: row.productTitle,
+    productStatus: row.productStatus,
+    syncStatus: row.syncStatus,
   };
 }
 
@@ -77,13 +97,14 @@ export async function loadEditorPageConfig(
   variantId?: string,
 ): Promise<EditorPageConfig> {
   const variantGid = toVariantGid(variantId);
+  const resolvedProductGid = await resolveGangSheetProductGid(shop, productGid);
   const [config, binding, appearance, gangRows] = await Promise.all([
     ensureShopConfig(shop),
-    resolveProductBinding(shop, productGid, variantGid),
+    resolveProductBinding(shop, resolvedProductGid ?? productGid, variantGid),
     getShopAppearance(shop),
-    productGid
+    resolvedProductGid
       ? prisma.productBinding.findMany({
-          where: { shop, productGid, builderType: "gang_sheet" },
+          where: { shop, productGid: resolvedProductGid, builderType: "gang_sheet" },
           orderBy: { sheetHeightIn: "asc" },
         })
       : Promise.resolve([]),
@@ -105,10 +126,12 @@ export async function loadEditorPageConfig(
         : binding?.maxHeightIn ?? config?.maxHeightIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.maxHeightIn,
     imageMarginIn:
       binding?.imageMarginIn ?? config?.imageMarginIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.imageMarginIn,
-    artboardMarginIn:
+    artboardMarginIn: normalizeArtboardMarginIn(
       binding?.artboardMarginIn ??
-      config?.artboardMarginIn ??
-      DEFAULT_UPLOAD_BY_SIZE_SHEET.artboardMarginIn,
+        (binding?.builderType === "gang_sheet"
+          ? DEFAULT_GANG_SHEET_ARTBOARD_MARGIN_IN
+          : config?.artboardMarginIn ?? DEFAULT_UPLOAD_BY_SIZE_SHEET.artboardMarginIn),
+    ),
   };
 
   return {
@@ -117,6 +140,17 @@ export async function loadEditorPageConfig(
     defaultSheetHeightIn,
     appearance,
     binding: binding ? mapBinding(binding) : null,
-    gangSheetVariants,
+    gangSheetVariants: ensureGangSheetVariantCatalog(gangSheetVariants, binding ? mapBinding(binding) : null),
+    resolvedProductGid,
   };
+}
+
+function ensureGangSheetVariantCatalog(
+  gangSheetVariants: EditorBindingConfig[],
+  binding: EditorBindingConfig | null,
+): EditorBindingConfig[] {
+  if (gangSheetVariants.length) return gangSheetVariants;
+  if (!binding || binding.builderType !== "gang_sheet") return [];
+  if (binding.sheetHeightIn == null || !Number.isFinite(binding.sheetHeightIn)) return [];
+  return [binding];
 }

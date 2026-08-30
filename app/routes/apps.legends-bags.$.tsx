@@ -8,8 +8,8 @@ import {
 } from "../lib/design-api.server";
 import { handleBuilderLaunchRequest } from "../lib/builder-launch-handler.server";
 import { createStorefrontSessionResponse } from "../lib/editor-auth.server";
-import { normalizeCustomerKey } from "../domain/security/customer-key";
 import { loadStorefrontConfig } from "../lib/storefront-config.server";
+import { readAppProxyCustomerFromRequest } from "../domain/security/app-proxy-customer";
 import {
   parseAppProxyPath,
   verifyAppProxyShop,
@@ -48,10 +48,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   if (route.kind === "session") {
-    const customerKey = normalizeCustomerKey(
-      new URL(request.url).searchParams.get("customerKey"),
-    );
-    return createStorefrontSessionResponse(shop, customerKey);
+    const proxyCustomer = readAppProxyCustomerFromRequest(request);
+    return createStorefrontSessionResponse(shop, proxyCustomer.customerKey, {
+      customerName: proxyCustomer.customerName,
+      customerEmail: proxyCustomer.customerEmail,
+    });
   }
 
   if (route.kind === "builder") {

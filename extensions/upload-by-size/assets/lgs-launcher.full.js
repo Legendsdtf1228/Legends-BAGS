@@ -28,6 +28,11 @@
     var variantId = root.getAttribute("data-variant-id") || "";
     var shop = root.getAttribute("data-shop") || "";
     var customerId = root.getAttribute("data-customer-id") || "";
+    var customerName = (root.getAttribute("data-customer-name") || "").trim();
+    var customerEmail = (root.getAttribute("data-customer-email") || "").trim();
+    if (customerId && !customerName && customerEmail) {
+      customerName = customerEmail.split("@")[0] || "Customer";
+    }
     var builderType = root.getAttribute("data-builder-type") || "upload_by_size";
     var resolvedEditorOrigin = null;
     var configLoaded = false;
@@ -314,7 +319,7 @@
     }
 
     function applyAppearanceLabels(appearance) {
-      if (!appearance) return;
+      if (!appearance || builderType !== "gang_sheet") return;
       if (openBtn) {
         openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build your gang sheet");
         openBtn.setAttribute("data-label-edit", appearance.launcherEditLabel || "Edit design");
@@ -327,6 +332,8 @@
       if (!url || !shop) return Promise.resolve(null);
       url.searchParams.set("shop", shop);
       if (customerKey) url.searchParams.set("customerKey", customerKey);
+      if (customerName) url.searchParams.set("customerName", customerName);
+      if (customerEmail) url.searchParams.set("customerEmail", customerEmail);
       return fetch(url.toString())
         .then(function (res) {
           return res.ok ? res.json() : null;
@@ -433,10 +440,10 @@
       u.searchParams.set("product", productNumericId());
       u.searchParams.set("variant", currentVariantId() || "");
       u.searchParams.set("quantity", currentQuantity());
+      u.searchParams.set("type", builderType);
       u.searchParams.set("shop_mode", "1");
       u.searchParams.set("embedded", "1");
       u.searchParams.set("parentOrigin", window.location.origin);
-      if (customerKey) u.searchParams.set("lgs_customer_key", customerKey);
       if (options && options.designId) {
         u.searchParams.set("designId", options.designId);
         u.searchParams.set(
