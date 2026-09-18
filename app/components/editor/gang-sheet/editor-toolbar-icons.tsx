@@ -115,6 +115,18 @@ export const TOOLBAR_ICONS = {
       <path d="m8 8 8 8M16 8l-8 8" />
     </Icon>
   ),
+  panelLeft: () => (
+    <Icon>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </Icon>
+  ),
+  panelRight: () => (
+    <Icon>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+    </Icon>
+  ),
 };
 
 export function ToolbarIcon(props: { name: keyof typeof TOOLBAR_ICONS; label?: string }) {
