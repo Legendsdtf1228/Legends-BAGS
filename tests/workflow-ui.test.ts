@@ -170,7 +170,8 @@ describe("production workflow chrome", () => {
   it("keeps existing Auto Build and Fill sheet labels", () => {
     const gang = readFileSync("app/routes/editor.gang-sheet.tsx", "utf8");
     const autoBuild = readFileSync("app/components/editor/workflow/auto-build-screen.tsx", "utf8");
-    expect(gang).toContain('aria-label="Fill sheet with copies"');
+    const inspector = readFileSync("app/components/editor/gang-sheet/artwork-inspector.tsx", "utf8");
+    expect(inspector).toContain('aria-label="Fill sheet with copies"');
     expect(gang).toContain('aria-label="Roster CSV"');
     expect(gang).toContain("AutoBuildScreen");
     expect(gang).toContain("AutoFillScreen");
