@@ -24,6 +24,8 @@ import {
   type GallerySort,
   type UploadSort,
 } from "../components/editor/gang-sheet/artwork-library";
+import { ArtworkInspector } from "../components/editor/gang-sheet/artwork-inspector";
+import { ARTWORK_INSPECTOR_CSS } from "../components/editor/gang-sheet/artwork-inspector-styles";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
 import { selectionBounds } from "../components/editor/gang-sheet/canvas-workspace";
 import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
@@ -2154,7 +2156,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{ARTWORK_INSPECTOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -2692,7 +2694,7 @@ export default function GangSheetEditor() {
 
   return (
     <div className="bags lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{ARTWORK_INSPECTOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <GangSheetSaveDialog
@@ -3155,157 +3157,35 @@ export default function GangSheetEditor() {
             onSelect={requestSheetSize}
           />
         </main>
-        <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
-          <button
-            type="button"
-            className="mobile-drawer-close"
-            onClick={() => setMobileDrawer(null)}
-            aria-label="Close properties panel"
-          >
-            ×
-          </button>
-          <div className="heading">
-            <span>
-              <strong>Properties</strong>
-              <small>{selected ? "Artwork selected" : "Select an item"}</small>
-            </span>
-          </div>
-          {selected ? (
-            <>
-              <div className="preview">
-                {selected.kind === "text" ? (
-                  <span className="text-preview">{selected.textContent ?? selected.name}</span>
-                ) : (
-                  <img src={selected.previewUrl} alt="" className="checkerboard" />
-                )}
-                <strong>{selected.name}</strong>
-                <small>
-                  {selected.kind === "text"
-                    ? `${selected.fontFamily} · ${selected.fontSize}pt`
-                    : `${selected.widthPx} × ${selected.heightPx}px · ${selected.dpi ? `${selected.dpi} DPI` : "DPI not tagged"}`}
-                </small>
-              </div>
-              <div className="fields grid-2">
-                <label>
-                  X (in)
-                  <input type="number" step={0.05} value={round(selected.xIn)} disabled={selected.lockPosition} onChange={(e) => change({ xIn: +e.target.value })} />
-                </label>
-                <label>
-                  Y (in)
-                  <input type="number" step={0.05} value={round(selected.yIn)} disabled={selected.lockPosition} onChange={(e) => change({ yIn: +e.target.value })} />
-                </label>
-                <label>
-                  Width (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.widthIn)}
-                    onChange={(e) => {
-                      const w = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ widthIn: w });
-                      else change({ widthIn: w, heightIn: w / (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Height (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.heightIn)}
-                    onChange={(e) => {
-                      const h = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ heightIn: h });
-                      else change({ heightIn: h, widthIn: h * (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Rotation
-                  <select value={selected.rotationDeg} onChange={(e) => change({ rotationDeg: +e.target.value as 0 | 90 })}>
-                    <option value={0}>0°</option>
-                    <option value={90}>90°</option>
-                  </select>
-                </label>
-              </div>
-              <div className="align-row">
-                <span>Align</span>
-                <button type="button" onClick={() => alignSelection("left")} aria-label="Align left">⫷</button>
-                <button type="button" onClick={() => alignSelection("center-h")} aria-label="Align center">⫿</button>
-                <button type="button" onClick={() => alignSelection("right")} aria-label="Align right">⫸</button>
-                <button type="button" onClick={() => alignSelection("top")} aria-label="Align top">⫠</button>
-                <button type="button" onClick={() => alignSelection("center-v")} aria-label="Align middle">⫟</button>
-                <button type="button" onClick={() => alignSelection("bottom")} aria-label="Align bottom">⫡</button>
-              </div>
-              <div className="align-row">
-                <span>Distribute</span>
-                <button type="button" onClick={() => distributeSelection("horizontal")}>Horizontal</button>
-                <button type="button" onClick={() => distributeSelection("vertical")}>Vertical</button>
-              </div>
-              <label className="toggle-row"><input type="checkbox" checked={selected.lockAspect !== false && selected.kind !== "text"} onChange={(e) => change({ lockAspect: e.target.checked })} /> Lock aspect ratio</label>
-              <label className="toggle-row"><input type="checkbox" checked={Boolean(selected.lockPosition)} onChange={(e) => change({ lockPosition: e.target.checked })} /> Lock position</label>
-              <div className="actions">
-                <button type="button" onClick={duplicate} aria-label="Duplicate selected">⧉ Duplicate</button>
-                <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
-                <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
-                <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
-                {selected.kind !== "text" && !selected.assetId.startsWith("text-") ? (
-                  <button
-                    type="button"
-                    onClick={() => openBgRemoveForAsset(selected.assetId, selected.previewUrl)}
-                    aria-label="Remove background"
-                  >
-                    ✂ Remove BG
-                  </button>
-                ) : null}
-                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
-                <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
-              </div>
-              <div className="layer-actions">
-                <span>Layer</span>
-                <button type="button" onClick={() => layerAction("forward")} aria-label="Bring forward">Forward</button>
-                <button type="button" onClick={() => layerAction("backward")} aria-label="Send backward">Backward</button>
-                <button type="button" onClick={() => layerAction("front")} aria-label="Bring to front">To front</button>
-                <button type="button" onClick={() => layerAction("back")} aria-label="Send to back">To back</button>
-              </div>
-              <label className="spacing">
-                Spacing <span>{gap.toFixed(2)} in</span>
-                <input type="range" min={0} max={0.5} step={0.05} value={gap} aria-label="Spacing between pieces" onChange={(e) => setGap(+e.target.value)} />
-              </label>
-              <button
-                type="button"
-                className="ghost-save-btn"
-                onClick={() => {
-                  setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
-                  setShowLibrarySave(true);
-                }}
-              >
-                Save to library
-              </button>
-            </>
-          ) : (
-            <div className="none">
-              <b>↖</b>
-              <p>Click artwork on the sheet to resize, rotate, duplicate, or fill the sheet.</p>
-            </div>
-          )}
-          <section className="summary">
-            <p>
-              <span>Printed area</span>
-              <strong>{usedArea.toFixed(2)} in²</strong>
-            </p>
-            <p>
-              <span>Sheet usage</span>
-              <strong>{utilization}%</strong>
-            </p>
-            <p className="total">
-              <span>Estimated total</span>
-              <strong>${estimate.toFixed(2)}</strong>
-            </p>
-          </section>
-        </aside>
+        <ArtworkInspector
+          selected={selected}
+          gap={gap}
+          usedArea={usedArea}
+          utilization={utilization}
+          estimate={estimate}
+          mobileOpen={mobileDrawer === "properties"}
+          onCloseMobile={() => setMobileDrawer(null)}
+          onChange={change}
+          onDuplicate={duplicate}
+          onRotate={rotate}
+          onFlipHorizontal={flipHorizontal}
+          onFlipVertical={flipVertical}
+          onDelete={removeSelected}
+          onFillSheet={fillSheet}
+          onRemoveBackground={() => {
+            if (!selected) return;
+            openBgRemoveForAsset(selected.assetId, selected.previewUrl);
+          }}
+          onAlign={alignSelection}
+          onDistribute={distributeSelection}
+          onLayer={layerAction}
+          onGapChange={setGap}
+          onSaveToLibrary={() => {
+            setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
+            setShowLibrarySave(true);
+          }}
+        />
+
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
         <button type="button" onClick={() => { setSidebarTab("uploads"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Uploads</button>
