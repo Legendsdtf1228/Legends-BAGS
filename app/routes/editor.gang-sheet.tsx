@@ -21,6 +21,14 @@ import {
   CanvasSelectionBounds,
   CanvasSheetTabs,
 } from "../components/editor/gang-sheet/canvas-chrome";
+import {
+  ARTWORK_LIBRARY_CSS,
+  GalleryPanel,
+  UploadsPanel,
+  sortGallery,
+  type GallerySort,
+  type UploadSort,
+} from "../components/editor/gang-sheet/artwork-library";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
 import { selectionBounds } from "../components/editor/gang-sheet/canvas-workspace";
 import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
@@ -403,9 +411,10 @@ export default function GangSheetEditor() {
   const [hasStoredDraft, setHasStoredDraft] = useState(false);
   const [showFirstTip, setShowFirstTip] = useState(true);
   const [uploadSearch, setUploadSearch] = useState("");
-  const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
+  const [uploadSort, setUploadSort] = useState<UploadSort>("recent");
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
+  const [gallerySort, setGallerySort] = useState<GallerySort>("default");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [galleryCategories, setGalleryCategories] = useState<string[]>([...GALLERY_CATEGORIES]);
   const [galleryLoading, setGalleryLoading] = useState(false);
@@ -926,13 +935,23 @@ export default function GangSheetEditor() {
     pushHistory(next);
   }
 
-  function placeFromPool(poolId: string) {
+  function placeFromPool(poolId: string, quantity = 1) {
     const entry = uploadPool.find((p) => p.id === poolId);
     if (!entry) return;
-    const placed = createPlacedItem(entry.asset, entry.previewUrl, entry.name, 0, items);
-    pushHistory([...items, placed]);
-    selectItem(placed.id);
-    setMessage(`Placed "${entry.name}" on the sheet — drag to position.`);
+    const qty = Math.max(1, Math.round(quantity));
+    const placed: CanvasItem[] = [];
+    for (let i = 0; i < qty; i++) {
+      placed.push(
+        createPlacedItem(entry.asset, entry.previewUrl, entry.name, i, [...items, ...placed]),
+      );
+    }
+    pushHistory([...items, ...placed]);
+    selectItem(placed.at(-1)?.id ?? null);
+    setMessage(
+      qty === 1
+        ? `Placed "${entry.name}" on the sheet — drag to position.`
+        : `Placed ${qty}× "${entry.name}" on the sheet.`,
+    );
   }
 
   function sheetCountForAsset(assetId: string) {
@@ -1312,20 +1331,29 @@ export default function GangSheetEditor() {
     return { asset, previewUrl: g.thumb };
   }
 
-  async function placeGalleryItem(g: GalleryItem) {
+  async function placeGalleryItem(g: GalleryItem, quantity = 1) {
     setUploading(true);
     setError("");
     try {
       const { asset, previewUrl } = await galleryThumbToAsset(g);
-      const placed = createPlacedItem(asset, previewUrl, g.name, 0, items);
-      placed.widthIn = g.widthIn;
-      placed.heightIn = g.heightIn;
-      placed.dpi = Math.round(
-        Math.min(asset.widthPx / g.widthIn, asset.heightPx / g.heightIn),
+      const qty = Math.max(1, Math.round(quantity));
+      const placed: CanvasItem[] = [];
+      for (let i = 0; i < qty; i++) {
+        const item = createPlacedItem(asset, previewUrl, g.name, i, [...items, ...placed]);
+        item.widthIn = g.widthIn;
+        item.heightIn = g.heightIn;
+        item.dpi = Math.round(
+          Math.min(asset.widthPx / g.widthIn, asset.heightPx / g.heightIn),
+        );
+        placed.push(item);
+      }
+      pushHistory([...items, ...placed]);
+      selectItem(placed.at(-1)?.id ?? null);
+      setMessage(
+        qty === 1
+          ? `Placed "${g.name}" from gallery.`
+          : `Placed ${qty}× "${g.name}" from gallery.`,
       );
-      pushHistory([...items, placed]);
-      selectItem(placed.id);
-      setMessage(`Placed "${g.name}" from gallery.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not place gallery item");
     } finally {
@@ -1458,11 +1486,14 @@ export default function GangSheetEditor() {
       const q = uploadSearch.toLowerCase();
       list = list.filter((p) => p.name.toLowerCase().includes(q));
     }
-    list.sort((a, b) =>
-      uploadSort === "name"
-        ? a.name.localeCompare(b.name)
-        : b.uploadedAt - a.uploadedAt,
-    );
+    list.sort((a, b) => {
+      if (uploadSort === "name") return a.name.localeCompare(b.name);
+      if (uploadSort === "dpi") return (b.asset.dpi ?? -1) - (a.asset.dpi ?? -1);
+      if (uploadSort === "size") {
+        return b.asset.widthPx * b.asset.heightPx - a.asset.widthPx * a.asset.heightPx;
+      }
+      return b.uploadedAt - a.uploadedAt;
+    });
     return list;
   }, [uploadPool, uploadSearch, uploadSort]);
 
@@ -1477,8 +1508,8 @@ export default function GangSheetEditor() {
           g.tags.some((t) => t.toLowerCase().includes(q)),
       );
     }
-    return list;
-  }, [galleryCategory, gallerySearch, galleryItems]);
+    return sortGallery(list, gallerySort);
+  }, [galleryCategory, gallerySearch, galleryItems, gallerySort]);
 
   async function refreshGallery() {
     setGalleryLoading(true);
@@ -2031,7 +2062,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -2379,7 +2410,7 @@ export default function GangSheetEditor() {
 
     return (
       <div className="bags auto-mode lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         <header>
           <div className="brand">
             <b>L</b>
@@ -2864,7 +2895,7 @@ export default function GangSheetEditor() {
 
   return (
     <div className="bags lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <GangSheetSaveDialog
@@ -3023,127 +3054,46 @@ export default function GangSheetEditor() {
             ×
           </button>
           {sidebarTab === "uploads" ? (
-            <>
-              <div className="heading">
-                <span>
-                  <strong>Uploads</strong>
-                  <small>{uploadPool.length} file{uploadPool.length === 1 ? "" : "s"}</small>
-                </span>
-                <button
-                  type="button"
-                  className="refresh-btn"
-                  title="Refresh uploads"
-                  aria-label="Refresh uploads"
-                  onClick={() => setPoolTick((t) => t + 1)}
-                >
-                  <ToolbarIcon name="refresh" />
-                </button>
-              </div>
-              <div className="sidebar-tools">
-                <input
-                  type="search"
-                  placeholder="Search uploads…"
-                  value={uploadSearch}
-                  onChange={(e) => setUploadSearch(e.target.value)}
-                  aria-label="Search uploads"
-                />
-                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
-                  <option value="recent">Recent</option>
-                  <option value="name">Name</option>
-                </select>
-              </div>
-              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
-              <label
-                className="sidebar-upload-btn drop-target"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                }}
-              >
-                {uploading ? "Uploading…" : "Upload image(s)"}
-                <input
-                  ref={sidebarUploadRef}
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg"
-                  hidden
-                  onChange={(e) => {
-                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {!filteredPool.length ? (
-                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
-                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
-                  <small>Drop PNG/JPEG files here or browse above</small>
-                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
-                </label>
-              ) : (
-                <div className="pool-grid" key={poolTick}>
-                  {filteredPool.map((p) => {
-                    const dpiInfo = dpiQualityTier(p.asset.dpi);
-                    const onSheet = sheetCountForAsset(p.asset.assetId);
-                    return (
-                      <div key={p.id} className="pool-item-wrap">
-                        <button type="button" className="pool-item" onClick={() => placeFromPool(p.id)} title="Click to place on gang sheet" draggable onDragStart={(e) => e.dataTransfer.setData("text/pool-id", p.id)}>
-                          <img src={p.previewUrl} alt="" className="checkerboard" />
-                          <span>{p.name}</span>
-                          {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
-                          {dpiInfo.tier !== "excellent" && dpiInfo.tier !== "good" ? (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label} DPI</em>
-                          ) : (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label}</em>
-                          )}
-                        </button>
-                        <div className="pool-item-actions">
-                          <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
-                          <button type="button" aria-label="Remove background" title="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>Cut</button>
-                          <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>Del</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+            <UploadsPanel
+              items={filteredPool.map((p) => ({
+                id: p.id,
+                name: p.name,
+                previewUrl: p.previewUrl,
+                uploadedAt: p.uploadedAt,
+                asset: p.asset,
+                onSheetCount: sheetCountForAsset(p.asset.assetId),
+              }))}
+              totalCount={uploadPool.length}
+              search={uploadSearch}
+              sort={uploadSort}
+              uploading={uploading}
+              gridKey={poolTick}
+              inputRef={sidebarUploadRef}
+              onSearchChange={setUploadSearch}
+              onSortChange={setUploadSort}
+              onRefresh={() => setPoolTick((t) => t + 1)}
+              onFiles={(files) => void uploadFiles(files, "canvas")}
+              onAddToSheet={(id, qty) => placeFromPool(id, qty)}
+              onRename={renamePoolItem}
+              onRemoveBackground={(assetId, previewUrl) => openBgRemoveForAsset(assetId, previewUrl)}
+              onDelete={deletePoolItem}
+            />
           ) : sidebarTab === "gallery" ? (
-            <>
-              <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
-              <p className="panel-lead">Artwork from your shop&apos;s Gallery Settings — not sample placeholders.</p>
-              <div className="sidebar-tools">
-                <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
-                <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
-                  <ToolbarIcon name="refresh" />
-                </button>
-              </div>
-              <div className="chip-row">
-                {galleryCategories.map((cat) => (
-                  <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
-                ))}
-              </div>
-              {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
-              {galleryError ? (
-                <p className="gs-save-error" style={{ margin: "0 16px 12px" }}>
-                  {galleryError}{" "}
-                  <button type="button" className="gs-ghost-btn" onClick={() => void refreshGallery()}>Retry</button>
-                </p>
-              ) : null}
-              {!galleryLoading && !filteredGallery.length ? (
-                <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
-              ) : (
-                <div className="pool-grid">
-                  {filteredGallery.map((g) => (
-                    <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
-                      <img src={g.thumb} alt="" />
-                      <span>{g.name}</span>
-                      <em>{g.widthIn}×{g.heightIn}″</em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+            <GalleryPanel
+              items={filteredGallery}
+              categories={galleryCategories}
+              category={galleryCategory}
+              search={gallerySearch}
+              sort={gallerySort}
+              loading={galleryLoading}
+              error={galleryError}
+              uploading={uploading}
+              onSearchChange={setGallerySearch}
+              onCategoryChange={setGalleryCategory}
+              onSortChange={setGallerySort}
+              onRefresh={() => void refreshGallery()}
+              onAddToSheet={(item, qty) => void placeGalleryItem(item, qty)}
+            />
           ) : sidebarTab === "text" ? (
             <>
               <div className="heading"><span><strong>Text</strong><small>Add labels &amp; titles</small></span></div>
