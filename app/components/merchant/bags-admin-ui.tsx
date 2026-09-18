@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router";
 import { BAGS_NAV_ICONS } from "./bags-admin-icons";
 import { bagsTokenCss } from "./bags-design-tokens";
+import { bagsDashboardRefreshCss } from "./bags-dashboard-styles";
 
 export * from "./bags-admin-components";
 
@@ -9,9 +10,11 @@ export const bagsAdminStyles = `
 ${bagsTokenCss}
 .bags-admin-shell{display:flex;min-height:100vh;background:var(--bags-shell-bg);font:var(--bags-control-height)/1.45 var(--bags-font);font-size:13px;color:var(--bags-text)}
 .bags-admin-sidebar{width:var(--bags-sidebar-width);flex-shrink:0;background:linear-gradient(180deg,var(--bags-sidebar-bg) 0%,var(--bags-sidebar-bg-end) 100%);color:var(--bags-sidebar-text);display:flex;flex-direction:column;border-right:1px solid var(--bags-sidebar-border);box-shadow:var(--bags-shadow-sidebar);position:sticky;top:0;height:100vh;z-index:var(--bags-z-index,40)}
-.bags-admin-sidebar.is-collapsed{width:64px}
+.bags-admin-sidebar.is-collapsed{width:64px;overflow:hidden}
 .bags-admin-sidebar.is-collapsed .bags-admin-brand-text,.bags-admin-sidebar.is-collapsed .bags-admin-nav-label,.bags-admin-sidebar.is-collapsed .bags-admin-nav-link span:not(.bags-admin-nav-icon),.bags-admin-sidebar.is-collapsed .bags-admin-sidebar-foot{display:none}
 .bags-admin-sidebar.is-collapsed .bags-admin-nav-link{justify-content:center;padding:10px}
+.bags-admin-sidebar.is-collapsed .bags-admin-brand{padding:14px 13px;justify-content:center}
+.bags-admin-sidebar.is-collapsed .bags-collapse-toggle-label{display:none}
 .bags-admin-brand{padding:14px 14px 12px;border-bottom:1px solid var(--bags-sidebar-border);display:flex;align-items:center;gap:10px;min-height:var(--bags-header-height)}
 .bags-admin-logo{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#ffd45e,#e89119);color:#111;font:800 18px Georgia,serif;flex-shrink:0}
 .bags-admin-brand-text strong{display:block;font-size:10px;letter-spacing:.12em;color:var(--bags-sidebar-muted);font-weight:700}
@@ -27,7 +30,7 @@ ${bagsTokenCss}
 .bags-admin-nav-icon{width:18px;height:18px;display:grid;place-items:center;opacity:.95;flex-shrink:0}
 .bags-admin-sidebar-foot{padding:10px 12px 14px;border-top:1px solid var(--bags-sidebar-border);font-size:10px;color:var(--bags-sidebar-muted);line-height:1.45}
 .bags-admin-main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bags-shell-bg)}
-.bags-admin-topbar{min-height:var(--bags-header-height);padding:0 20px;background:var(--bags-surface);border-bottom:1px solid var(--bags-border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:30}
+.bags-admin-topbar{min-height:var(--bags-header-height);padding:0 20px;background:var(--bags-surface);border-bottom:1px solid var(--bags-border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:relative;z-index:1}
 .bags-admin-topbar h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em;color:var(--bags-text)}
 .bags-admin-topbar p{margin:2px 0 0;font-size:12px;color:var(--bags-text-muted)}
 .bags-admin-content{padding:0;flex:1}
@@ -128,16 +131,18 @@ ${bagsTokenCss}
 .bags-admin-mobile-nav-btn{display:none}
 @media(max-width:960px){
   .bags-admin-shell{flex-direction:column}
-  .bags-admin-sidebar{width:100%;height:auto;position:relative}
+  .bags-admin-sidebar,.bags-admin-sidebar.is-collapsed{width:100%;height:auto;position:relative}
   .bags-admin-nav-toggle{display:inline-grid;place-items:center}
   .bags-admin-nav{display:none;padding:8px 10px 12px}
-  .bags-admin-sidebar.is-mobile-open .bags-admin-nav{display:block}
-  .bags-admin-nav{display:flex;flex-wrap:wrap;gap:4px}
-  .bags-admin-nav-group{display:contents}
+  .bags-admin-sidebar.is-mobile-open .bags-admin-nav{display:flex;flex-direction:column;gap:0;max-height:65vh;overflow:auto}
+  .bags-admin-nav-group{display:block;margin-bottom:12px}
   .bags-admin-nav-label{width:100%;display:block}
+  .bags-admin-sidebar.is-collapsed .bags-admin-brand-text,.bags-admin-sidebar.is-collapsed .bags-admin-nav-label,.bags-admin-sidebar.is-collapsed .bags-admin-nav-link span:not(.bags-admin-nav-icon){display:block}
+  .bags-admin-sidebar.is-collapsed .bags-admin-nav-link{justify-content:flex-start;padding:10px 12px}
   .bags-admin-grid.two,.bags-admin-grid.three{grid-template-columns:1fr}
   .bags-admin-search{min-width:100%;flex:1 1 100%}
 }
+${bagsDashboardRefreshCss}
 `;
 
 const STATUS_CLASS: Record<string, string> = {

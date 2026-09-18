@@ -194,6 +194,7 @@ export function BagsDateRange(props: {
           name="range"
           value={opt.value}
           className={`bags-admin-btn ${props.value === opt.value ? "primary" : "ghost"}`}
+          aria-pressed={props.value === opt.value}
         >
           {opt.label}
         </button>

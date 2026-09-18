@@ -16,6 +16,7 @@
     "setup": "node ./scripts/ensure-db.mjs",
     "db:migrate": "prisma migrate dev",
     "test": "vitest run",
+    "preview:admin-ui": "vite --config scripts/merchant-ui-preview/vite.config.ts",
     "test:watch": "vitest",
     "worker:tick": "node --import tsx ./scripts/worker-tick.ts",
     "e2e": "node ./scripts/e2e-pipeline.mjs",
