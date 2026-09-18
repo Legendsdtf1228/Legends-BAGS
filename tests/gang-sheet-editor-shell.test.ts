@@ -58,4 +58,10 @@ describe("gang sheet editor shell", () => {
       heightIn: expect.any(Number),
     });
   });
+
+  it("includes canvas workspace chrome styles", () => {
+    expect(GANG_SHEET_EDITOR_CSS).toContain("canvas-align-bar");
+    expect(GANG_SHEET_EDITOR_CSS).toContain("canvas-sheet-tabs");
+    expect(GANG_SHEET_EDITOR_CSS).toContain("--gs-canvas-surround");
+  });
 });

@@ -1,5 +1,6 @@
 /** Gang Sheet Studio shell + chrome styles. Feature panel markup is owned by other agents;
  * this file only applies the shared visual system to existing class names. */
+import { CANVAS_WORKSPACE_CSS } from "./canvas-workspace-css";
 import { GS_EDITOR_TOKEN_CSS, GS_EDITOR_TOKENS } from "./editor-tokens";
 
 export const GANG_SHEET_EDITOR_CSS = `
@@ -444,4 +445,4 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
   .lgs-editor.gs-editor-v2 .gs-primary-btn{padding:0 10px;font-size:12px;min-height:32px}
   .lgs-editor.gs-editor-v2 .gs-command-right{gap:6px}
 }
-`;
+` + CANVAS_WORKSPACE_CSS;
