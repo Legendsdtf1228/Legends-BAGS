@@ -62,77 +62,70 @@ export function ArtworkCard({
         disabled={uploading}
       >
         <img src={thumbUrl} alt="" />
-        <span className="lgs-artlib-badges">
-          <em className="lgs-artlib-badge">{dimLabel}</em>
-          {dpiLabel ? (
-            <em className={`lgs-artlib-badge dpi-${dpiTier ?? "unknown"}`}>{dpiLabel}</em>
-          ) : null}
-          {onSheet ? (
-            <em className="lgs-artlib-badge on-sheet">
-              {onSheetCount} on sheet
-            </em>
-          ) : null}
-        </span>
+        {onSheet ? <em className="lgs-artlib-badge on-sheet">{onSheetCount} on sheet</em> : null}
       </button>
-      <div className="lgs-artlib-name" title={name}>
-        {name}
-      </div>
-      <div className="lgs-artlib-meta">
-        {pixelLabel ? <span>{pixelLabel}</span> : null}
-        {category ? <span>{category}</span> : null}
-        {dpiLabel ? <b className={`dpi-badge tier-${dpiTier ?? "unknown"}`}>{dpiLabel}</b> : null}
-      </div>
-      <div className="lgs-artlib-addrow">
-        <div className="lgs-artlib-qty">
-          <button
-            type="button"
-            aria-label={`Decrease quantity for ${name}`}
-            onClick={() => setQty((q) => clampQuantity(q - 1))}
-          >
-            −
-          </button>
-          <input
-            type="number"
-            min={1}
-            max={99}
-            value={qty}
-            aria-label={`Quantity for ${name}`}
-            onChange={(e) => setQty(clampQuantity(+e.target.value))}
-          />
-          <button
-            type="button"
-            aria-label={`Increase quantity for ${name}`}
-            onClick={() => setQty((q) => clampQuantity(q + 1))}
-          >
-            +
-          </button>
+      <div className="lgs-artlib-body">
+        <div className="lgs-artlib-name" title={name}>
+          {name}
         </div>
-        <button type="button" className="lgs-artlib-add" disabled={uploading} onClick={(e) => add(e)}>
-          Add to Sheet
-        </button>
-      </div>
-      {onRename || onRemoveBackground || onDelete ? (
-        <div className="lgs-artlib-toolsrow">
-          {onRename ? (
+        <div className="lgs-artlib-meta">
+          <b>{dimLabel}</b>
+          {pixelLabel ? <span>{pixelLabel}</span> : null}
+          {dpiLabel ? <span className={`dpi-badge tier-${dpiTier ?? "unknown"}`}>{dpiLabel}</span> : null}
+          {category ? <span>{category}</span> : null}
+        </div>
+        <div className="lgs-artlib-addrow">
+          <div className="lgs-artlib-qty">
+            <button
+              type="button"
+              aria-label={`Decrease quantity for ${name}`}
+              onClick={() => setQty((q) => clampQuantity(q - 1))}
+            >
+              −
+            </button>
             <input
-              type="text"
-              defaultValue={renameValue ?? name}
-              aria-label="Rename upload"
-              onBlur={(e) => onRename(e.target.value.trim() || name)}
+              type="number"
+              min={1}
+              max={99}
+              value={qty}
+              aria-label={`Quantity for ${name}`}
+              onChange={(e) => setQty(clampQuantity(+e.target.value))}
             />
-          ) : null}
-          {onRemoveBackground ? (
-            <button type="button" aria-label="Remove background" title="Remove background" onClick={onRemoveBackground}>
-              Cut
+            <button
+              type="button"
+              aria-label={`Increase quantity for ${name}`}
+              onClick={() => setQty((q) => clampQuantity(q + 1))}
+            >
+              +
             </button>
-          ) : null}
-          {onDelete ? (
-            <button type="button" className="danger" aria-label="Delete upload" onClick={onDelete}>
-              Del
-            </button>
-          ) : null}
+          </div>
+          <button type="button" className="lgs-artlib-add" disabled={uploading} onClick={(e) => add(e)}>
+            Add to Sheet
+          </button>
         </div>
-      ) : null}
+        {onRename || onRemoveBackground || onDelete ? (
+          <div className="lgs-artlib-toolsrow">
+            {onRename ? (
+              <input
+                type="text"
+                defaultValue={renameValue ?? name}
+                aria-label="Rename upload"
+                onBlur={(e) => onRename(e.target.value.trim() || name)}
+              />
+            ) : null}
+            {onRemoveBackground ? (
+              <button type="button" aria-label="Remove background" title="Remove background" onClick={onRemoveBackground}>
+                Cut
+              </button>
+            ) : null}
+            {onDelete ? (
+              <button type="button" className="danger" aria-label="Delete upload" onClick={onDelete}>
+                Del
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </article>
   );
 }
