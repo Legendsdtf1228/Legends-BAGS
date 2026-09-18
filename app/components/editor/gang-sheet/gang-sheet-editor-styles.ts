@@ -2,6 +2,7 @@
  * this file only applies the shared visual system to existing class names. */
 import { CANVAS_WORKSPACE_CSS } from "./canvas-workspace-css";
 import { GS_EDITOR_TOKEN_CSS, GS_EDITOR_TOKENS } from "./editor-tokens";
+import { PRODUCTION_REVIEW_CSS } from "./production-review-styles";
 
 export const GANG_SHEET_EDITOR_CSS = `
 ${GS_EDITOR_TOKEN_CSS}
@@ -361,25 +362,6 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
 .lgs-editor.gs-editor-v2 .gs-overflow-panel{position:absolute;right:0;top:calc(100% + 6px);min-width:180px;background:#1c2026;border:1px solid var(--gs-border-strong);border-radius:var(--gs-radius-md);box-shadow:var(--gs-dialog-shadow);padding:6px;z-index:20;display:grid;gap:2px}
 .lgs-editor.gs-editor-v2 .gs-overflow-panel button{border:0;background:transparent;text-align:left;padding:8px 10px;border-radius:var(--gs-radius-sm);font-size:var(--gs-control);cursor:pointer;color:var(--gs-text-on-dark)}
 .lgs-editor.gs-editor-v2 .gs-overflow-panel button:hover:not(:disabled){background:#2a3038}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-backdrop{position:fixed;inset:0;background:rgba(8,10,12,.72);display:grid;place-items:center;z-index:50;padding:var(--gs-space-4)}
-.lgs-editor.gs-editor-v2 .gs-save-dialog{background:var(--gs-surface);color:var(--gs-text);border-radius:var(--gs-radius-lg);max-width:640px;width:100%;box-shadow:var(--gs-dialog-shadow);overflow:hidden;border:1px solid var(--gs-border-on-light)}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-head{display:flex;align-items:center;justify-content:space-between;padding:var(--gs-space-3) var(--gs-space-4);border-bottom:1px solid var(--gs-border-on-light)}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-head h2{margin:0;font-size:var(--gs-title)}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-head .gs-icon-btn{color:#475467}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-body{display:grid;grid-template-columns:180px 1fr;gap:var(--gs-space-5);padding:var(--gs-space-5)}
-.lgs-editor.gs-editor-v2 .gs-save-preview img{width:100%;aspect-ratio:3/4;object-fit:contain;border-radius:var(--gs-radius-md);border:1px solid var(--gs-border-on-light);background:#f8fafc}
-.lgs-editor.gs-editor-v2 .gs-save-preview-empty{display:grid;place-items:center;aspect-ratio:3/4;border-radius:var(--gs-radius-md);border:1px dashed #cbd5e1;color:var(--gs-text-muted);font-size:var(--gs-control);background:#f8fafc}
-.lgs-editor.gs-editor-v2 .gs-save-field{display:grid;gap:6px;font-size:var(--gs-label);font-weight:600;color:#344054}
-.lgs-editor.gs-editor-v2 .gs-save-field input{padding:9px 10px;border:1px solid var(--gs-border-on-light);border-radius:var(--gs-radius-sm);font:inherit;font-weight:400}
-.lgs-editor.gs-editor-v2 .gs-save-summary{display:grid;gap:8px;margin:12px 0 0;padding:var(--gs-space-3);background:var(--gs-panel-muted);border-radius:var(--gs-radius-sm);border:1px solid var(--gs-border-on-light)}
-.lgs-editor.gs-editor-v2 .gs-save-summary div{display:flex;justify-content:space-between;gap:12px;font-size:var(--gs-control)}
-.lgs-editor.gs-editor-v2 .gs-save-summary dt{color:var(--gs-text-muted);margin:0}
-.lgs-editor.gs-editor-v2 .gs-save-summary dd{margin:0;font-weight:700;color:var(--gs-text)}
-.lgs-editor.gs-editor-v2 .gs-save-warn{margin:10px 0 0;padding:10px;border-radius:var(--gs-radius-sm);background:var(--gs-warning-soft);color:#9a3412;font-size:var(--gs-control);line-height:1.45}
-.lgs-editor.gs-editor-v2 .gs-save-warn-danger{background:var(--gs-danger-soft);color:#991b1b}
-.lgs-editor.gs-editor-v2 .gs-save-error{margin:10px 0 0;padding:10px;border-radius:var(--gs-radius-sm);background:var(--gs-danger-soft);color:#991b1b;font-size:var(--gs-control)}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-foot{display:flex;justify-content:flex-end;gap:8px;padding:var(--gs-space-3) var(--gs-space-4);border-top:1px solid var(--gs-border-on-light);background:var(--gs-panel-muted)}
-.lgs-editor.gs-editor-v2 .gs-save-dialog-foot .gs-ghost-btn,.lgs-editor.gs-editor-v2 .gs-save-dialog-foot .gs-secondary-btn{color:var(--gs-text);border-color:var(--gs-border-on-light);background:var(--gs-surface)}
 .lgs-editor.gs-editor-v2 .workspace{display:grid;grid-template-columns:var(--gs-rail-w) var(--gs-panel-w) minmax(0,1fr) var(--gs-props-w);grid-template-rows:minmax(0,1fr);height:calc(100vh - var(--gs-bar-h))}
 .lgs-editor.gs-editor-v2 .sidebar-panel{width:var(--gs-panel-w)}
 .lgs-editor.gs-editor-v2 nav.icon-rail,.lgs-editor.gs-editor-v2 .icon-rail{width:var(--gs-rail-w);min-width:var(--gs-rail-w)}
@@ -440,9 +422,8 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
 @media(max-width:900px){
   .lgs-editor.gs-editor-v2 .gs-command-bar{grid-template-columns:auto 1fr auto;height:var(--gs-bar-h);min-height:var(--gs-bar-h);padding:0 8px}
   .lgs-editor.gs-editor-v2 .gs-command-center,.lgs-editor.gs-editor-v2 .gs-hide-mobile,.lgs-editor.gs-editor-v2 .gs-design-name-field,.lgs-editor.gs-editor-v2 .gs-save-state,.lgs-editor.gs-editor-v2 .gs-sheet-meta,.lgs-editor.gs-editor-v2 .gs-panel-toggle,.lgs-editor.gs-editor-v2 .gs-price-pill{display:none}
-  .lgs-editor.gs-editor-v2 .gs-save-dialog-body{grid-template-columns:1fr}
   .lgs-editor.gs-editor-v2 .workspace{height:calc(100vh - var(--gs-bar-h) - 56px)}
   .lgs-editor.gs-editor-v2 .gs-primary-btn{padding:0 10px;font-size:12px;min-height:32px}
   .lgs-editor.gs-editor-v2 .gs-command-right{gap:6px}
 }
-` + CANVAS_WORKSPACE_CSS;
+` + CANVAS_WORKSPACE_CSS + PRODUCTION_REVIEW_CSS;
