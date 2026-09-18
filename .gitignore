@@ -31,3 +31,7 @@ storage/local/**
 
 # Local IDE / assistant config
 .gemini/
+
+# Local browser smoke profiles / screenshots (runtime only)
+tmp-ui-smoke/
+tmp-ui-smoke-prod/
