@@ -2,12 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
-import {
-  applyLongestSidePreset,
-  BAGS_BASE_CSS,
-  PresetSizeChips,
-  StepperField,
-} from "../components/editor/bags-ui";
+import { BAGS_BASE_CSS } from "../components/editor/bags-ui";
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
@@ -74,6 +69,18 @@ import {
 import { loadEditorPageConfig } from "../lib/editor-config.server";
 import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
 import { mergeEditorLaunchFromUrl } from "../lib/editor-launch.server";
+import { AutoBuildScreen } from "../components/editor/workflow/auto-build-screen";
+import { AutoFillScreen, type AutoFillSource } from "../components/editor/workflow/auto-fill-screen";
+import { NamesNumbersScreen } from "../components/editor/workflow/names-numbers-screen";
+import { PRODUCTION_WORKFLOW_CSS } from "../components/editor/workflow/workflow-styles";
+import {
+  defaultRosterPlate,
+  findDuplicateRosterNumbers,
+  parseRosterCsv,
+  planFillSheetCopies,
+  planRosterPlacements,
+  type WorkflowPhase,
+} from "../components/editor/workflow/workflow-helpers";
 
 type Asset = {
   assetId: string;
@@ -161,7 +168,7 @@ type SidebarTab =
   | "templates"
   | "help";
 
-type Screen = "welcome" | "auto_build" | "canvas";
+type Screen = "welcome" | "auto_build" | "auto_fill" | "names" | "canvas";
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string }[] = [
   { id: "uploads", label: "Uploads", icon: "uploads" },
@@ -210,8 +217,6 @@ type AutoNestPreview = {
 
 const SHEET_WIDTHS = GANG_SHEET_WIDTHS;
 const SHEET_HEIGHTS = [...GANG_SHEET_HEIGHTS];
-const AUTO_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12] as const;
-
 function buildNestItemsFromDrafts(drafts: AutoDraft[]) {
   return drafts.flatMap((d) =>
     Array.from({ length: d.quantity }, () => ({
@@ -385,6 +390,19 @@ export default function GangSheetEditor() {
   const [autoPreviewError, setAutoPreviewError] = useState("");
   const [selectedAutoId, setSelectedAutoId] = useState<string | null>(null);
   const [autoPhase, setAutoPhase] = useState<AutoPhase>("setup");
+  const [workflowReturn, setWorkflowReturn] = useState<"welcome" | "canvas">("welcome");
+  const [fillPhase, setFillPhase] = useState<WorkflowPhase>("setup");
+  const [fillSource, setFillSource] = useState<AutoFillSource | null>(null);
+  const [fillWidthIn, setFillWidthIn] = useState(4);
+  const [fillHeightIn, setFillHeightIn] = useState(4);
+  const [fillQuantity, setFillQuantity] = useState(1);
+  const [fillLockAspect, setFillLockAspect] = useState(true);
+  const [fillError, setFillError] = useState("");
+  const [namesPhase, setNamesPhase] = useState<WorkflowPhase>("setup");
+  const [rosterLockAspect, setRosterLockAspect] = useState(true);
+  const [rosterWidthIn, setRosterWidthIn] = useState(6);
+  const [rosterHeightIn, setRosterHeightIn] = useState(0.4);
+  const [namesError, setNamesError] = useState("");
   const [autoUploadTab, setAutoUploadTab] = useState<"upload" | "pool" | "gallery">("upload");
   const [allowRotate90, setAllowRotate90] = useState(true);
   const [uploadPool, setUploadPool] = useState<PoolItem[]>([]);
@@ -807,9 +825,7 @@ export default function GangSheetEditor() {
 
   function handleOverflowAction(action: OverflowAction) {
     if (action === "arrange") {
-      setScreen("auto_build");
-      setAutoPhase("setup");
-      setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
+      openAutoBuild("canvas");
       return;
     }
     if (action === "duplicate-design") {
@@ -1124,20 +1140,85 @@ export default function GangSheetEditor() {
     }
   }
 
-  function fillSheet() {
-    if (!selected) return;
-    const copies: CanvasItem[] = [];
-    let z = nextZIndex(items);
-    for (let y = 0.1; y + selected.heightIn <= sheetHeight; y += selected.heightIn + gap) {
-      for (let x = 0.1; x + selected.widthIn <= sheetWidth; x += selected.widthIn + gap) {
-        copies.push({ ...selected, id: crypto.randomUUID(), xIn: x, yIn: y, zIndex: z++ });
-        if (copies.length >= 250) break;
-      }
-      if (copies.length >= 250) break;
+  function openAutoBuild(from: "welcome" | "canvas") {
+    setWorkflowReturn(from);
+    setScreen("auto_build");
+    setAutoPhase("setup");
+    setMessage("Auto Build — set size and quantity, preview, then Apply.");
+  }
+
+  function openAutoFill() {
+    if (!selected) {
+      setError("Select artwork on the sheet first, then Auto Fill.");
+      return;
     }
-    pushHistory([...items.filter((i) => i.id !== selected.id), ...copies]);
+    const source: AutoFillSource = {
+      id: selected.id,
+      name: selected.name,
+      previewUrl: selected.previewUrl,
+      widthIn: selected.widthIn,
+      heightIn: selected.heightIn,
+      widthPx: selected.widthPx,
+      heightPx: selected.heightPx,
+      lockAspect: selected.lockAspect !== false && selected.kind !== "text",
+      kind: selected.kind,
+    };
+    const capacity = planFillSheetCopies({
+      widthIn: source.widthIn,
+      heightIn: source.heightIn,
+      sheetWidth,
+      sheetHeight,
+      gap,
+    }).capacity;
+    setFillSource(source);
+    setFillWidthIn(source.widthIn);
+    setFillHeightIn(source.heightIn);
+    setFillLockAspect(source.lockAspect);
+    setFillQuantity(Math.max(1, capacity));
+    setFillPhase("setup");
+    setFillError("");
+    setWorkflowReturn("canvas");
+    setError("");
+    setScreen("auto_fill");
+  }
+
+  function applyFillToCanvas() {
+    if (!fillSource) return;
+    const plan = planFillSheetCopies({
+      widthIn: fillWidthIn,
+      heightIn: fillHeightIn,
+      sheetWidth,
+      sheetHeight,
+      gap,
+      requested: fillQuantity,
+    });
+    if (!plan.copies.length) {
+      setFillError("Nothing fits on this sheet.");
+      return;
+    }
+    const sourceItem = items.find((i) => i.id === fillSource.id);
+    if (!sourceItem) {
+      setFillError("Select artwork on the sheet first, then Auto Fill.");
+      return;
+    }
+    let z = nextZIndex(items);
+    const copies: CanvasItem[] = plan.copies.map((c) => ({
+      ...sourceItem,
+      id: crypto.randomUUID(),
+      xIn: c.xIn,
+      yIn: c.yIn,
+      widthIn: fillWidthIn,
+      heightIn: fillHeightIn,
+      zIndex: z++,
+    }));
+    pushHistory([...items.filter((i) => i.id !== fillSource.id), ...copies]);
     selectItem(copies[0]?.id ?? null);
-    setMessage(`Filled sheet with ${copies.length} copies.`);
+    setMessage(`Filled sheet with ${copies.length} of ${fillQuantity} copies.`);
+    setScreen("canvas");
+  }
+
+  function fillSheet() {
+    openAutoFill();
   }
 
   function autoArrange() {
@@ -1308,60 +1389,69 @@ export default function GangSheetEditor() {
     }
   }
 
-  function parseRoster(csv: string) {
-    return csv
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split(/[,\t]/).map((p) => p.trim());
-        return { name: parts[0] ?? "", number: parts[1] ?? "" };
-      })
-      .filter((r) => r.name || r.number);
+  function openNamesWorkflow(from: "welcome" | "canvas") {
+    const plate = defaultRosterPlate(sheetWidth, rosterFontSize);
+    setRosterWidthIn(plate.widthIn);
+    setRosterHeightIn(plate.heightIn);
+    setRosterLockAspect(true);
+    setNamesPhase("setup");
+    setNamesError("");
+    setWorkflowReturn(from);
+    setScreen("names");
   }
 
   function generateRoster() {
-    const rows = parseRoster(rosterCsv);
+    const rows = parseRosterCsv(rosterCsv);
     if (!rows.length) {
+      setNamesError("Add roster rows — one name and number per line.");
       setError("Add roster rows — one name and number per line.");
       return;
     }
-    const dupes = rows.filter(
-      (r, i) => rows.findIndex((x) => x.number && x.number === r.number) !== i,
-    );
+    const dupes = findDuplicateRosterNumbers(rows);
     if (dupes.length) {
-      setError(`Duplicate numbers found: ${dupes.map((d) => d.number).join(", ")}`);
+      const msg = `Duplicate numbers found: ${dupes.join(", ")}`;
+      setNamesError(msg);
+      setError(msg);
       return;
     }
+    const plan = planRosterPlacements({
+      rows,
+      sheetWidth,
+      sheetHeight,
+      gap,
+      widthIn: rosterWidthIn,
+      heightIn: rosterHeightIn,
+    });
     const next: CanvasItem[] = [...items];
     let z = nextZIndex(next);
-    rows.forEach((row, idx) => {
-      const label = `${row.name}${row.number ? ` #${row.number}` : ""}`.trim();
-      const w = Math.min(6, sheetWidth - 0.4);
-      const h = Math.max(0.4, rosterFontSize / 72);
+    plan.placements.forEach((row) => {
       next.push({
         assetId: `text-roster-${crypto.randomUUID()}`,
         widthPx: 400,
         heightPx: 80,
         contentType: "image/svg+xml",
         id: crypto.randomUUID(),
-        name: label,
-        previewUrl: textPreviewDataUrl(label, rosterFontSize, "Impact", "#111827"),
-        xIn: 0.2,
-        yIn: 0.2 + idx * (h + gap),
-        widthIn: w,
-        heightIn: h,
+        name: row.label,
+        previewUrl: textPreviewDataUrl(row.label, rosterFontSize, "Impact", "#111827"),
+        xIn: row.xIn,
+        yIn: row.yIn,
+        widthIn: row.widthIn,
+        heightIn: row.heightIn,
         rotationDeg: 0,
         zIndex: z++,
         kind: "text",
-        textContent: label,
+        textContent: row.label,
         fontSize: rosterFontSize,
         fontFamily: "Impact",
         textColor: "#111827",
+        lockAspect: rosterLockAspect,
       });
     });
     pushHistory(next);
-    setMessage(`Generated ${rows.length} name/number set${rows.length === 1 ? "" : "s"}.`);
+    setMessage(
+      `Generated ${plan.requested} name/number set${plan.requested === 1 ? "" : "s"} · ${plan.onSheet} on sheet.`,
+    );
+    setScreen("canvas");
     setSidebarTab("layers");
     setMobileDrawer("sidebar");
   }
@@ -1412,9 +1502,11 @@ export default function GangSheetEditor() {
 
   function handleSidebarTab(tab: SidebarTab) {
     if (tab === "auto") {
-      setScreen("auto_build");
-      setAutoPhase("setup");
-      setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
+      openAutoBuild("canvas");
+      return;
+    }
+    if (tab === "names") {
+      openNamesWorkflow("canvas");
       return;
     }
     setSidebarTab(tab);
@@ -2015,7 +2107,17 @@ export default function GangSheetEditor() {
                 className="rail-btn"
                 title={tab.label}
                 aria-label={tab.label}
-                onClick={() => openCanvas({ tab: tab.id === "auto" ? "uploads" : tab.id })}
+                onClick={() => {
+                  if (tab.id === "auto") {
+                    openAutoBuild("welcome");
+                    return;
+                  }
+                  if (tab.id === "names") {
+                    openNamesWorkflow("welcome");
+                    return;
+                  }
+                  openCanvas({ tab: tab.id });
+                }}
               >
                 <EditorRailIcon name={tab.icon} label={tab.label} />
                 <span className="rail-label">{tab.label}</span>
@@ -2094,13 +2196,11 @@ export default function GangSheetEditor() {
                   type="button"
                   className="welcome-opt"
                   onClick={() => {
-                    setScreen("auto_build");
-                    setAutoPhase("setup");
                     setAutoDrafts([]);
                     setAutoPreview(null);
                     setAutoPreviewError("");
                     setSelectedAutoId(null);
-                    setMessage("Upload all designs, set size & quantity — preview updates live.");
+                    openAutoBuild("welcome");
                   }}
                 >
                   <div className="welcome-icon"><EditorRailIcon name="auto" label="Auto Build" /></div>
@@ -2338,496 +2438,193 @@ export default function GangSheetEditor() {
     );
   }
 
+  const workflowCss = BAGS_BASE_CSS + GANG_SHEET_EDITOR_CSS + BACKGROUND_REMOVAL_MODAL_CSS + PRODUCTION_WORKFLOW_CSS;
+  const appearanceStyle = appearanceVars(page.appearance);
+  const leaveWorkflow = () => setScreen(workflowReturn);
+
   if (screen === "auto_build") {
-    const previewW = autoPreview?.sheetWidthIn ?? sheetWidth;
-    const previewH = autoPreview?.sheetHeightIn ?? sheetHeight;
-    const heightWarning =
-      autoPreview && autoPreview.sheetHeightIn > sheetHeight
-        ? `Needs ~${autoPreview.sheetHeightIn.toFixed(1)} in length — increase max sheet length or remove items.`
-        : "";
-
     return (
-      <div className="bags auto-mode lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
-        <header>
-          <div className="brand">
-            <b>L</b>
-            <span>
-              <strong>Auto Arrange</strong>
-              <small>{autoPhase === "setup" ? "Upload → quantity → Apply" : "Review → Continue"}</small>
-            </span>
-          </div>
-          <nav>
-            <button type="button" onClick={() => setScreen("welcome")}>
-              ← Back
-            </button>
-            {autoPhase === "setup" ? (
-              <>
-                <label className="btn-upload">
-                  {uploading ? "Uploading…" : "＋ Upload images"}
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg"
-                    hidden
-                    onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="save"
-                  disabled={!autoDrafts.length || !!autoPreviewError || autoPreviewLoading}
-                  onClick={() => {
-                    void refreshAutoPreview().then((p) => {
-                      if (p?.pieces.length) setAutoPhase("review");
-                    });
-                  }}
-                >
-                  Apply
-                </button>
-              </>
-            ) : (
-              <>
-                <button type="button" onClick={undoAutoResult} aria-label="Undo auto nest result">
-                  Undo
-                </button>
-                <button
-                  type="button"
-                  disabled={autoPreviewLoading || !autoDrafts.length}
-                  onClick={() => void refreshAutoPreview()}
-                  aria-label="Regenerate nest preview"
-                >
-                  {autoPreviewLoading ? "Regenerating…" : "Regenerate"}
-                </button>
-                <button type="button" onClick={() => setAutoPhase("setup")}>
-                  Back and adjust
-                </button>
-                <button
-                  type="button"
-                  className="save"
-                  disabled={autoBusy || !autoPreview?.pieces.length}
-                  onClick={() => void applyAutoBuild()}
-                  aria-label="Accept nest and continue to editor"
-                >
-                  {autoBusy ? "Building…" : "Accept & Continue"}
-                </button>
-              </>
-            )}
-          </nav>
-        </header>
+      <AutoBuildScreen
+        appearanceStyle={appearanceStyle}
+        extraCss={workflowCss}
+        phase={autoPhase}
+        drafts={autoDrafts}
+        selectedDraftId={selectedAutoId}
+        onSelectDraft={setSelectedAutoId}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        gap={gap}
+        sheetWidths={SHEET_WIDTHS}
+        sheetHeights={SHEET_HEIGHTS}
+        onSheetWidth={setSheetWidth}
+        onSheetHeight={setSheetHeight}
+        onGap={setGap}
+        allowRotate90={allowRotate90}
+        onAllowRotate90={setAllowRotate90}
+        uploadTab={autoUploadTab}
+        onUploadTab={setAutoUploadTab}
+        uploading={uploading}
+        onUploadFiles={(files) => void uploadFiles(files, "auto")}
+        uploadPool={uploadPool}
+        galleryItems={filteredGallery}
+        onAddPoolItem={(id) => {
+          const entry = uploadPool.find((p) => p.id === id);
+          if (entry) addPoolItemToAuto(entry);
+        }}
+        onAddGalleryItem={(id) => {
+          const g = filteredGallery.find((item) => item.id === id);
+          if (g) void addGalleryItemToAuto(g);
+        }}
+        onPatchDraft={(id, patch) =>
+          setAutoDrafts((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+        }
+        onDuplicateDraft={(id) =>
+          setAutoDrafts((rows) => {
+            const src = rows.find((r) => r.id === id);
+            if (!src) return rows;
+            return [
+              ...rows,
+              {
+                ...src,
+                id: crypto.randomUUID(),
+                name: `${src.name.replace(/\.[^.]+$/, "")} (copy)`,
+              },
+            ];
+          })
+        }
+        onRemoveDraft={(id) => {
+          setAutoDrafts((rows) => rows.filter((r) => r.id !== id));
+          if (selectedAutoId === id) setSelectedAutoId(null);
+        }}
+        preview={autoPreview}
+        previewLoading={autoPreviewLoading}
+        previewError={autoPreviewError}
+        error={error}
+        message={message}
+        busy={autoBusy}
+        onBack={leaveWorkflow}
+        onApplyReview={() => {
+          void refreshAutoPreview().then((p) => {
+            if (p?.pieces.length) setAutoPhase("review");
+          });
+        }}
+        onUndo={undoAutoResult}
+        onRegenerate={() => void refreshAutoPreview()}
+        onBackAdjust={() => setAutoPhase("setup")}
+        onBuild={() => void applyAutoBuild()}
+      />
+    );
+  }
 
-        <div className="auto-split">
-          <section className={`auto-upload-panel ${autoPhase === "review" ? "readonly" : ""}`}>
-            <div className="auto-panel-head">
-              <h2>{autoPhase === "setup" ? "1. Upload & size" : "Your designs"}</h2>
-              <p>{autoDrafts.length} design{autoDrafts.length === 1 ? "" : "s"}</p>
-            </div>
+  if (screen === "auto_fill" && fillSource) {
+    const aspect = fillSource.widthPx / Math.max(0.01, fillSource.heightPx);
+    return (
+      <AutoFillScreen
+        appearanceStyle={appearanceStyle}
+        extraCss={workflowCss}
+        phase={fillPhase}
+        source={fillSource}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        gap={gap}
+        widthIn={fillWidthIn}
+        heightIn={fillHeightIn}
+        quantity={fillQuantity}
+        lockAspect={fillLockAspect}
+        onWidth={(w) => {
+          setFillWidthIn(w);
+          if (fillLockAspect) setFillHeightIn(w / aspect);
+        }}
+        onHeight={(h) => {
+          setFillHeightIn(h);
+          if (fillLockAspect) setFillWidthIn(h * aspect);
+        }}
+        onQuantity={setFillQuantity}
+        onLockAspect={setFillLockAspect}
+        onPreset={(inches) => {
+          if (aspect >= 1) {
+            setFillWidthIn(inches);
+            setFillHeightIn(inches / aspect);
+          } else {
+            setFillWidthIn(inches * aspect);
+            setFillHeightIn(inches);
+          }
+          setFillLockAspect(true);
+        }}
+        error={fillError}
+        onBack={leaveWorkflow}
+        onApplyReview={() => {
+          const plan = planFillSheetCopies({
+            widthIn: fillWidthIn,
+            heightIn: fillHeightIn,
+            sheetWidth,
+            sheetHeight,
+            gap,
+            requested: fillQuantity,
+          });
+          if (!plan.placed) {
+            setFillError("Nothing fits on this sheet.");
+            return;
+          }
+          setFillError("");
+          setFillPhase("review");
+        }}
+        onBackAdjust={() => setFillPhase("setup")}
+        onBuild={applyFillToCanvas}
+      />
+    );
+  }
 
-            {autoPhase === "setup" ? (
-              <div className="upload-tabs">
-                <button
-                  type="button"
-                  className={autoUploadTab === "upload" ? "tab active" : "tab"}
-                  onClick={() => setAutoUploadTab("upload")}
-                >
-                  Upload image(s)
-                </button>
-                <button
-                  type="button"
-                  className={autoUploadTab === "pool" ? "tab active" : "tab"}
-                  onClick={() => setAutoUploadTab("pool")}
-                >
-                  My images
-                </button>
-                <button
-                  type="button"
-                  className={autoUploadTab === "gallery" ? "tab active" : "tab"}
-                  onClick={() => {
-                    setAutoUploadTab("gallery");
-                    void refreshGallery();
-                  }}
-                >
-                  Gallery
-                </button>
-              </div>
-            ) : null}
-
-            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "upload" ? (
-              <label className="drop large">
-                <b>⬆</b>
-                <strong>Upload all your images</strong>
-                <small>PNG/JPEG/SVG · select multiple files at once</small>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg,image/svg+xml,.svg"
-                  hidden
-                  onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-                />
-              </label>
-            ) : null}
-
-            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "pool" ? (
-              <div className="pool-grid">
-                {!uploadPool.length ? (
-                  <p className="muted">Upload images in the main editor first — they appear here.</p>
-                ) : (
-                  uploadPool.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="pool-item"
-                      onClick={() => addPoolItemToAuto(p)}
-                      disabled={uploading}
-                    >
-                      <img src={p.previewUrl} alt="" />
-                      <span>{p.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : null}
-
-            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "gallery" ? (
-              <div className="pool-grid">
-                {filteredGallery.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    className="pool-item"
-                    onClick={() => void addGalleryItemToAuto(g)}
-                    disabled={uploading}
-                  >
-                    <img src={g.thumb} alt="" />
-                    <span>{g.name}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {autoDrafts.length > 0 ? (
-              <>
-                <div className="auto-sheet-settings">
-                  <label>
-                    Sheet width
-                    <select
-                      value={sheetWidth}
-                      onChange={(e) => setSheetWidth(+e.target.value)}
-                    >
-                      {SHEET_WIDTHS.map((w) => (
-                        <option key={w} value={w}>
-                          {w} in
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Max length
-                    <select
-                      value={sheetHeight}
-                      onChange={(e) => setSheetHeight(+e.target.value)}
-                    >
-                      {SHEET_HEIGHTS.map((h) => (
-                        <option key={h} value={h}>
-                          {h} in
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Spacing
-                    <input
-                      type="number"
-                      min={0}
-                      max={0.5}
-                      step={0.05}
-                      value={gap}
-                      onChange={(e) => setGap(+e.target.value)}
-                    />
-                  </label>
-                </div>
-                <label className="lock-aspect rotate-toggle">
-                  <input
-                    type="checkbox"
-                    checked={allowRotate90}
-                    disabled={autoPhase === "review"}
-                    onChange={(e) => setAllowRotate90(e.target.checked)}
-                  />
-                  Allow 90° rotation when nesting
-                </label>
-
-                <div className="auto-list compact">
-                  {autoDrafts.map((d) => (
-                    <article
-                      key={d.id}
-                      className={`auto-row ${d.id === selectedAutoId ? "active" : ""}`}
-                      onClick={() => setSelectedAutoId(d.id)}
-                    >
-                      <img src={d.previewUrl} alt="" />
-                      <div className="auto-fields">
-                        <strong>{d.name}</strong>
-                        <div className="preset-row">
-                          <PresetSizeChips
-                            presets={AUTO_PRESETS}
-                            onPick={(inches) => {
-                              const dims = applyLongestSidePreset(
-                                d.asset.widthPx,
-                                d.asset.heightPx,
-                                inches,
-                              );
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id ? { ...r, ...dims, lockAspect: true } : r,
-                                ),
-                              );
-                            }}
-                          />
-                        </div>
-                        <div className="auto-dims">
-                          <StepperField
-                            label="Width"
-                            value={d.widthIn}
-                            step={0.1}
-                            onChange={(w) => {
-                              const aspect = d.asset.widthPx / d.asset.heightPx;
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id
-                                    ? {
-                                        ...r,
-                                        widthIn: w,
-                                        heightIn: r.lockAspect ? w / aspect : r.heightIn,
-                                      }
-                                    : r,
-                                ),
-                              );
-                            }}
-                          />
-                          <StepperField
-                            label="Height"
-                            value={d.heightIn}
-                            step={0.1}
-                            onChange={(h) => {
-                              const aspect = d.asset.widthPx / d.asset.heightPx;
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id
-                                    ? {
-                                        ...r,
-                                        heightIn: h,
-                                        widthIn: r.lockAspect ? h * aspect : r.widthIn,
-                                      }
-                                    : r,
-                                ),
-                              );
-                            }}
-                          />
-                          <StepperField
-                            label="Qty"
-                            value={d.quantity}
-                            step={1}
-                            min={1}
-                            onChange={(q) =>
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id
-                                    ? { ...r, quantity: Math.max(1, Math.round(q)) }
-                                    : r,
-                                ),
-                              )
-                            }
-                          />
-                        </div>
-                        <label className="lock-aspect">
-                          <input
-                            type="checkbox"
-                            checked={d.lockAspect}
-                            disabled={autoPhase === "review"}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) =>
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id ? { ...r, lockAspect: e.target.checked } : r,
-                                ),
-                              )
-                            }
-                          />
-                          Lock aspect ratio
-                        </label>
-                        <small>
-                          {(d.widthIn * d.heightIn * d.quantity).toFixed(2)} in² ·{" "}
-                          {d.asset.widthPx}×{d.asset.heightPx}px
-                        </small>
-                      </div>
-                      <div className="auto-actions">
-                        {autoPhase === "setup" ? (
-                          <button
-                            type="button"
-                            className="dup"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAutoDrafts((rows) => {
-                                const src = rows.find((r) => r.id === d.id);
-                                if (!src) return rows;
-                                return [
-                                  ...rows,
-                                  {
-                                    ...src,
-                                    id: crypto.randomUUID(),
-                                    name: `${src.name.replace(/\.[^.]+$/, "")} (copy)`,
-                                  },
-                                ];
-                              });
-                            }}
-                          >
-                            Duplicate
-                          </button>
-                        ) : null}
-                        {autoPhase === "setup" ? (
-                          <button
-                            type="button"
-                            className="remove"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAutoDrafts((rows) => rows.filter((r) => r.id !== d.id));
-                              if (selectedAutoId === d.id) setSelectedAutoId(null);
-                            }}
-                          >
-                            ×
-                          </button>
-                        ) : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                <label className="btn ghost block">
-                  ＋ Add more images
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg"
-                    hidden
-                    disabled={autoPhase === "review"}
-                    onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-                  />
-                </label>
-              </>
-            ) : null}
-          </section>
-
-          <section className="auto-preview-panel">
-            <div className="auto-panel-head">
-              <h2>{autoPhase === "setup" ? "2. Auto nest preview" : "Nest preview"}</h2>
-              {autoPreviewLoading ? (
-                <span className="preview-status">Updating…</span>
-              ) : autoPreview ? (
-                <span className="preview-status ok">
-                  {autoPhase === "review" ? "Ready to continue" : "Live preview"}
-                </span>
-              ) : (
-                <span className="preview-status">Waiting for uploads</span>
-              )}
-            </div>
-
-            <div className="nest-preview-wrap">
-              {autoPreview?.pieces.length ? (
-                <div
-                  className="nest-preview-sheet"
-                  style={{ aspectRatio: `${previewW}/${previewH}` }}
-                >
-                  <i />
-                  {autoPreview.pieces.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`nest-piece ${p.draftId === selectedAutoId ? "highlight" : ""}`}
-                      style={{
-                        left: `${(p.xIn / previewW) * 100}%`,
-                        top: `${(p.yIn / previewH) * 100}%`,
-                        width: `${(p.widthIn / previewW) * 100}%`,
-                        height: `${(p.heightIn / previewH) * 100}%`,
-                      }}
-                      title={p.name}
-                    >
-                      <img
-                        src={p.previewUrl}
-                        alt=""
-                        style={{ transform: `rotate(${p.rotationDeg}deg)` }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="nest-preview-empty">
-                  {autoPreviewError ? (
-                    <p className="error">{autoPreviewError}</p>
-                  ) : (
-                    <>
-                      <strong>Preview appears here</strong>
-                      <p>Upload images and set sizes — nesting updates automatically.</p>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="nest-stats">
-              <p>
-                <span>Sheet size</span>
-                <strong>
-                  {previewW} × {previewH.toFixed(1)} in
-                </strong>
-              </p>
-              <p>
-                <span>Total pieces</span>
-                <strong>{autoPreview?.totalPieces ?? 0}</strong>
-              </p>
-              {autoPreview?.fittedCount != null && autoPreview.remainingCount != null ? (
-                <p className="overflow-note">
-                  <span>Fit status</span>
-                  <strong>
-                    Fitted {autoPreview.fittedCount} of {autoPreview.totalPieces} —{" "}
-                    {autoPreview.remainingCount} remain
-                  </strong>
-                </p>
-              ) : null}
-              <p>
-                <span>Printed area</span>
-                <strong>{(autoPreview?.totalAreaSqIn ?? 0).toFixed(2)} in²</strong>
-              </p>
-              <p>
-                <span>Utilization</span>
-                <strong>
-                  {autoPreview ? `${Math.round(autoPreview.utilization * 100)}%` : "—"}
-                </strong>
-              </p>
-              <p className="total">
-                <span>Est. price</span>
-                <strong>${(autoPreview?.estimateUsd ?? 0).toFixed(2)}</strong>
-              </p>
-            </div>
-
-            {heightWarning ? <p className="error block">{heightWarning}</p> : null}
-            {error ? <p className="error block">{error}</p> : null}
-            {!error && message ? <p className="message block">{message}</p> : null}
-
-            <p className="fine">
-              {autoPhase === "setup" ? (
-                <>
-                  When sizing looks good, click <strong>Apply</strong> to review the nest before
-                  opening the full editor.
-                </>
-              ) : (
-                <>
-                  <strong>Accept &amp; Continue</strong> opens the canvas with these placements.
-                  Use <strong>Undo</strong> or <strong>Regenerate</strong> to try again, or{" "}
-                  <strong>Back and adjust</strong> to change sizes.
-                </>
-              )}
-            </p>
-          </section>
-        </div>
-      </div>
+  if (screen === "names") {
+    const aspect = rosterWidthIn / Math.max(0.01, rosterHeightIn);
+    return (
+      <NamesNumbersScreen
+        appearanceStyle={appearanceStyle}
+        extraCss={workflowCss}
+        phase={namesPhase}
+        rosterCsv={rosterCsv}
+        onRosterCsv={setRosterCsv}
+        fontSize={rosterFontSize}
+        onFontSize={(n) => {
+          setRosterFontSize(n);
+          const nextH = Math.max(0.4, n / 72);
+          setRosterHeightIn(nextH);
+          if (rosterLockAspect) setRosterWidthIn(nextH * aspect);
+        }}
+        widthIn={rosterWidthIn}
+        heightIn={rosterHeightIn}
+        lockAspect={rosterLockAspect}
+        onWidth={(w) => {
+          setRosterWidthIn(w);
+          if (rosterLockAspect) setRosterHeightIn(w / aspect);
+        }}
+        onHeight={(h) => {
+          setRosterHeightIn(h);
+          if (rosterLockAspect) setRosterWidthIn(h * aspect);
+        }}
+        onLockAspect={setRosterLockAspect}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        gap={gap}
+        error={namesError}
+        onBack={leaveWorkflow}
+        onApplyReview={() => {
+          const rows = parseRosterCsv(rosterCsv);
+          const dupes = findDuplicateRosterNumbers(rows);
+          if (!rows.length) {
+            setNamesError("Add roster rows — one name and number per line.");
+            return;
+          }
+          if (dupes.length) {
+            setNamesError(`Duplicate numbers found: ${dupes.join(", ")}`);
+            return;
+          }
+          setNamesError("");
+          setNamesPhase("review");
+        }}
+        onBackAdjust={() => setNamesPhase("setup")}
+        onBuild={generateRoster}
+      />
     );
   }
 
@@ -3128,11 +2925,10 @@ export default function GangSheetEditor() {
           ) : sidebarTab === "names" ? (
             <>
               <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Roster generator</small></span></div>
-              <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+              <p className="sidebar-hint">Paste a roster, set plate size, preview requested vs placed, then Build.</p>
               <div className="sidebar-form">
-                <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-                <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
+                <label>Roster<textarea rows={6} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
+                <button type="button" className="sidebar-upload-btn" onClick={() => openNamesWorkflow("canvas")}>Open Names &amp; Numbers</button>
               </div>
             </>
           ) : sidebarTab === "layers" ? (

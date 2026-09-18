@@ -11,9 +11,19 @@ import { SIZE_PRESETS } from "../domain/design/types";
 import {
   applyLongestSidePreset,
   BAGS_BASE_CSS,
-  PresetSizeChips,
-  StepperField,
 } from "../components/editor/bags-ui";
+import {
+  CopiesThumbStrip,
+  RequestedVsPlacedBanner,
+  WorkflowAlert,
+  WorkflowDimQtyFields,
+  WorkflowProgress,
+} from "../components/editor/workflow/workflow-controls";
+import { PRODUCTION_WORKFLOW_CSS } from "../components/editor/workflow/workflow-styles";
+import {
+  productionAlert,
+  summarizeRequestedVsPlaced,
+} from "../components/editor/workflow/workflow-helpers";
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import {
   BACKGROUND_REMOVAL_MODAL_CSS,
@@ -156,6 +166,8 @@ export default function UploadBySizeEditor() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLine[]>([]);
+  const [quoting, setQuoting] = useState(false);
+  const [lastTally, setLastTally] = useState<{ requested: number; placed: number } | null>(null);
   const [totalCents, setTotalCents] = useState<number | null>(null);
   const [totalArea, setTotalArea] = useState<number | null>(null);
   const [pricePerSqIn, setPricePerSqIn] = useState(page.pricePerSqIn);
@@ -306,8 +318,10 @@ export default function UploadBySizeEditor() {
         setQuoteLines([]);
         setTotalCents(null);
         setTotalArea(null);
+        setQuoting(false);
         return;
       }
+      setQuoting(true);
       try {
         const res = await fetch("/api/quote", {
           method: "POST",
@@ -340,6 +354,8 @@ export default function UploadBySizeEditor() {
         setTotalArea(area);
         setTotalCents(Math.round(area * page.pricePerSqIn * 100));
         setQuoteLines([]);
+      } finally {
+        setQuoting(false);
       }
     },
     [headers, page.presets, page.pricePerSqIn],
@@ -615,6 +631,8 @@ export default function UploadBySizeEditor() {
       setEditingDesignId(json.designId);
       setEditingVersion(json.version ?? editingVersion);
       setTotalCents(json.state?.pricing.totalCents ?? totalCents);
+      const requestedCopies = queue.reduce((sum, line) => sum + line.quantity, 0);
+      setLastTally({ requested: requestedCopies, placed: requestedCopies });
       if (window.parent && window.parent !== window) {
         const target = page.parentOrigin || "*";
         window.parent.postMessage(
@@ -644,6 +662,31 @@ export default function UploadBySizeEditor() {
   const activeCents = lineCents(activeQuote);
   const showWelcome = emptyQueue && !loadingDesign;
   const gangHref = `/editor/gang-sheet?shop=${encodeURIComponent(page.shop)}`;
+  const requestedCopies = queue.reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
+  const quotedCopies = quoteLines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
+  const placedCopies =
+    quoting || requestedCopies === 0
+      ? requestedCopies
+      : saved && lastTally && !dirty
+        ? lastTally.placed
+        : quotedCopies || requestedCopies;
+  const ubsTally = summarizeRequestedVsPlaced(requestedCopies, placedCopies, "copies");
+  const ubsAlert = error ? productionAlert(error, "images-by-size") : null;
+  const ubsProgress = uploading
+    ? { status: "working" as const, step: "Uploading artwork", detail: "Reading files and creating previews." }
+    : saving
+      ? { status: "working" as const, step: "Saving this order", detail: "Writing sizes and quantities." }
+      : quoting
+        ? { status: "working" as const, step: "Updating sizes and quantities", detail: "Checking print area for this order." }
+        : error
+          ? { status: "error" as const, step: "Stopped", detail: "See the error — fix size or quantity, then Add to cart." }
+          : emptyQueue
+            ? { status: "idle" as const, step: "Waiting for artwork", detail: "Upload a PNG or JPEG, then set width × height and quantity." }
+            : {
+                status: "ready" as const,
+                step: saved && !dirty ? "Order saved" : "Ready to add to cart",
+                detail: `${placedCopies} of ${requestedCopies} copies in this order.`,
+              };
 
   if (showWelcome) {
     return (
@@ -743,24 +786,26 @@ export default function UploadBySizeEditor() {
   }
 
   return (
-    <div className="ubs lgs-editor">
-      <style>{BAGS_BASE_CSS}{CSS}</style>
-      <header>
-        <div className="brand">
-          <b>L</b>
+    <div className="ubs lgs-editor prod-wf" style={appearanceVars(page.appearance)}>
+      <style>{BAGS_BASE_CSS}{PRODUCTION_WORKFLOW_CSS}{CSS}</style>
+      <header className="prod-wf-bar">
+        <div className="prod-wf-brand">
+          <span className="prod-wf-mark" aria-hidden>
+            L
+          </span>
           <span>
-            <strong>LEGENDS BAGS</strong>
-            <small>Images By Size</small>
+            <strong>IMAGES BY SIZE</strong>
+            <small>Size, quantity, preview — then Add to cart</small>
           </span>
         </div>
-        <div className="actions">
+        <nav className="prod-wf-nav">
           {lastRemoved ? (
-            <button type="button" className="btn ghost" onClick={undoRemove} disabled={busy}>
+            <button type="button" className="prod-wf-btn prod-wf-btn-quiet" onClick={undoRemove} disabled={busy}>
               Undo remove
             </button>
           ) : null}
-          <label className={`btn primary${busy ? " disabled" : ""}`}>
-            {uploading ? "Uploading…" : "＋ Choose images"}
+          <label className={`prod-wf-btn prod-wf-btn-upload${busy ? " disabled" : ""}`}>
+            {uploading ? "Uploading…" : "Upload images"}
             <input
               type="file"
               multiple
@@ -772,13 +817,13 @@ export default function UploadBySizeEditor() {
           </label>
           <button
             type="button"
-            className="btn save"
+            className="prod-wf-btn prod-wf-btn-primary"
             disabled={busy || emptyQueue}
             onClick={save}
           >
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Add to cart"}
+            {saving ? "Saving…" : saved ? "Saved" : "Add to cart"}
           </button>
-        </div>
+        </nav>
       </header>
 
       {!page.hasDevAuth ? (
@@ -900,15 +945,20 @@ export default function UploadBySizeEditor() {
         </aside>
 
         <main>
+          <WorkflowProgress status={ubsProgress.status} step={ubsProgress.step} detail={ubsProgress.detail} />
           {active ? (
             <>
-              <div className="preview checkerboard">
+              <div className="preview checkerboard prod-wf-art-preview">
                 <img src={active.previewUrl} alt={active.name} />
               </div>
+              <CopiesThumbStrip previewUrl={active.previewUrl} quantity={active.quantity} />
               <div className="meta">
                 <strong>{active.name}</strong>
                 <span>
-                  {active.asset.widthPx}×{active.asset.heightPx}px
+                  {activeDims
+                    ? `${activeDims.widthIn.toFixed(2)} × ${activeDims.heightIn.toFixed(2)} in`
+                    : null}
+                  {` · ${active.asset.widthPx}×${active.asset.heightPx}px`}
                   {active.asset.dpi ? ` · ${active.asset.dpi} DPI tagged` : " · DPI not tagged"}
                   {activeQuote ? ` · ~${activeQuote.effectiveDpi} DPI effective` : ""}
                   {activeCents != null ? ` · ${formatMoney(activeCents)}` : ""}
@@ -941,7 +991,7 @@ export default function UploadBySizeEditor() {
               </div>
 
               <div className="fields">
-                <label className="full">
+                <label className="full prod-wf-field">
                   Sizing mode
                   <select
                     value={active.mode}
@@ -956,8 +1006,8 @@ export default function UploadBySizeEditor() {
                 </label>
 
                 {active.mode === "preset" ? (
-                  <>
-                    <label className="full">
+                  <div className="full">
+                    <label className="prod-wf-field">
                       Preset
                       <select
                         value={active.presetId}
@@ -971,81 +1021,72 @@ export default function UploadBySizeEditor() {
                         ))}
                       </select>
                     </label>
-                    <div className="full">
-                      <span className="field-label">Quick sizes</span>
-                      <PresetSizeChips
-                        presets={CHIP_PRESETS}
-                        activeIn={
-                          page.presets.find((p) => p.id === active.presetId)?.longestSideIn
-                        }
-                        onPick={(inches) => {
-                          const id =
-                            page.presets.find((p) => p.longestSideIn === inches)?.id ??
-                            `${inches}in`;
-                          patchActive({ presetId: id, mode: "preset" });
-                        }}
-                      />
-                    </div>
-                  </>
+                    <WorkflowDimQtyFields
+                      widthIn={activeDims?.widthIn ?? active.widthIn}
+                      heightIn={activeDims?.heightIn ?? active.heightIn}
+                      quantity={active.quantity}
+                      lockAspect
+                      disabled={busy}
+                      onWidth={(w) => {
+                        const aspect = aspectFor(active);
+                        const dims = { widthIn: w, heightIn: w / aspect };
+                        patchActive({ ...dims, mode: "custom", lockAspect: true });
+                      }}
+                      onHeight={(h) => {
+                        const aspect = aspectFor(active);
+                        const dims = { heightIn: h, widthIn: h * aspect };
+                        patchActive({ ...dims, mode: "custom", lockAspect: true });
+                      }}
+                      onQuantity={(q) => patchActive({ quantity: q })}
+                      onLockAspect={() => patchActive({ mode: "custom", lockAspect: true })}
+                      presets={CHIP_PRESETS}
+                      activePresetIn={
+                        page.presets.find((p) => p.id === active.presetId)?.longestSideIn
+                      }
+                      onPreset={(inches) => {
+                        const id =
+                          page.presets.find((p) => p.longestSideIn === inches)?.id ??
+                          `${inches}in`;
+                        patchActive({ presetId: id, mode: "preset", lockAspect: true });
+                      }}
+                    />
+                  </div>
                 ) : (
-                  <>
-                    <StepperField
-                      label="Width (in)"
-                      value={active.widthIn}
-                      step={0.1}
-                      onChange={(w) => {
+                  <div className="full">
+                    <WorkflowDimQtyFields
+                      widthIn={active.widthIn}
+                      heightIn={active.heightIn}
+                      quantity={active.quantity}
+                      lockAspect={active.lockAspect}
+                      disabled={busy}
+                      onWidth={(w) => {
                         const aspect = aspectFor(active);
                         patchActive({
                           widthIn: w,
                           heightIn: active.lockAspect ? w / aspect : active.heightIn,
                         });
                       }}
-                    />
-                    <StepperField
-                      label="Height (in)"
-                      value={active.heightIn}
-                      step={0.1}
-                      onChange={(h) => {
+                      onHeight={(h) => {
                         const aspect = aspectFor(active);
                         patchActive({
                           heightIn: h,
                           widthIn: active.lockAspect ? h * aspect : active.widthIn,
                         });
                       }}
+                      onQuantity={(q) => patchActive({ quantity: q })}
+                      onLockAspect={(lockAspect) => patchActive({ lockAspect })}
+                      presets={CHIP_PRESETS}
+                      onPreset={(inches) => {
+                        const dims = applyLongestSidePreset(
+                          active.asset.widthPx,
+                          active.asset.heightPx,
+                          inches,
+                        );
+                        patchActive({ ...dims, mode: "custom", lockAspect: true });
+                      }}
                     />
-                    <label className="check full">
-                      <input
-                        type="checkbox"
-                        checked={active.lockAspect}
-                        disabled={busy}
-                        onChange={(e) => patchActive({ lockAspect: e.target.checked })}
-                      />
-                      Keep aspect ratio
-                    </label>
-                    <div className="full">
-                      <span className="field-label">Quick sizes (longest side)</span>
-                      <PresetSizeChips
-                        presets={CHIP_PRESETS}
-                        onPick={(inches) => {
-                          const dims = applyLongestSidePreset(
-                            active.asset.widthPx,
-                            active.asset.heightPx,
-                            inches,
-                          );
-                          patchActive({ ...dims, mode: "custom" });
-                        }}
-                      />
-                    </div>
-                  </>
+                  </div>
                 )}
-
-                <StepperField
-                  label="Quantity"
-                  value={active.quantity}
-                  step={1}
-                  min={1}
-                  onChange={(q) => patchActive({ quantity: Math.max(1, Math.round(q)) })}
-                />
               </div>
 
               {activeDims ? (
@@ -1053,6 +1094,7 @@ export default function UploadBySizeEditor() {
                   Printed area:{" "}
                   {(activeDims.widthIn * activeDims.heightIn * active.quantity).toFixed(3)} in²
                   {activeCents != null ? ` · ${formatMoney(activeCents)}` : ""}
+                  {` · qty ${active.quantity}`}
                 </p>
               ) : null}
             </>
@@ -1062,7 +1104,7 @@ export default function UploadBySizeEditor() {
                 ＋
               </div>
               <strong>Select or upload a design</strong>
-              <p>Size each artwork, set quantity, then add everything to cart in one order.</p>
+              <p>Set width × height and quantity, preview copies, then Add to cart.</p>
             </div>
           )}
         </main>
@@ -1107,6 +1149,9 @@ export default function UploadBySizeEditor() {
             </div>
           ) : null}
           <h2>Your design order</h2>
+          <div className="prod-wf-inline-tally">
+            <RequestedVsPlacedBanner summary={ubsTally} remainingLabel="Not in quote" />
+          </div>
           <p>
             <span>Price</span>
             <strong>${pricePerSqIn.toFixed(3)}/in²</strong>
@@ -1123,7 +1168,9 @@ export default function UploadBySizeEditor() {
                 if (cents == null) return null;
                 return (
                   <li key={line.id}>
-                    <span>{line.name}</span>
+                    <span>
+                      {line.name} · qty {line.quantity}
+                    </span>
                     <strong>{formatMoney(cents)}</strong>
                   </li>
                 );
@@ -1134,7 +1181,7 @@ export default function UploadBySizeEditor() {
             <span>Total</span>
             <strong>{totalCents != null ? formatMoney(totalCents) : "—"}</strong>
           </p>
-          <p className="fine">Pricing is verified server-side when you save.</p>
+          <p className="fine">Pricing is verified server-side when you save. Requested vs placed is the copy count in this order.</p>
           {emptyQueue ? (
             <p className="err" role="status">
               Queue is empty — upload an image to continue.
@@ -1145,23 +1192,26 @@ export default function UploadBySizeEditor() {
               Fix low-DPI items before saving for best print quality.
             </p>
           ) : null}
-          {error ? (
+          {ubsAlert ? (
+            <WorkflowAlert tone="error" title={ubsAlert.title} body={ubsAlert.body} />
+          ) : error ? (
             <p className="err" role="alert">
               {error}
             </p>
           ) : null}
           {saved ? (
             <p className="ok" role="status">
-              Design saved — return to the product page and add to cart.
+              {ubsTally.headline}. Return to the product page to finish checkout.
             </p>
           ) : null}
           <button
             type="button"
-            className="btn save block"
+            className="prod-wf-btn prod-wf-btn-primary"
+            style={{ width: "100%" }}
             disabled={busy || emptyQueue}
             onClick={save}
           >
-            {saving ? "Saving…" : saved ? "Saved ✓" : "Add to cart"}
+            {saving ? "Saving…" : saved ? "Saved" : "Add to cart"}
           </button>
         </aside>
       </div>
@@ -1181,7 +1231,12 @@ export default function UploadBySizeEditor() {
 }
 
 const CSS = `
-.ubs{--blue:var(--accent);--green:var(--green);min-height:100vh;background:#eef1f5;color:#111827;font:14px/1.35 Inter,system-ui,sans-serif}
+.ubs.prod-wf{background:#1a1f28}
+.ubs.prod-wf .layout{min-height:calc(100vh - 64px)}
+.ubs.prod-wf .layout main{background:#f7f8fa;color:#111827}
+.ubs.prod-wf .prod-wf-progress{margin-bottom:4px}
+.ubs.prod-wf .prod-wf-tally-cell{background:#fff}
+.ubs.prod-wf header.prod-wf-bar{position:sticky}
 .ubs.welcome{min-height:100vh;background:#eef1f5}
 .home-shell{display:grid;grid-template-columns:72px 1fr;min-height:100vh}
 .home-main{display:grid;place-items:center;padding:24px 16px}
