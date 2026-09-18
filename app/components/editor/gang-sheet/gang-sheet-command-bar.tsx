@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ToolbarIcon } from "./editor-toolbar-icons";
+import { StudioBrandLockup, StudioButton } from "./studio-primitives";
 
 export type OverflowAction =
   | "arrange"
@@ -42,6 +43,10 @@ export type GangSheetCommandBarProps = {
   hasItems: boolean;
   onOverflowAction?: (action: OverflowAction) => void;
   qualityButton?: ReactNode;
+  toolsPanelOpen?: boolean;
+  propsPanelOpen?: boolean;
+  onToggleToolsPanel?: () => void;
+  onTogglePropsPanel?: () => void;
 };
 
 export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
@@ -77,6 +82,10 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
     hasItems,
     onOverflowAction,
     qualityButton,
+    toolsPanelOpen,
+    propsPanelOpen,
+    onToggleToolsPanel,
+    onTogglePropsPanel,
   } = props;
 
   const saveState =
@@ -85,12 +94,22 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
   return (
     <header className="gs-command-bar" role="banner">
       <div className="gs-command-left">
-        <span className="gs-command-logo" aria-hidden>
-          L
-        </span>
+        <StudioBrandLockup />
         <button type="button" className="gs-ghost-btn gs-back-btn" onClick={onHome} title="Welcome Center" aria-label="Back to Welcome Center">
           <ToolbarIcon name="home" />
         </button>
+        {onToggleToolsPanel ? (
+          <button
+            type="button"
+            className={`gs-icon-btn gs-panel-toggle ${toolsPanelOpen ? "active" : ""}`}
+            onClick={onToggleToolsPanel}
+            title="Toggle tools panel ([)"
+            aria-label="Toggle tools panel"
+            aria-pressed={Boolean(toolsPanelOpen)}
+          >
+            <ToolbarIcon name="panelLeft" />
+          </button>
+        ) : null}
         <label className="gs-design-name-field">
           <span className="sr-only">Design name</span>
           <input
@@ -156,7 +175,7 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
         </button>
 
         {onPreview ? (
-          <button type="button" className="gs-ghost-btn" onClick={onPreview} title="Preview sheet">
+          <button type="button" className="gs-ghost-btn gs-hide-compact" onClick={onPreview} title="Preview sheet">
             <ToolbarIcon name="preview" />
             <span>Preview</span>
           </button>
@@ -192,27 +211,39 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           <strong>${estimateUsd.toFixed(2)}</strong>
         </div>
 
-        <button
-          type="button"
-          className="gs-secondary-btn"
+        <StudioButton
+          variant="secondary"
+          className="gs-hide-mobile"
           onClick={onSaveOnly}
           disabled={saving || !hasItems}
           aria-label="Save design"
         >
           <ToolbarIcon name="save" />
           {saving ? "Saving…" : "Save"}
-        </button>
+        </StudioButton>
 
-        <button
-          type="button"
-          className="gs-primary-btn"
+        <StudioButton
+          variant="primary"
           onClick={onSaveAndCart}
           disabled={saving || !hasItems}
           aria-label="Save and add to cart"
         >
           <ToolbarIcon name="cart" />
           {saving ? "Saving…" : "Save & Add to Cart"}
-        </button>
+        </StudioButton>
+
+        {onTogglePropsPanel ? (
+          <button
+            type="button"
+            className={`gs-icon-btn gs-panel-toggle gs-hide-mobile ${propsPanelOpen ? "active" : ""}`}
+            onClick={onTogglePropsPanel}
+            title="Toggle properties panel (])"
+            aria-label="Toggle properties panel"
+            aria-pressed={Boolean(propsPanelOpen)}
+          >
+            <ToolbarIcon name="panelRight" />
+          </button>
+        ) : null}
 
         <details className="gs-overflow-menu">
           <summary className="gs-icon-btn" aria-label="More actions">

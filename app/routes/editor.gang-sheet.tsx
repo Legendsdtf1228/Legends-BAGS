@@ -346,8 +346,8 @@ function pieceTransform(item: Pick<CanvasItem, "rotationDeg" | "flipX" | "flipY"
 
 function appearanceVars(appearance: ShopAppearance): CSSProperties {
   return {
-    ["--accent" as string]: appearance.accentColor,
-    ["--accent-dark" as string]: appearance.accentColorDark,
+    ["--shop-accent" as string]: appearance.accentColor,
+    ["--shop-accent-dark" as string]: appearance.accentColorDark,
   };
 }
 
@@ -433,6 +433,8 @@ export default function GangSheetEditor() {
   const [spacePan, setSpacePan] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState<"sidebar" | "properties" | null>(null);
+  const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
+  const [propsPanelOpen, setPropsPanelOpen] = useState(true);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveDialogError, setSaveDialogError] = useState("");
   const [saveDialogRequestId, setSaveDialogRequestId] = useState("");
@@ -1198,6 +1200,16 @@ export default function GangSheetEditor() {
         setSpacePan(true);
         return;
       }
+      if (screen === "canvas" && e.key === "[" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setToolsPanelOpen((v) => !v);
+        return;
+      }
+      if (screen === "canvas" && e.key === "]" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setPropsPanelOpen((v) => !v);
+        return;
+      }
       if (!selectedId || screen !== "canvas") return;
       let dx = 0;
       let dy = 0;
@@ -1417,7 +1429,13 @@ export default function GangSheetEditor() {
       setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
       return;
     }
+    if (tab === sidebarTab && toolsPanelOpen) {
+      setToolsPanelOpen(false);
+      setMobileDrawer(null);
+      return;
+    }
     setSidebarTab(tab);
+    setToolsPanelOpen(true);
     setMobileDrawer("sidebar");
   }
 
@@ -2028,8 +2046,8 @@ export default function GangSheetEditor() {
               <div className="brand center">
                 <b>L</b>
                 <span>
-                  <strong>LEGENDS BAGS</strong>
-                  <small>Welcome Center</small>
+                  <strong>LEGENDS</strong>
+                  <small>Gang Sheet Studio</small>
                 </span>
               </div>
               <h1>{page.appearance.welcomeTitle}</h1>
@@ -2916,6 +2934,10 @@ export default function GangSheetEditor() {
         saving={saving}
         hasItems={items.length > 0}
         onOverflowAction={handleOverflowAction}
+        toolsPanelOpen={toolsPanelOpen}
+        propsPanelOpen={propsPanelOpen}
+        onToggleToolsPanel={() => setToolsPanelOpen((v) => !v)}
+        onTogglePropsPanel={() => setPropsPanelOpen((v) => !v)}
         qualityButton={
           <QualityStatusButton
             summary={qualitySummary}
@@ -2948,7 +2970,7 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className="workspace">
+      <div className={`workspace${toolsPanelOpen ? "" : " tools-collapsed"}${propsPanelOpen ? "" : " props-collapsed"}`}>
         <nav className="icon-rail" aria-label="Builder navigation">
           <button
             type="button"
@@ -3185,9 +3207,10 @@ export default function GangSheetEditor() {
           ) : null}
         </aside>
         <main className="canvas-main">
-          <div className="canvas-meta">
+          <div className="canvas-meta" role="status">
             <strong>{sheetWidth} × {sheetHeight} in</strong>
             <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
+            <span>{zoomLabel}</span>
             <label className="toggle-row inline"><input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} /> Snap</label>
           </div>
           <div
@@ -3501,10 +3524,10 @@ export default function GangSheetEditor() {
         </aside>
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
-        <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
-        <button type="button" onClick={() => { setSidebarTab("gallery"); setMobileDrawer("sidebar"); }}>Gallery</button>
-        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto Arrange</button>
-        <button type="button" onClick={() => { setSidebarTab("layers"); setMobileDrawer("sidebar"); }}>Layers</button>
+        <button type="button" onClick={() => { setSidebarTab("uploads"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Uploads</button>
+        <button type="button" onClick={() => { setSidebarTab("layers"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Layers</button>
+        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto</button>
+        <button type="button" onClick={() => { setPropsPanelOpen(true); setMobileDrawer("properties"); }}>Props</button>
         <button type="button" className="save" onClick={openSaveDialog} disabled={saving || !items.length}>
           {saving ? "Saving…" : "Save"}
         </button>
