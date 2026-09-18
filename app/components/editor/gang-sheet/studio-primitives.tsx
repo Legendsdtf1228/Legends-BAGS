@@ -21,7 +21,7 @@ const VARIANT_CLASS: Record<StudioButtonVariant, string> = {
   icon: "gs-icon-btn",
 };
 
-export type StudioButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+export type StudioButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "variant"> & {
   variant?: StudioButtonVariant;
 };
 

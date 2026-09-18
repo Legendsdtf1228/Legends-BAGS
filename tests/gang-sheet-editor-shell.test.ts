@@ -32,8 +32,8 @@ describe("gang sheet editor shell", () => {
     expect(GANG_SHEET_EDITOR_CSS).toContain("--gs-workspace");
     expect(GANG_SHEET_EDITOR_CSS).toContain(".gs-primary-btn");
     expect(GANG_SHEET_EDITOR_CSS).toContain(".gs-danger-btn");
-    expect(GANG_SHEET_EDITOR_CSS).toContain("tools-collapsed");
-    expect(GANG_SHEET_EDITOR_CSS).toContain("props-collapsed");
+    expect(GANG_SHEET_EDITOR_CSS).toContain("nav.icon-rail");
+    expect(GANG_SHEET_EDITOR_CSS).toContain("flex-direction:column");
   });
 
   it("keeps compact control density", () => {
