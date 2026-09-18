@@ -13,7 +13,16 @@ import { GangSheetCommandBar, type OverflowAction } from "../components/editor/g
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
 import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
+import {
+  CanvasAlignToolbar,
+  CanvasEmptyState,
+  CanvasMetaBar,
+  CanvasRulers,
+  CanvasSelectionBounds,
+  CanvasSheetTabs,
+} from "../components/editor/gang-sheet/canvas-chrome";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
+import { selectionBounds } from "../components/editor/gang-sheet/canvas-workspace";
 import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
 import {
   fitWidthZoomPercent,
@@ -467,6 +476,10 @@ export default function GangSheetEditor() {
     }
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
+  const multiSelectBounds = useMemo(
+    () => selectionBounds(items, selectedIds),
+    [items, selectedIds],
+  );
 
   const usedArea = useMemo(
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
@@ -3185,11 +3198,26 @@ export default function GangSheetEditor() {
           ) : null}
         </aside>
         <main className="canvas-main">
-          <div className="canvas-meta">
-            <strong>{sheetWidth} × {sheetHeight} in</strong>
-            <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
-            <label className="toggle-row inline"><input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} /> Snap</label>
-          </div>
+          <CanvasMetaBar
+            sheetWidth={sheetWidth}
+            sheetHeight={sheetHeight}
+            utilization={utilization}
+            itemCount={items.length}
+            selectedCount={selectedIds.size}
+            snapEnabled={snapEnabled}
+            onSnapChange={setSnapEnabled}
+            zoomLabel={zoomLabel}
+            onZoomOut={() => {
+              setZoom((z) => Math.max(15, z - 10));
+              setZoomMode("custom");
+            }}
+            onZoomIn={() => {
+              setZoom((z) => Math.min(200, z + 10));
+              setZoomMode("custom");
+            }}
+            onFitWidth={() => fitToViewport("width")}
+            onFitSheet={() => fitToViewport("sheet")}
+          />
           <div
             className={`scroll ${spacePan ? "pan-mode" : ""}`}
             ref={scrollRef}
@@ -3216,18 +3244,13 @@ export default function GangSheetEditor() {
               else void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas", { placeOnSheet: true });
             }}
           >
-            <div className="ruler-corner" aria-hidden />
-            <div className="ruler-h" aria-hidden>
-              {Array.from({ length: Math.ceil(sheetWidth) + 1 }, (_, i) => (
-                <span key={i} style={{ left: `${(i / sheetWidth) * 100}%` }}>{i}</span>
-              ))}
-            </div>
-            <div className="ruler-v" aria-hidden>
-              {Array.from({ length: Math.min(Math.ceil(sheetHeight) + 1, 48) }, (_, i) => (
-                <span key={i} style={{ top: `${(i / sheetHeight) * 100}%` }}>{i}</span>
-              ))}
-            </div>
+            <CanvasRulers sheetWidth={sheetWidth} sheetHeight={sheetHeight} />
             <div className="canvas-stage">
+            <CanvasAlignToolbar
+              selectedCount={selectedIds.size}
+              onAlign={alignSelection}
+              onDistribute={distributeSelection}
+            />
             <CanvasMinimap
               sheetWidth={sheetWidth}
               sheetHeight={sheetHeight}
@@ -3262,6 +3285,8 @@ export default function GangSheetEditor() {
                 <div
                   key={i.id}
                   className={`piece ${selectedIds.has(i.id) ? "selected" : ""} ${
+                    selectedIds.has(i.id) && selectedIds.size > 1 ? "multi" : ""
+                  } ${
                     qualityPrefs.showOverlapOutlines && overlappingIds.has(i.id) ? "overlap" : ""
                   } ${qualityPrefs.showOobShading && oobIds.has(i.id) ? "oob" : ""}`}
                   style={{
@@ -3337,16 +3362,30 @@ export default function GangSheetEditor() {
                   ) : null}
                 </div>
               ))}
+              <CanvasSelectionBounds
+                bounds={multiSelectBounds}
+                sheetWidth={sheetWidth}
+                sheetHeight={sheetHeight}
+              />
               {!items.length && (
-                <div className="empty">
-                  <b>＋</b>
-                  <strong>Your gang sheet starts here</strong>
-                  <small>Add artwork from Uploads, Gallery, or Text — then drag to position.</small>
-                </div>
+                <CanvasEmptyState
+                  onUpload={() => {
+                    handleSidebarTab("uploads");
+                    sidebarUploadRef.current?.click();
+                  }}
+                  onGallery={() => handleSidebarTab("gallery")}
+                  onText={() => handleSidebarTab("text")}
+                />
               )}
             </div>
             </div>
           </div>
+          <CanvasSheetTabs
+            templates={SHEET_TEMPLATES}
+            sheetWidth={sheetWidth}
+            sheetHeight={sheetHeight}
+            onSelect={requestSheetSize}
+          />
         </main>
         <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
           <button
