@@ -6,7 +6,7 @@ type DropZoneProps = {
   uploading?: boolean;
   empty?: boolean;
   noMatches?: boolean;
-  inputRef?: RefObject<HTMLInputElement | null>;
+  inputRef?: RefObject<HTMLInputElement>;
   onFiles: (files: File[]) => void;
 };
 
@@ -62,7 +62,7 @@ export function ArtworkDropZone({
       <strong>{title}</strong>
       <small>{hint}</small>
       <input
-        ref={inputRef as RefObject<HTMLInputElement>}
+        ref={inputRef}
         type="file"
         multiple
         accept={UPLOAD_ACCEPT}
