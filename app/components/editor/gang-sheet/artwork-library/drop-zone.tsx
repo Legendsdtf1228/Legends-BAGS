@@ -62,7 +62,7 @@ export function ArtworkDropZone({
       <strong>{title}</strong>
       <small>{hint}</small>
       <input
-        ref={inputRef}
+        ref={inputRef as RefObject<HTMLInputElement>}
         type="file"
         multiple
         accept={UPLOAD_ACCEPT}
