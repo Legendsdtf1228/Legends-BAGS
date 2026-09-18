@@ -47,6 +47,8 @@ export type GangSheetCommandBarProps = {
   propsPanelOpen?: boolean;
   onToggleToolsPanel?: () => void;
   onTogglePropsPanel?: () => void;
+  /** Canvas workspace owns zoom chrome; command bar zoom is optional fallback. */
+  showZoom?: boolean;
 };
 
 export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
@@ -86,6 +88,7 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
     propsPanelOpen,
     onToggleToolsPanel,
     onTogglePropsPanel,
+    showZoom = true,
   } = props;
 
   const saveState =
@@ -136,21 +139,23 @@ export function GangSheetCommandBar(props: GangSheetCommandBarProps) {
           </button>
         </div>
 
-        <div className="gs-zoom-group" role="group" aria-label="Zoom">
-          <button type="button" className="gs-icon-btn" onClick={onZoomOut} title="Zoom out" aria-label="Zoom out">
-            <ToolbarIcon name="zoomOut" />
-          </button>
-          <span className="gs-zoom-label">{zoomLabel}</span>
-          <button type="button" className="gs-icon-btn" onClick={onZoomIn} title="Zoom in" aria-label="Zoom in">
-            <ToolbarIcon name="zoomIn" />
-          </button>
-          <button type="button" className="gs-ghost-btn gs-zoom-mode-btn" onClick={onFitWidth} title="Fit width" aria-label="Fit width">
-            Width
-          </button>
-          <button type="button" className="gs-icon-btn gs-fit-btn" onClick={onFitSheet} title="Fit full sheet" aria-label="Fit full sheet">
-            <ToolbarIcon name="fit" />
-          </button>
-        </div>
+        {showZoom ? (
+          <div className="gs-zoom-group" role="group" aria-label="Zoom">
+            <button type="button" className="gs-icon-btn" onClick={onZoomOut} title="Zoom out" aria-label="Zoom out">
+              <ToolbarIcon name="zoomOut" />
+            </button>
+            <span className="gs-zoom-label">{zoomLabel}</span>
+            <button type="button" className="gs-icon-btn" onClick={onZoomIn} title="Zoom in" aria-label="Zoom in">
+              <ToolbarIcon name="zoomIn" />
+            </button>
+            <button type="button" className="gs-ghost-btn gs-zoom-mode-btn" onClick={onFitWidth} title="Fit width" aria-label="Fit width">
+              Width
+            </button>
+            <button type="button" className="gs-icon-btn gs-fit-btn" onClick={onFitSheet} title="Fit full sheet" aria-label="Fit full sheet">
+              <ToolbarIcon name="fit" />
+            </button>
+          </div>
+        ) : null}
 
         <button
           type="button"

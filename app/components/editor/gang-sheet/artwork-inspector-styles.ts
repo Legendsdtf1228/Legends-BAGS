@@ -501,4 +501,16 @@ export const ARTWORK_INSPECTOR_CSS = `
   outline:2px solid var(--gs-art-gold);
   outline-offset:2px;
 }
+@media(max-width:900px){
+  .lgs-editor.gs-editor-v2 aside.properties.gs-art-panel{
+    display:none;
+    position:fixed;
+    top:56px;
+    bottom:56px;
+    width:min(320px,84vw);
+    right:0;
+    z-index:7;
+  }
+  .lgs-editor.gs-editor-v2 aside.properties.gs-art-panel.mobile-open{display:flex}
+}
 `;

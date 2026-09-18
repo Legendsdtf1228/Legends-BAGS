@@ -65,4 +65,8 @@ describe("gang sheet editor shell", () => {
     expect(GANG_SHEET_EDITOR_CSS).toContain("canvas-sheet-tabs");
     expect(GANG_SHEET_EDITOR_CSS).toContain("--gs-canvas-surround");
   });
+
+  it("keeps the mobile toolbar off desktop chrome", () => {
+    expect(GANG_SHEET_EDITOR_CSS).toContain("nav.mobile-bar{display:none}");
+  });
 });

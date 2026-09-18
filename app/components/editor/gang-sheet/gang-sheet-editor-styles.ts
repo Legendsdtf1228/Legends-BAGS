@@ -426,4 +426,27 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
   .lgs-editor.gs-editor-v2 .gs-primary-btn{padding:0 10px;font-size:12px;min-height:32px}
   .lgs-editor.gs-editor-v2 .gs-command-right{gap:6px}
 }
+
+/* Integration density: one control height / radius / focus language across composed surfaces. */
+.lgs-editor.gs-editor-v2 .lgs-artlib-tools input[type=search],
+.lgs-editor.gs-editor-v2 .lgs-artlib-tools select{
+  min-height:var(--gs-control-h);
+  border-radius:var(--gs-radius-sm);
+  font-size:var(--gs-control);
+}
+.lgs-editor.gs-editor-v2 .lgs-artlib-iconbtn{
+  width:var(--gs-control-h);
+  height:var(--gs-control-h);
+  border-radius:var(--gs-radius-sm);
+}
+.lgs-editor.gs-editor-v2 .gs-art-panel input,
+.lgs-editor.gs-editor-v2 .gs-art-panel select{
+  min-height:var(--gs-control-h);
+  border-radius:var(--gs-radius-sm);
+}
+.lgs-editor.gs-editor-v2 nav.mobile-bar{display:none}
+.lgs-editor.gs-editor-v2 .mobile-bar button{min-height:44px}
+@media(max-width:900px){
+  .lgs-editor.gs-editor-v2 nav.mobile-bar{display:flex}
+}
 ` + CANVAS_WORKSPACE_CSS + PRODUCTION_REVIEW_CSS;

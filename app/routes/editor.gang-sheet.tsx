@@ -7,7 +7,6 @@ import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
-import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
 import {
   CanvasAlignToolbar,
   CanvasEmptyState,
@@ -2770,6 +2769,7 @@ export default function GangSheetEditor() {
         }}
         onFitWidth={() => fitToViewport("width")}
         onFitSheet={() => fitToViewport("sheet")}
+        showZoom={false}
         panMode={spacePan}
         onTogglePan={() => setSpacePan((v) => !v)}
         gridVisible={gridVisible}
@@ -3195,11 +3195,11 @@ export default function GangSheetEditor() {
 
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
-        <button type="button" onClick={() => { setSidebarTab("uploads"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Uploads</button>
-        <button type="button" onClick={() => { setSidebarTab("layers"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Layers</button>
-        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto</button>
-        <button type="button" onClick={() => { setPropsPanelOpen(true); setMobileDrawer("properties"); }}>Props</button>
-        <button type="button" className="save" onClick={openSaveDialog} disabled={saving || !items.length}>
+        <button type="button" aria-label="Open uploads" onClick={() => { setSidebarTab("uploads"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Uploads</button>
+        <button type="button" aria-label="Open gallery" onClick={() => { setSidebarTab("gallery"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Gallery</button>
+        <button type="button" aria-label="Auto Arrange" onClick={() => handleOverflowAction("arrange")}>Auto</button>
+        <button type="button" aria-label="Open artwork properties" onClick={() => { setPropsPanelOpen(true); setMobileDrawer("properties"); }}>Props</button>
+        <button type="button" className="save" aria-label="Production Review" onClick={openSaveDialog} disabled={saving || !items.length}>
           {saving ? "Saving…" : "Save"}
         </button>
       </nav>

@@ -156,4 +156,11 @@ export const ARTWORK_LIBRARY_CSS = `
 }
 .lgs-artlib-page button:disabled{opacity:.35;cursor:not-allowed}
 .lgs-artlib-page button:hover:not(:disabled){border-color:var(--lgs-gold-deep);color:#fff}
+.lgs-artlib button:focus-visible,
+.lgs-artlib input:focus-visible,
+.lgs-artlib select:focus-visible,
+.lgs-artlib .lgs-artlib-drop:focus-visible{
+  outline:2px solid var(--gs-accent,#e4b84a);
+  outline-offset:2px;
+}
 `;

@@ -81,6 +81,7 @@ describe("artwork inspector panel UX", () => {
     expect(INSPECTOR_SRC).toContain("dpi-warn");
     expect(ARTWORK_INSPECTOR_CSS).toContain(".gs-art-dpi.tier-poor");
     expect(ARTWORK_INSPECTOR_CSS).toContain("#ffd45e");
+    expect(ARTWORK_INSPECTOR_CSS).toContain("aside.properties.gs-art-panel.mobile-open");
   });
 
   it("is wired into the gang sheet editor properties slot", () => {

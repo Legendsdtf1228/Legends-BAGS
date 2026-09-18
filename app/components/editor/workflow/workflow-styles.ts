@@ -234,6 +234,14 @@ export const PRODUCTION_WORKFLOW_CSS = `
 }
 .prod-wf-copies i.more{display:grid;place-items:center;font-size:9px;font-weight:800;font-style:normal;color:#475467;background:#eef1f4}
 .prod-wf-inline-tally{margin:12px 0}
+.prod-wf-btn:focus-visible,
+.prod-wf-tab:focus-visible,
+.prod-wf input:focus-visible,
+.prod-wf select:focus-visible,
+.prod-wf textarea:focus-visible{
+  outline:2px solid var(--gs-accent,#e4b84a);
+  outline-offset:2px;
+}
 @media(max-width:960px){
   .prod-wf-split{grid-template-columns:1fr}
   .prod-wf-panel{max-height:none;border-right:0;border-bottom:1px solid #12161d}
