@@ -505,12 +505,19 @@ export const ARTWORK_INSPECTOR_CSS = `
   .lgs-editor.gs-editor-v2 aside.properties.gs-art-panel{
     display:none;
     position:fixed;
-    top:56px;
-    bottom:56px;
-    width:min(320px,84vw);
+    top:var(--gs-bar-h,56px);
+    bottom:0;
+    width:min(320px,42vw);
     right:0;
     z-index:7;
   }
   .lgs-editor.gs-editor-v2 aside.properties.gs-art-panel.mobile-open{display:flex}
+}
+@media(max-width:767px){
+  .lgs-editor.gs-editor-v2 aside.properties.gs-art-panel{
+    top:56px;
+    bottom:56px;
+    width:min(320px,84vw);
+  }
 }
 `;

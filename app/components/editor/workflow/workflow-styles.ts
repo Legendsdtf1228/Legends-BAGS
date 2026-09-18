@@ -68,7 +68,7 @@ export const PRODUCTION_WORKFLOW_CSS = `
   padding:12px 20px;
 }
 .prod-wf-btn-primary:hover:not(:disabled){filter:brightness(1.05)}
-.prod-wf-btn-upload{background:var(--accent,#f97316);color:#fff}
+.prod-wf-btn-upload{background:var(--gs-accent,var(--prod-gold-hi));color:var(--gs-accent-ink,#111)}
 .prod-wf-split{
   display:grid;
   grid-template-columns:minmax(340px,42%) minmax(0,1fr);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dpiQualityTier, effectiveDpi, summarizeQuality } from "../app/components/editor/gang-sheet/dpi-quality";
+import { dpiQualityTier, effectiveDpi, placementDpi, summarizeQuality } from "../app/components/editor/gang-sheet/dpi-quality";
 import {
   fitSheetZoomPercent,
   fitWidthZoomPercent,
@@ -18,7 +18,24 @@ describe("dpi quality tiers", () => {
   });
 
   it("computes effective DPI from pixels and inches", () => {
-    expect(effectiveDpi(900, 900, 3, 3, null)).toBe(300);
+    expect(effectiveDpi(900, 900, 3, 3)).toBe(300);
+  });
+
+  it("recomputes placement DPI when physical size changes", () => {
+    const item = {
+      id: "a",
+      name: "A",
+      dpi: 300,
+      widthPx: 900,
+      heightPx: 900,
+      widthIn: 3,
+      heightIn: 3,
+    };
+    expect(placementDpi(item)).toBe(300);
+    expect(placementDpi({ ...item, widthIn: 6, heightIn: 6 })).toBe(150);
+    const summary = summarizeQuality([{ ...item, widthIn: 6, heightIn: 6 }], new Set(), new Set());
+    expect(summary.poor).toBe(1);
+    expect(summary.excellent).toBe(0);
   });
 
   it("summarizes overlap and quality counts", () => {

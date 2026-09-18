@@ -69,4 +69,10 @@ describe("gang sheet editor shell", () => {
   it("keeps the mobile toolbar off desktop chrome", () => {
     expect(GANG_SHEET_EDITOR_CSS).toContain("nav.mobile-bar{display:none}");
   });
+
+  it("ships a tablet workspace between 768 and 900", () => {
+    expect(GS_EDITOR_TOKENS.breakpoint.tabletMin).toBe("768px");
+    expect(GS_EDITOR_TOKENS.breakpoint.tabletMax).toBe("900px");
+    expect(GANG_SHEET_EDITOR_CSS).toContain("@media(min-width:768px) and (max-width:900px)");
+  });
 });

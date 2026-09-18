@@ -1,5 +1,7 @@
 /** Presentational helpers for Uploads/Gallery — maps existing pool/gallery data, not a second store. */
 
+import { dpiQualityTier, effectiveDpi } from "../dpi-quality";
+
 export const ARTWORK_PAGE_SIZE = 8;
 export const UPLOAD_ACCEPT = "image/png,image/jpeg";
 export const UPLOAD_SORTS = ["recent", "name", "dpi", "size"] as const;
@@ -32,6 +34,11 @@ export type GalleryLibraryItem = {
   thumb: string;
   widthIn: number;
   heightIn: number;
+  assetId?: string;
+  widthPx?: number | null;
+  heightPx?: number | null;
+  dpi?: number | null;
+  contentType?: string | null;
 };
 
 export function paginateList<T>(items: T[], page: number, pageSize = ARTWORK_PAGE_SIZE) {
@@ -74,14 +81,18 @@ export function nativePrintInches(widthPx: number, heightPx: number, dpi?: numbe
 }
 
 export function dpiDisplay(dpi?: number | null): { label: string; value: string; tier: DpiTier } {
+  const info = dpiQualityTier(dpi);
   if (dpi == null || !Number.isFinite(dpi)) {
     return { label: "DPI n/a", value: "", tier: "unknown" };
   }
   const rounded = Math.round(dpi);
-  if (rounded >= 300) return { label: `${rounded} DPI`, value: String(rounded), tier: "excellent" };
-  if (rounded >= 250) return { label: `${rounded} DPI`, value: String(rounded), tier: "good" };
-  if (rounded >= 200) return { label: `${rounded} DPI`, value: String(rounded), tier: "low" };
-  return { label: `${rounded} DPI`, value: String(rounded), tier: "poor" };
+  return { label: `${rounded} DPI`, value: String(rounded), tier: info.tier };
+}
+
+/** Print DPI at gallery default inches when source pixels exist; otherwise unavailable. */
+export function galleryCardDpi(item: Pick<GalleryLibraryItem, "widthPx" | "heightPx" | "widthIn" | "heightIn">) {
+  if (!item.widthPx || !item.heightPx) return dpiDisplay(null);
+  return dpiDisplay(effectiveDpi(item.widthPx, item.heightPx, item.widthIn, item.heightIn));
 }
 
 export function clampQuantity(value: number) {

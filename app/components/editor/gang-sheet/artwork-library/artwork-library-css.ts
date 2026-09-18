@@ -2,8 +2,8 @@
 
 export const ARTWORK_LIBRARY_CSS = `
 .lgs-artlib{
-  --lgs-gold:#ffd45e;
-  --lgs-gold-deep:#e89119;
+  --lgs-gold:var(--gs-accent,#e4b84a);
+  --lgs-gold-deep:var(--gs-accent-deep,#e89119);
   --lgs-ink:#0d1117;
   --lgs-panel:#161b22;
   --lgs-panel-2:#1c232c;

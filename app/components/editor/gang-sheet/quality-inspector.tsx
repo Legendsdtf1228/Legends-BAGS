@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { dpiQualityTier, type QualitySummary } from "./dpi-quality";
+import { dpiQualityTier, placementDpi, type QualitySummary } from "./dpi-quality";
 
 export type QualityDisplayPrefs = {
   showResolutionOutlines: boolean;
@@ -75,7 +75,7 @@ export function QualityInspectorPanel(props: QualityInspectorProps) {
 
   const flagged = items.filter((i) => {
     if (i.kind === "text") return false;
-    const info = dpiQualityTier(i.dpi);
+    const info = dpiQualityTier(placementDpi(i));
     return (
       info.tier === "low" ||
       info.tier === "poor" ||
@@ -168,7 +168,7 @@ export function QualityInspectorPanel(props: QualityInspectorProps) {
         {flagged.length ? (
           <ul className="gs-quality-list">
             {flagged.map((item) => {
-              const info = dpiQualityTier(item.dpi);
+              const info = dpiQualityTier(placementDpi(item));
               const flags: string[] = [];
               if (info.tier === "low" || info.tier === "poor" || info.tier === "unknown") {
                 flags.push(info.label);

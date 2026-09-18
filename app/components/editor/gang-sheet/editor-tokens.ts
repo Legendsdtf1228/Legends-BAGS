@@ -79,6 +79,10 @@ export const GS_EDITOR_TOKENS = {
   },
   breakpoint: {
     compact: "1100px",
+    /** Inclusive tablet workspace: 768–900. Phone is max 767. */
+    tabletMax: "900px",
+    tabletMin: "768px",
+    phone: "767px",
     mobile: "900px",
   },
 } as const;

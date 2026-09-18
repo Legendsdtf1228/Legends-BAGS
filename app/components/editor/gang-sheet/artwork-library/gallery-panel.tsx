@@ -3,6 +3,8 @@ import { ToolbarIcon } from "../editor-toolbar-icons";
 import { ArtworkCard } from "./artwork-card";
 import {
   formatInches,
+  formatPixels,
+  galleryCardDpi,
   GALLERY_SORT_LABELS,
   paginateList,
   type GalleryLibraryItem,
@@ -118,18 +120,24 @@ export function GalleryPanel({
       {paged.items.length ? (
         <>
           <div className="lgs-artlib-grid">
-            {paged.items.map((item) => (
-              <ArtworkCard
-                key={item.id}
-                id={item.id}
-                name={item.name}
-                thumbUrl={item.thumb}
-                dimLabel={formatInches(item.widthIn, item.heightIn)}
-                category={item.category}
-                uploading={uploading}
-                onAddToSheet={(qty) => onAddToSheet(item, qty)}
-              />
-            ))}
+            {paged.items.map((item) => {
+              const dpi = galleryCardDpi(item);
+              return (
+                <ArtworkCard
+                  key={item.id}
+                  id={item.id}
+                  name={item.name}
+                  thumbUrl={item.thumb}
+                  dimLabel={formatInches(item.widthIn, item.heightIn)}
+                  pixelLabel={formatPixels(item.widthPx ?? 0, item.heightPx ?? 0)}
+                  dpiLabel={dpi.label}
+                  dpiTier={dpi.tier}
+                  category={item.category}
+                  uploading={uploading}
+                  onAddToSheet={(qty) => onAddToSheet(item, qty)}
+                />
+              );
+            })}
           </div>
           <ArtworkPagination
             page={paged.page}

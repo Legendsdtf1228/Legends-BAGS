@@ -115,7 +115,7 @@ a.welcome-opt{text-decoration:none;color:inherit}
 .toast.error{background:var(--gs-danger-soft);color:#b42318}
 .assets.compact{padding:0}
 .assets.compact>button{margin-bottom:4px}
-@media(max-width:900px){.welcome-grid.two-col{grid-template-columns:1fr}.sidebar-panel{width:220px}}
+@media(max-width:${GS_EDITOR_TOKENS.breakpoint.tabletMax}){.welcome-grid.two-col{grid-template-columns:1fr}}
 
 .upload-tabs{display:flex;gap:6px;margin-bottom:var(--gs-space-3);flex-wrap:wrap}
 .upload-tabs .tab{border:1px solid var(--gs-border-on-light);background:var(--gs-surface);border-radius:var(--gs-radius-sm);padding:5px 10px;font-size:var(--gs-label);font-weight:600;cursor:pointer}
@@ -309,18 +309,31 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
 .mobile-bar button:disabled{opacity:.45}
 .mobile-drawer-close{display:none}
 
-@media(max-width:900px){
-  .workspace{grid-template-columns:56px minmax(0,1fr);height:calc(100vh - 120px)}
+/* Overlay drawers for phone + tablet so the artboard stays the dominant column. */
+@media(max-width:${GS_EDITOR_TOKENS.breakpoint.tabletMax}){
+  .workspace{grid-template-columns:56px minmax(0,1fr);height:calc(100vh - var(--gs-bar-h))}
   .workspace.tools-collapsed,.workspace.props-collapsed,.workspace.tools-collapsed.props-collapsed{grid-template-columns:56px minmax(0,1fr)}
-  .sidebar-panel,.properties{display:none;position:fixed;top:56px;bottom:56px;width:min(320px,84vw);z-index:7;box-shadow:8px 0 24px rgba(0,0,0,.35);flex-direction:column;overflow:auto}
+  .sidebar-panel,.properties{display:none;position:fixed;top:var(--gs-bar-h);bottom:0;width:min(320px,42vw);z-index:7;box-shadow:8px 0 24px rgba(0,0,0,.35);flex-direction:column;overflow:auto}
   .workspace.tools-collapsed .sidebar-panel:not(.mobile-open),.workspace.props-collapsed .properties:not(.mobile-open){display:none}
   .sidebar-panel{left:56px}
   .properties{right:0;box-shadow:-8px 0 24px rgba(0,0,0,.35)}
   .sidebar-panel.mobile-open,.properties.mobile-open{display:flex}
-  .mobile-drawer-close{display:grid;position:absolute;right:8px;top:8px;z-index:3;width:32px;height:32px;place-items:center;border:1px solid var(--gs-border-on-light);border-radius:var(--gs-radius-md);background:var(--gs-surface);color:#344054;font-size:20px;cursor:pointer}
+  .mobile-drawer-close{display:grid;position:absolute;right:8px;top:8px;z-index:3;width:40px;height:40px;place-items:center;border:1px solid var(--gs-border-on-light);border-radius:var(--gs-radius-md);background:var(--gs-surface);color:#344054;font-size:20px;cursor:pointer}
   .top-toolbar{display:none}
-  .mobile-bar{display:flex}
   .canvas-meta{font-size:11px;flex-wrap:wrap;height:auto;min-height:var(--gs-status-h);padding:6px 10px}
+}
+
+/* Tablet 768–900: canvas stays full-width; tools/inspector overlay. No phone dock. */
+@media(min-width:${GS_EDITOR_TOKENS.breakpoint.tabletMin}) and (max-width:${GS_EDITOR_TOKENS.breakpoint.tabletMax}){
+  .lgs-editor.gs-editor-v2 nav.mobile-bar,.mobile-bar{display:none}
+  .lgs-editor.gs-editor-v2 .lgs-artlib-add{min-height:40px;height:40px}
+  .sidebar-panel,.properties{width:min(280px,36vw);bottom:0}
+}
+
+@media(max-width:${GS_EDITOR_TOKENS.breakpoint.phone}){
+  .workspace{height:calc(100vh - var(--gs-bar-h) - 56px)}
+  .sidebar-panel,.properties{top:56px;bottom:56px;width:min(320px,84vw)}
+  .mobile-bar{display:flex}
 }
 
 /* Command bar primitives */
@@ -419,7 +432,17 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
   .lgs-editor.gs-editor-v2 .gs-command-bar{grid-template-columns:auto minmax(0,1fr) auto;overflow:hidden}
   .lgs-editor.gs-editor-v2 .gs-primary-btn{padding:0 12px;font-size:12px}
 }
-@media(max-width:900px){
+@media(min-width:${GS_EDITOR_TOKENS.breakpoint.tabletMin}) and (max-width:${GS_EDITOR_TOKENS.breakpoint.tabletMax}){
+  .lgs-editor.gs-editor-v2 .gs-command-bar{grid-template-columns:auto minmax(0,1fr) auto;padding:0 8px}
+  .lgs-editor.gs-editor-v2 .gs-design-name-field,.lgs-editor.gs-editor-v2 .gs-save-state{display:none}
+  .lgs-editor.gs-editor-v2 .gs-command-center{display:flex;gap:6px}
+  .lgs-editor.gs-editor-v2 .gs-price-pill,.lgs-editor.gs-editor-v2 .gs-panel-toggle{display:flex}
+  .lgs-editor.gs-editor-v2 .gs-primary-btn{padding:0 12px;font-size:12px;min-height:40px}
+  .lgs-editor.gs-editor-v2 .gs-icon-btn,.lgs-editor.gs-editor-v2 .gs-ghost-btn{min-width:40px;min-height:40px;width:40px;height:40px}
+  .lgs-editor.gs-editor-v2 .gs-zoom-group .gs-zoom-mode-btn{display:none}
+  .lgs-editor.gs-editor-v2 nav.mobile-bar,.mobile-bar{display:none}
+}
+@media(max-width:${GS_EDITOR_TOKENS.breakpoint.phone}){
   .lgs-editor.gs-editor-v2 .gs-command-bar{grid-template-columns:auto 1fr auto;height:var(--gs-bar-h);min-height:var(--gs-bar-h);padding:0 8px}
   .lgs-editor.gs-editor-v2 .gs-command-center,.lgs-editor.gs-editor-v2 .gs-hide-mobile,.lgs-editor.gs-editor-v2 .gs-design-name-field,.lgs-editor.gs-editor-v2 .gs-save-state,.lgs-editor.gs-editor-v2 .gs-sheet-meta,.lgs-editor.gs-editor-v2 .gs-panel-toggle,.lgs-editor.gs-editor-v2 .gs-price-pill{display:none}
   .lgs-editor.gs-editor-v2 .workspace{height:calc(100vh - var(--gs-bar-h) - 56px)}
@@ -446,7 +469,7 @@ aside{background:var(--gs-panel);color:var(--gs-text);overflow:auto}
 }
 .lgs-editor.gs-editor-v2 nav.mobile-bar{display:none}
 .lgs-editor.gs-editor-v2 .mobile-bar button{min-height:44px}
-@media(max-width:900px){
+@media(max-width:${GS_EDITOR_TOKENS.breakpoint.phone}){
   .lgs-editor.gs-editor-v2 nav.mobile-bar{display:flex}
 }
 ` + CANVAS_WORKSPACE_CSS + PRODUCTION_REVIEW_CSS;

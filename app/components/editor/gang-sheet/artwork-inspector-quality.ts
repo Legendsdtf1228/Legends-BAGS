@@ -18,7 +18,7 @@ export function artworkPrintQuality(item: {
 }): ArtworkPrintQuality | null {
   if (item.kind === "text") return null;
   const taggedDpi = item.dpi != null && Number.isFinite(item.dpi) && item.dpi > 0 ? item.dpi : null;
-  const printDpi = effectiveDpi(item.widthPx, item.heightPx, item.widthIn, item.heightIn, null);
+  const printDpi = effectiveDpi(item.widthPx, item.heightPx, item.widthIn, item.heightIn);
   const info = dpiQualityTier(printDpi);
   return {
     taggedDpi,

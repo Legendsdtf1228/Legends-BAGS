@@ -24,10 +24,12 @@ import {
   type UploadSort,
 } from "../components/editor/gang-sheet/artwork-library";
 import { ArtworkInspector } from "../components/editor/gang-sheet/artwork-inspector";
+import { artworkPrintQuality } from "../components/editor/gang-sheet/artwork-inspector-quality";
 import { ARTWORK_INSPECTOR_CSS } from "../components/editor/gang-sheet/artwork-inspector-styles";
+import { galleryRecordToAsset } from "../components/editor/gang-sheet/gallery-placement";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
 import { selectionBounds } from "../components/editor/gang-sheet/canvas-workspace";
-import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import { summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
 import {
   fitWidthZoomPercent,
   smartFitZoomPercent,
@@ -529,9 +531,9 @@ export default function GangSheetEditor() {
   const lowDpiCount = useMemo(
     () =>
       items.filter((i) => {
-        if (i.kind === "text") return false;
-        const tier = dpiQualityTier(i.dpi).tier;
-        return tier === "low" || tier === "poor" || tier === "unknown";
+        const q = artworkPrintQuality(i);
+        if (!q) return false;
+        return q.info.tier === "low" || q.info.tier === "poor" || q.info.tier === "unknown";
       }).length,
     [items],
   );
@@ -1152,16 +1154,16 @@ export default function GangSheetEditor() {
   async function addGalleryItemToAuto(g: GalleryItem) {
     setUploading(true);
     try {
-      const { asset, previewUrl } = await galleryThumbToAsset(g);
+      const { asset, previewUrl } = galleryRecordToAsset(g);
       const aspect = asset.widthPx / asset.heightPx;
-      const w = Math.min(g.widthIn ?? 6, sheetWidth - 0.4);
+      const w = Math.min(g.widthIn || 6, sheetWidth - 0.4);
       const draft: AutoDraft = {
         id: crypto.randomUUID(),
         asset,
         previewUrl,
         name: g.name,
         widthIn: w,
-        heightIn: g.heightIn ?? w / aspect,
+        heightIn: g.heightIn || w / aspect,
         quantity: 1,
         lockAspect: true,
       };
@@ -1388,45 +1390,17 @@ export default function GangSheetEditor() {
     setMessage(`Added text "${label}" — drag to position.`);
   }
 
-  async function rasterizeGalleryItem(g: GalleryItem): Promise<File> {
-    const image = new Image();
-    image.src = g.thumb;
-    await image.decode();
-    const canvasEl = document.createElement("canvas");
-    canvasEl.width = Math.max(1, Math.round(g.widthIn * 300));
-    canvasEl.height = Math.max(1, Math.round(g.heightIn * 300));
-    const context = canvasEl.getContext("2d");
-    if (!context) throw new Error("Could not prepare gallery artwork");
-    context.drawImage(image, 0, 0, canvasEl.width, canvasEl.height);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvasEl.toBlob(
-        (value) => (value ? resolve(value) : reject(new Error("Could not prepare gallery artwork"))),
-        "image/png",
-      ),
-    );
-    return new File([blob], `${g.name}.png`, { type: "image/png" });
-  }
-
-  async function galleryThumbToAsset(g: GalleryItem): Promise<{ asset: Asset; previewUrl: string }> {
-    const file = await rasterizeGalleryItem(g);
-    const asset = await postUpload(file);
-    return { asset, previewUrl: g.thumb };
-  }
-
   async function placeGalleryItem(g: GalleryItem, quantity = 1) {
     setUploading(true);
     setError("");
     try {
-      const { asset, previewUrl } = await galleryThumbToAsset(g);
+      const { asset, previewUrl } = galleryRecordToAsset(g);
       const qty = Math.max(1, Math.round(quantity));
       const placed: CanvasItem[] = [];
       for (let i = 0; i < qty; i++) {
         const item = createPlacedItem(asset, previewUrl, g.name, i, [...items, ...placed]);
         item.widthIn = g.widthIn;
         item.heightIn = g.heightIn;
-        item.dpi = Math.round(
-          Math.min(asset.widthPx / g.widthIn, asset.heightPx / g.heightIn),
-        );
         placed.push(item);
       }
       pushHistory([...items, ...placed]);
@@ -1607,6 +1581,12 @@ export default function GangSheetEditor() {
   async function refreshGallery() {
     setGalleryLoading(true);
     setGalleryError("");
+    if (!page.shop) {
+      setGalleryItems([]);
+      setGalleryError("Open this editor from a shop to load gallery artwork.");
+      setGalleryLoading(false);
+      return;
+    }
     try {
       const params = new URLSearchParams();
       if (galleryCategory !== "All") params.set("category", galleryCategory);
@@ -1615,14 +1595,20 @@ export default function GangSheetEditor() {
         credentials: "include",
         headers: { "X-LGS-Shop": page.shop },
       });
-      const json = (await res.json()) as {
+      const json = (await res.json().catch(() => ({}))) as {
         categories?: string[];
         items?: GalleryItem[];
         error?: string;
       };
       if (!res.ok) {
         setGalleryItems([]);
-        setGalleryError(json.error || "Could not load gallery artwork.");
+        if (res.status === 401 || res.status === 403) {
+          setGalleryError(
+            "Gallery requires shop authentication. Open the editor from your storefront or a signed-in shop.",
+          );
+        } else {
+          setGalleryError(json.error || "Could not load gallery artwork.");
+        }
         return;
       }
       setGalleryItems(json.items ?? []);

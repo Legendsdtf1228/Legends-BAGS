@@ -473,4 +473,8 @@ export const CANVAS_WORKSPACE_CSS = `
   .lgs-editor.gs-editor-v2 .canvas-align-bar{max-width:100%}
   .lgs-editor.gs-editor-v2 .canvas-sheet-tabs{overflow:auto}
 }
+@media(min-width:768px) and (max-width:900px){
+  .lgs-editor.gs-editor-v2 .canvas-main .canvas-zoom{height:28px;min-height:40px}
+  .lgs-editor.gs-editor-v2 .canvas-sheet-tabs button{min-height:40px;padding:0 12px}
+}
 `;

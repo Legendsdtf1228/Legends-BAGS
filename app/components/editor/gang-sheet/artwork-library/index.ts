@@ -13,6 +13,7 @@ export {
   dpiDisplay,
   formatInches,
   formatPixels,
+  galleryCardDpi,
   nativePrintInches,
   paginateList,
   sortGallery,

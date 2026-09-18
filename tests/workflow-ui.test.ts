@@ -165,6 +165,7 @@ describe("production workflow chrome", () => {
     expect(PRODUCTION_WORKFLOW_CSS).toContain(".prod-wf-btn-primary");
     expect(PRODUCTION_WORKFLOW_CSS).toContain(".prod-wf-progress");
     expect(PRODUCTION_WORKFLOW_CSS).not.toContain("purple");
+    expect(PRODUCTION_WORKFLOW_CSS).not.toContain("#f97316");
   });
 
   it("keeps existing Auto Build and Fill sheet labels", () => {

@@ -19,7 +19,7 @@ export function ProductionWorkflowShell(props: {
   children: ReactNode;
 }) {
   return (
-    <div className="prod-wf lgs-editor" style={props.appearanceStyle}>
+    <div className="prod-wf lgs-editor gs-editor-v2" style={props.appearanceStyle}>
       <style>{PRODUCTION_WORKFLOW_CSS}{props.extraCss ?? ""}</style>
       <header className="prod-wf-bar">
         <div className="prod-wf-brand">

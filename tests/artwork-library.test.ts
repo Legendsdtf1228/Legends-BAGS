@@ -105,7 +105,7 @@ describe("artwork library panels", () => {
     expect(UPLOAD_ACCEPT).toBe("image/png,image/jpeg");
     expect(GANG_SHEET_EDITOR_CSS).toContain(".pool-item");
     expect(ARTWORK_LIBRARY_CSS).toContain(".lgs-artlib-add");
-    expect(ARTWORK_LIBRARY_CSS).toContain("#ffd45e");
+    expect(ARTWORK_LIBRARY_CSS).toContain("--gs-accent");
   });
 
   it("renders upload cards with dimensions, DPI, quantity, and Add to Sheet", () => {
@@ -162,6 +162,7 @@ describe("artwork library panels", () => {
     expect(html).toContain("3×3″");
     expect(html).toContain("Basketball");
     expect(html).toContain("Merchant artwork");
+    expect(html).not.toContain("Favorite");
   });
 
   it("keeps Add to Sheet as the card primary action", () => {

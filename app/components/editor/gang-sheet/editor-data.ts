@@ -5,10 +5,15 @@ export type GalleryItem = {
   name: string;
   category: string;
   tags: string[];
-  /** SVG data URL or placeholder color block for dev */
+  /** Asset preview URL (`/api/assets/:id`) or optional merchant thumb. */
   thumb: string;
   widthIn: number;
   heightIn: number;
+  assetId?: string;
+  widthPx?: number | null;
+  heightPx?: number | null;
+  dpi?: number | null;
+  contentType?: string | null;
 };
 
 export type SheetTemplate = {

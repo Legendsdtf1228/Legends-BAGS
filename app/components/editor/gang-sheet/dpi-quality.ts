@@ -44,19 +44,33 @@ export function dpiQualityTier(dpi: number | null | undefined): DpiQualityInfo {
   };
 }
 
+/** Print DPI at the current physical size. Never substitutes tagged/source density. */
 export function effectiveDpi(
   widthPx: number,
   heightPx: number,
   widthIn: number,
   heightIn: number,
-  taggedDpi?: number | null,
 ): number | null {
-  if (taggedDpi != null && taggedDpi > 0) return taggedDpi;
-  if (widthIn <= 0 || heightIn <= 0) return null;
+  if (widthIn <= 0 || heightIn <= 0 || widthPx <= 0 || heightPx <= 0) return null;
   const fromW = widthPx / widthIn;
   const fromH = heightPx / heightIn;
   const dpi = Math.min(fromW, fromH);
   return Number.isFinite(dpi) && dpi > 0 ? dpi : null;
+}
+
+/** Prefer placement math; fall back to tagged density only when pixels are missing. */
+export function placementDpi(item: {
+  dpi?: number | null;
+  widthPx?: number;
+  heightPx?: number;
+  widthIn: number;
+  heightIn: number;
+}): number | null {
+  if (item.widthPx && item.heightPx) {
+    return effectiveDpi(item.widthPx, item.heightPx, item.widthIn, item.heightIn);
+  }
+  if (item.dpi != null && Number.isFinite(item.dpi) && item.dpi > 0) return item.dpi;
+  return null;
 }
 
 export type QualitySummary = {
@@ -94,11 +108,7 @@ export function summarizeQuality(
   };
   for (const item of items) {
     if (item.kind === "text") continue;
-    const dpi =
-      item.dpi ??
-      (item.widthPx && item.heightPx
-        ? effectiveDpi(item.widthPx, item.heightPx, item.widthIn, item.heightIn)
-        : null);
+    const dpi = placementDpi(item);
     const tier = dpiQualityTier(dpi).tier;
     summary[tier === "unknown" ? "unknown" : tier] += 1;
   }
