@@ -6,7 +6,7 @@ type DropZoneProps = {
   uploading?: boolean;
   empty?: boolean;
   noMatches?: boolean;
-  inputRef?: RefObject<HTMLInputElement | null>;
+  inputRef?: RefObject<HTMLInputElement>;
   onFiles: (files: File[]) => void;
 };
 

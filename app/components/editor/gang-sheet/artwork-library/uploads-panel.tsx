@@ -21,7 +21,7 @@ type UploadsPanelProps = {
   sort: UploadSort;
   uploading: boolean;
   gridKey?: number;
-  inputRef: RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLInputElement>;
   onSearchChange: (value: string) => void;
   onSortChange: (value: UploadSort) => void;
   onRefresh: () => void;
