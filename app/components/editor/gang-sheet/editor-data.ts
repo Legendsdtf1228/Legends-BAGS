@@ -114,4 +114,6 @@ export const HELP_SHORTCUTS = [
   { keys: "Ctrl+Z / Ctrl+Y", action: "Undo / Redo" },
   { keys: "Escape", action: "Close dialogs / deselect" },
   { keys: "Space + drag", action: "Pan canvas" },
+  { keys: "[", action: "Toggle tools panel" },
+  { keys: "]", action: "Toggle properties panel" },
 ] as const;
