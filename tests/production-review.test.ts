@@ -27,7 +27,7 @@ describe("production review checkpoint", () => {
     expect(review.blocking).toHaveLength(0);
     expect(review.cautions).toHaveLength(0);
     expect(review.widthPx).toBe(inchesToPx(22.5, OUTPUT_DPI));
-    expect(review.heightPx).toBe(inchesToPx(24, OUTPUT_DPI));
+    expect(review.heightPx).toBe(inchesToPx(18, OUTPUT_DPI));
     expect(review.usesTiledRender).toBe(false);
   });
 

@@ -26,6 +26,7 @@ export const PRODUCTION_REVIEW_CSS = `
   border-radius:10px;
   box-shadow:0 24px 60px #00000059;
   overflow:hidden;
+  min-height:0;
 }
 .lgs-editor.gs-editor-v2 .gs-save-dialog-head{
   display:flex;align-items:flex-start;gap:12px;
@@ -75,7 +76,8 @@ export const PRODUCTION_REVIEW_CSS = `
 
 .lgs-editor.gs-editor-v2 .gs-save-dialog-body{
   display:grid;grid-template-columns:minmax(168px,200px) minmax(0,1fr);gap:14px;
-  padding:14px 16px;overflow:auto;min-height:0;flex:1;
+  padding:14px 16px;overflow:auto;min-height:0;flex:1 1 0%;
+  -webkit-overflow-scrolling:touch;
 }
 .lgs-editor.gs-editor-v2 .pr-art{
   background:var(--pr-panel);border:1px solid var(--pr-line);border-radius:8px;padding:10px;min-width:0;
@@ -151,7 +153,7 @@ export const PRODUCTION_REVIEW_CSS = `
 .lgs-editor.gs-editor-v2 .gs-save-dialog .gs-ghost-btn{min-height:44px}
 
 @media(max-width:640px){
-  .lgs-editor.gs-editor-v2 .gs-save-dialog-backdrop{padding:0;align-items:stretch}
+  .lgs-editor.gs-editor-v2 .gs-save-dialog-backdrop{padding:0;align-items:stretch;height:100dvh;overflow:hidden}
   .lgs-editor.gs-editor-v2 .gs-save-dialog{
     width:100%;max-width:none;max-height:100dvh;height:100dvh;border-radius:0;border:0;
   }
@@ -164,7 +166,18 @@ export const PRODUCTION_REVIEW_CSS = `
   .lgs-editor.gs-editor-v2 .gs-save-dialog-head h2{font-size:16px}
   .lgs-editor.gs-editor-v2 .pr-status{order:3;width:100%;justify-content:center}
   .lgs-editor.gs-editor-v2 .pr-scope{grid-template-columns:1fr}
-  .lgs-editor.gs-editor-v2 .pr-facts,.lgs-editor.gs-editor-v2 .gs-save-summary{grid-template-columns:1fr 1fr}
+  .lgs-editor.gs-editor-v2 .gs-save-dialog-body{
+    display:flex;flex-direction:column;gap:10px;padding:10px 12px;
+  }
+  .lgs-editor.gs-editor-v2 .gs-save-fields{display:flex;flex-direction:column;gap:8px;order:1}
+  .lgs-editor.gs-editor-v2 .pr-art{order:2}
+  .lgs-editor.gs-editor-v2 .pr-issues{order:-1}
+  .lgs-editor.gs-editor-v2 .gs-save-field .pr-field-hint{display:none}
+  .lgs-editor.gs-editor-v2 .pr-thumbs img,
+  .lgs-editor.gs-editor-v2 .pr-thumbs .pr-thumb-empty,
+  .lgs-editor.gs-editor-v2 .pr-thumbs .pr-thumb-text{max-height:52px}
+  .lgs-editor.gs-editor-v2 .pr-facts,.lgs-editor.gs-editor-v2 .gs-save-summary{grid-template-columns:1fr 1fr;gap:6px}
+  .lgs-editor.gs-editor-v2 .pr-facts>div,.lgs-editor.gs-editor-v2 .gs-save-summary>div{padding:6px 8px}
   .lgs-editor.gs-editor-v2 .gs-save-dialog-foot{
     display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 12px 12px;
     padding-bottom:max(12px,env(safe-area-inset-bottom));
