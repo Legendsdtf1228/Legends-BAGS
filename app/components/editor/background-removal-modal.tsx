@@ -22,26 +22,26 @@ function assetPreviewUrl(assetId: string) {
 }
 
 export const BACKGROUND_REMOVAL_MODAL_CSS = `
-.bg-modal{position:fixed;inset:0;background:#0d111780;display:grid;place-items:center;z-index:40;padding:16px}
-.bg-modal-card{background:#fff;border-radius:12px;padding:22px;max-width:760px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 16px 40px #0004;display:grid;gap:14px}
-.bg-modal-card h2{margin:0;font-size:18px}
-.bg-modal-sub{margin:0;font-size:13px;color:#667085}
-.bg-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.bg-label{display:block;font-size:11px;font-weight:700;color:#667085;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
-.bg-preview{display:grid;place-items:center;min-height:160px;border:1px solid var(--line,#dfe3e8);border-radius:8px;padding:10px}
+.bg-modal{position:fixed;inset:0;background:#0d1117cc;display:grid;place-items:center;z-index:40;padding:16px}
+.bg-modal-card{background:#171c24;color:#e8eaed;border-radius:10px;padding:0;max-width:760px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 16px 40px #0008;display:grid;border:1px solid #2c3542}
+.bg-modal-card h2{margin:0;padding:14px 18px 0;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:#ffd45e;box-shadow:inset 0 2px 0 #ffd45e}
+.bg-modal-sub{margin:6px 18px 14px;font-size:12px;color:#8b95a5}
+.bg-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 18px}
+.bg-label{display:block;font-size:10px;font-weight:700;color:#8b95a5;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em}
+.bg-preview{display:grid;place-items:center;min-height:160px;border:1px solid #2c3542;border-radius:8px;padding:10px;background:#0d1117}
 .bg-preview img{max-width:100%;max-height:180px;object-fit:contain}
-.bg-loading{font-size:12px;color:#667085}
-.bg-prompt{display:grid;gap:6px;font-size:12px;color:#667085}
-.bg-prompt input{padding:10px 12px;border:1px solid #ccd2da;border-radius:8px;font-size:14px;color:#111}
-.bg-sliders{display:grid;gap:10px}
-.bg-sliders label{display:grid;gap:4px;font-size:12px;color:#667085}
-.bg-sliders input[type=range]{width:100%}
-.bg-sliders small{font-size:11px;color:#98a2b3}
-.bg-error{margin:0;color:#b42318;font-size:12px}
-.bg-modal-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
-.bg-modal-actions .btn{border:0;border-radius:7px;padding:10px 14px;font-weight:700;cursor:pointer;font:inherit}
-.bg-modal-actions .btn.primary{background:var(--accent,#f97316);color:#fff}
-.bg-modal-actions .btn.ghost{background:#fff;border:1px solid #ccd2da;color:#111}
+.bg-loading{font-size:12px;color:#8b95a5}
+.bg-prompt{display:grid;gap:6px;font-size:12px;color:#8b95a5;padding:14px 18px 0}
+.bg-prompt input{padding:10px 12px;border:1px solid #3d4a5c;border-radius:8px;font-size:14px;color:#e8eaed;background:#0d1117}
+.bg-sliders{display:grid;gap:10px;padding:12px 18px}
+.bg-sliders label{display:grid;gap:4px;font-size:12px;color:#8b95a5}
+.bg-sliders input[type=range]{width:100%;accent-color:#e89119}
+.bg-sliders small{font-size:11px;color:#8b95a5}
+.bg-error{margin:0 18px;color:#f0a8a8;font-size:12px}
+.bg-modal-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;padding:14px 18px 18px;border-top:1px solid #2c3542;background:#12171e}
+.bg-modal-actions .btn{border:0;border-radius:8px;padding:12px 16px;font-weight:800;cursor:pointer;font:inherit}
+.bg-modal-actions .btn.primary{background:#ffd45e;color:#111;min-width:120px;font-size:14px}
+.bg-modal-actions .btn.ghost{background:transparent;border:1px solid #3d4a5c;color:#e8eaed}
 .bg-modal-actions .btn:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:720px){.bg-compare{grid-template-columns:1fr}}
 `;
@@ -228,7 +228,7 @@ export function BackgroundRemovalModal({
               onClose();
             }}
           >
-            Use this version
+            Apply
           </button>
         </div>
       </div>
