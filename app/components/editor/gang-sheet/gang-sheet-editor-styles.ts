@@ -1,4 +1,5 @@
 /** Gang Sheet Editor styles (extracted from route). */
+import { CANVAS_WORKSPACE_CSS } from "./canvas-workspace-css";
 import { GS_EDITOR_TOKENS } from "./editor-tokens";
 
 export const GANG_SHEET_EDITOR_CSS = `
@@ -393,4 +394,4 @@ aside{background:#fff;overflow:auto}
 .lgs-editor.gs-editor-v2 .dpi-badge.tier-low{color:#b45309}
 .lgs-editor.gs-editor-v2 .dpi-badge.tier-poor,.lgs-editor.gs-editor-v2 .dpi-badge.tier-unknown{color:#991b1b}
 @media(max-width:900px){.lgs-editor.gs-editor-v2 .gs-command-bar{grid-template-columns:1fr auto}.lgs-editor.gs-editor-v2 .gs-command-center{display:none}.lgs-editor.gs-editor-v2 .gs-hide-mobile{display:none}.lgs-editor.gs-editor-v2 .gs-save-dialog-body{grid-template-columns:1fr}.lgs-editor.gs-editor-v2 .workspace{height:calc(100vh - var(--gs-bar-h) - 56px)}}
-`;
+` + CANVAS_WORKSPACE_CSS;
