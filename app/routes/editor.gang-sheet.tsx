@@ -2853,6 +2853,13 @@ export default function GangSheetEditor() {
         lowDpiCount={lowDpiCount}
         qualitySummary={qualitySummary}
         previewUrl={savePreviewUrl}
+        artwork={items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          previewUrl: item.previewUrl,
+          assetId: item.assetId,
+          kind: item.kind,
+        }))}
         saving={saving}
         error={saveDialogError}
         requestId={saveDialogRequestId}

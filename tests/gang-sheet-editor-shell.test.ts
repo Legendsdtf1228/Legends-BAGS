@@ -8,6 +8,7 @@ describe("gang sheet editor shell", () => {
     expect(GANG_SHEET_EDITOR_CSS).toContain(".gs-command-bar");
     expect(GANG_SHEET_EDITOR_CSS).toContain(".gs-save-dialog");
     expect(GANG_SHEET_EDITOR_CSS).toContain("gs-editor-v2");
+    expect(GANG_SHEET_EDITOR_CSS).toContain(".pr-scope");
   });
 
   it("defines layout tokens for bar, rail, and panel", () => {
