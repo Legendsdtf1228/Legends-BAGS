@@ -94,8 +94,10 @@ import { AutoFillScreen, type AutoFillSource } from "../components/editor/workfl
 import { NamesNumbersScreen } from "../components/editor/workflow/names-numbers-screen";
 import { PRODUCTION_WORKFLOW_CSS } from "../components/editor/workflow/workflow-styles";
 import {
+  commitAutoFill,
   defaultRosterPlate,
   findDuplicateRosterNumbers,
+  occupiedForAutoFill,
   parseRosterCsv,
   planFillSheetCopies,
   planRosterPlacements,
@@ -1206,6 +1208,7 @@ export default function GangSheetEditor() {
       sheetWidth,
       sheetHeight,
       gap,
+      occupied: occupiedForAutoFill(items, selected.id),
     }).capacity;
     setFillSource(source);
     setFillWidthIn(source.widthIn);
@@ -1221,36 +1224,37 @@ export default function GangSheetEditor() {
 
   function applyFillToCanvas() {
     if (!fillSource) return;
-    const plan = planFillSheetCopies({
+    let z = nextZIndex(items);
+    const result = commitAutoFill({
+      items,
+      sourceId: fillSource.id,
       widthIn: fillWidthIn,
       heightIn: fillHeightIn,
       sheetWidth,
       sheetHeight,
       gap,
       requested: fillQuantity,
+      placeCopy: (sourceItem, copy) => ({
+        ...sourceItem,
+        id: crypto.randomUUID(),
+        xIn: copy.xIn,
+        yIn: copy.yIn,
+        widthIn: fillWidthIn,
+        heightIn: fillHeightIn,
+        zIndex: z++,
+      }),
     });
-    if (!plan.copies.length) {
-      setFillError("Nothing fits on this sheet.");
+    if (!result.ok) {
+      setFillError(
+        result.reason === "no-source"
+          ? "Select artwork on the sheet first, then Auto Fill."
+          : "Nothing fits on this sheet.",
+      );
       return;
     }
-    const sourceItem = items.find((i) => i.id === fillSource.id);
-    if (!sourceItem) {
-      setFillError("Select artwork on the sheet first, then Auto Fill.");
-      return;
-    }
-    let z = nextZIndex(items);
-    const copies: CanvasItem[] = plan.copies.map((c) => ({
-      ...sourceItem,
-      id: crypto.randomUUID(),
-      xIn: c.xIn,
-      yIn: c.yIn,
-      widthIn: fillWidthIn,
-      heightIn: fillHeightIn,
-      zIndex: z++,
-    }));
-    pushHistory([...items.filter((i) => i.id !== fillSource.id), ...copies]);
-    selectItem(copies[0]?.id ?? null);
-    setMessage(`Filled sheet with ${copies.length} of ${fillQuantity} copies.`);
+    pushHistory(result.items);
+    selectItem(result.copies[0]?.id ?? null);
+    setMessage(`Filled sheet with ${result.copies.length} of ${fillQuantity} copies.`);
     setScreen("canvas");
   }
 
@@ -2567,6 +2571,16 @@ export default function GangSheetEditor() {
 
   if (screen === "auto_fill" && fillSource) {
     const aspect = fillSource.widthPx / Math.max(0.01, fillSource.heightPx);
+    const fillOccupied = occupiedForAutoFill(items, fillSource.id).map((item) => ({
+      id: item.id,
+      xIn: item.xIn,
+      yIn: item.yIn,
+      widthIn: item.widthIn,
+      heightIn: item.heightIn,
+      previewUrl: item.previewUrl,
+      label: item.name,
+      rotationDeg: item.rotationDeg,
+    }));
     return (
       <AutoFillScreen
         appearanceStyle={appearanceStyle}
@@ -2576,6 +2590,7 @@ export default function GangSheetEditor() {
         sheetWidth={sheetWidth}
         sheetHeight={sheetHeight}
         gap={gap}
+        occupied={fillOccupied}
         widthIn={fillWidthIn}
         heightIn={fillHeightIn}
         quantity={fillQuantity}
@@ -2610,6 +2625,7 @@ export default function GangSheetEditor() {
             sheetHeight,
             gap,
             requested: fillQuantity,
+            occupied: fillOccupied,
           });
           if (!plan.placed) {
             setFillError("Nothing fits on this sheet.");

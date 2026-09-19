@@ -13,6 +13,7 @@ import {
   productionAlert,
   summarizeRequestedVsPlaced,
   WORKFLOW_SIZE_PRESETS,
+  type FillOccupied,
   type WorkflowPhase,
 } from "./workflow-helpers";
 
@@ -46,11 +47,20 @@ export function AutoFillScreen(props: {
   onLockAspect: (value: boolean) => void;
   onPreset: (inches: number) => void;
   error: string;
+  occupied?: Array<
+    FillOccupied & {
+      id: string;
+      previewUrl?: string;
+      label?: string;
+      rotationDeg?: number;
+    }
+  >;
   onBack: () => void;
   onApplyReview: () => void;
   onBackAdjust: () => void;
   onBuild: () => void;
 }) {
+  const occupied = props.occupied ?? [];
   const plan = planFillSheetCopies({
     widthIn: props.widthIn,
     heightIn: props.heightIn,
@@ -58,6 +68,7 @@ export function AutoFillScreen(props: {
     sheetHeight: props.sheetHeight,
     gap: props.gap,
     requested: props.quantity,
+    occupied,
   });
   const tally = summarizeRequestedVsPlaced(props.quantity, plan.placed, "copies");
   const setup = props.phase === "setup";
@@ -125,8 +136,8 @@ export function AutoFillScreen(props: {
             <img src={props.source.previewUrl} alt="" />
           </div>
           <p className="prod-wf-fine" style={{ color: "#5b6573", margin: "8px 0 12px" }}>
-            Repeats the selected artwork left-to-right, top-to-bottom. Quantity is how many you want;
-            Placed is how many fit.
+            Repeats the selected artwork left-to-right, top-to-bottom. Existing pieces stay put;
+            copies skip those spots. Quantity is how many you want; Placed is how many fit.
           </p>
           <WorkflowDimQtyFields
             widthIn={props.widthIn}
@@ -159,22 +170,34 @@ export function AutoFillScreen(props: {
             sheetWidth={props.sheetWidth}
             sheetHeight={props.sheetHeight}
             emptyTitle="Nothing to preview"
-            emptyBody="Reduce width × height so at least one copy fits."
-            pieces={plan.copies.map((c, idx) => ({
-              id: `fill-${idx}`,
-              xIn: c.xIn,
-              yIn: c.yIn,
-              widthIn: props.widthIn,
-              heightIn: props.heightIn,
-              previewUrl: props.source.previewUrl,
-              label: props.source.name,
-            }))}
+            emptyBody="Reduce width × height so at least one copy fits around existing artwork."
+            pieces={[
+              ...occupied.map((item) => ({
+                id: item.id,
+                xIn: item.xIn,
+                yIn: item.yIn,
+                widthIn: item.widthIn,
+                heightIn: item.heightIn,
+                previewUrl: item.previewUrl,
+                label: item.label,
+                rotationDeg: item.rotationDeg,
+              })),
+              ...plan.copies.map((c, idx) => ({
+                id: `fill-${idx}`,
+                xIn: c.xIn,
+                yIn: c.yIn,
+                widthIn: props.widthIn,
+                heightIn: props.heightIn,
+                previewUrl: props.source.previewUrl,
+                label: props.source.name,
+              })),
+            ]}
           />
           {alert ? <WorkflowAlert tone="error" title={alert.title} body={alert.body} /> : null}
           <p className="prod-wf-fine">
             {setup
-              ? "Apply reviews requested vs placed. Build replaces the selected piece with these copies."
-              : "Back changes quantity or size. Build places only the copies that fit."}
+              ? "Apply reviews requested vs placed. Build replaces the selected piece and leaves other artwork in place."
+              : "Back changes quantity or size. Build places only the copies that fit around existing artwork."}
           </p>
         </section>
       </div>
