@@ -7,7 +7,7 @@ import { Form, Link, useActionData, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
-import { signDownload } from "../domain/security/signed-urls";
+import { signedFileDownloadPath } from "../lib/order-download.server";
 import {
   enqueueRenderJob,
   getDesignState,
@@ -26,16 +26,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   });
 
   const latest = jobs[0];
-  let downloadPath: string | null = null;
-  let previewPath: string | null = null;
-  if (latest?.outputKey) {
-    const { token } = signDownload({ shop, objectKey: latest.outputKey });
-    downloadPath = `/api/files/download?token=${encodeURIComponent(token)}`;
-  }
-  if (latest?.previewKey) {
-    const { token } = signDownload({ shop, objectKey: latest.previewKey });
-    previewPath = `/api/files/download?token=${encodeURIComponent(token)}`;
-  }
+  const downloadPath = latest?.outputKey
+    ? signedFileDownloadPath(shop, latest.outputKey)
+    : null;
+  const previewPath = latest?.previewKey
+    ? signedFileDownloadPath(shop, latest.previewKey)
+    : null;
 
   const audits = await prisma.auditEvent.findMany({
     where: {
