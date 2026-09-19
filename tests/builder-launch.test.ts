@@ -282,6 +282,7 @@ describe("builder route loader", () => {
   it("redirects gang sheet products to the gang sheet editor", async () => {
     vi.stubEnv("DEV_SHOP", DEV_SHOP);
     vi.stubEnv("SHOPIFY_APP_URL", "https://upload-by-size-production.up.railway.app");
+    delete process.env.USE_STUDIO_BUILDER;
 
     const gangProductGid = "gid://shopify/Product/900010";
     const gangVariantGid = "gid://shopify/ProductVariant/900011";
@@ -321,5 +322,89 @@ describe("builder route loader", () => {
       await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: gangProductGid } });
       vi.unstubAllEnvs();
     }
+  });
+
+  it("routes gang_sheet /builder to /editor/studio when USE_STUDIO_BUILDER=1", async () => {
+    vi.stubEnv("DEV_SHOP", DEV_SHOP);
+    vi.stubEnv("SHOPIFY_APP_URL", "https://upload-by-size-production.up.railway.app");
+    process.env.USE_STUDIO_BUILDER = "1";
+    const gangProductGid = "gid://shopify/Product/900020";
+    await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: gangProductGid } });
+    await prisma.productBinding.create({
+      data: {
+        shop: DEV_SHOP,
+        productGid: gangProductGid,
+        variantGid: "gid://shopify/ProductVariant/900021",
+        builderType: "gang_sheet",
+        sheetWidthIn: 22.5,
+        sheetHeightIn: 24,
+      },
+    });
+    try {
+      const { loader } = await import("../app/routes/builder");
+      await loader({
+        request: new Request(
+          `https://upload-by-size-production.up.railway.app/builder?shop=${DEV_SHOP}&product=900020&variant=900021&quantity=1&shop_mode=1`,
+        ),
+        params: {},
+        context: {},
+      } as never);
+      expect.unreachable("expected redirect");
+    } catch (error) {
+      expect(error).toMatchObject({
+        status: 302,
+        headers: expect.objectContaining({
+          get: expect.any(Function),
+        }),
+      });
+      const response = error as Response;
+      const location = response.headers.get("Location") || "";
+      expect(location).toContain("/editor/studio");
+      expect(location).not.toContain("/editor/gang-sheet");
+      expect(location).toContain("variantId=900021");
+    } finally {
+      delete process.env.USE_STUDIO_BUILDER;
+      await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: gangProductGid } });
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("buildLaunchEditorUrl studio flag", () => {
+  const original = process.env.USE_STUDIO_BUILDER;
+
+  afterEach(() => {
+    process.env.USE_STUDIO_BUILDER = original;
+  });
+
+  it("keeps legacy gang-sheet path when studio flag is off", async () => {
+    delete process.env.USE_STUDIO_BUILDER;
+    const { buildLaunchEditorUrl } = await import("../app/lib/builder-launch-handler.server");
+    const url = buildLaunchEditorUrl("https://example.com", {
+      shop: DEV_SHOP,
+      productId: "1",
+      productGid: "gid://shopify/Product/1",
+      quantity: 1,
+      builderType: "gang_sheet",
+    });
+    expect(url).toContain("/editor/gang-sheet");
+  });
+
+  it("uses /editor/studio for gang_sheet when USE_STUDIO_BUILDER=1", async () => {
+    process.env.USE_STUDIO_BUILDER = "1";
+    const { buildLaunchEditorUrl } = await import("../app/lib/builder-launch-handler.server");
+    const url = buildLaunchEditorUrl("https://example.com", {
+      shop: DEV_SHOP,
+      productId: "1",
+      productGid: "gid://shopify/Product/1",
+      variantId: "2",
+      variantGid: "gid://shopify/ProductVariant/2",
+      quantity: 1,
+      shopMode: "1",
+      builderType: "gang_sheet",
+    }, { designId: "des_1", designVersion: "3" });
+    expect(url).toContain("/editor/studio");
+    expect(url).toContain("designId=des_1");
+    expect(url).toContain("designVersion=3");
   });
 });
