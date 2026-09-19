@@ -1,17 +1,21 @@
 /** Pure helpers for Auto Build, Auto Fill, Names & Numbers, and Images by Size UI. */
 
-export const FILL_ORIGIN_IN = 0.1;
-export const FILL_MAX_COPIES = 250;
+export {
+  FILL_MAX_COPIES,
+  FILL_ORIGIN_IN,
+  commitAutoFill,
+  occupiedForAutoFill,
+  planFillSheetCopies,
+  type FillCopy,
+  type FillOccupied,
+  type FillPlan,
+} from "./auto-fill-placement";
+
 export const ROSTER_ORIGIN_IN = 0.2;
 export const SIZE_PRESET_INCHES = [2, 3, 4, 5, 6, 8, 10, 12] as const;
 export const WORKFLOW_SIZE_PRESETS = SIZE_PRESET_INCHES;
 
 export type WorkflowPhase = "setup" | "review";
-
-export type FillCopy = {
-  xIn: number;
-  yIn: number;
-};
 
 export type RequestedVsPlaced = {
   requested: number;
@@ -40,43 +44,6 @@ export type RosterPlacement = {
   heightIn: number;
   onSheet: boolean;
 };
-
-/**
- * Repeat-to-fill scan used by the studio Fill sheet action.
- * Geometry matches the existing nested left-to-right, top-to-bottom loop.
- * `requested` only caps how many of those cells are used — it does not change spacing.
- */
-export function planFillSheetCopies(input: {
-  widthIn: number;
-  heightIn: number;
-  sheetWidth: number;
-  sheetHeight: number;
-  gap: number;
-  requested?: number;
-}): {
-  copies: FillCopy[];
-  capacity: number;
-  placed: number;
-  remaining: number;
-} {
-  const copies: FillCopy[] = [];
-  for (let y = FILL_ORIGIN_IN; y + input.heightIn <= input.sheetHeight; y += input.heightIn + input.gap) {
-    for (let x = FILL_ORIGIN_IN; x + input.widthIn <= input.sheetWidth; x += input.widthIn + input.gap) {
-      copies.push({ xIn: x, yIn: y });
-      if (copies.length >= FILL_MAX_COPIES) break;
-    }
-    if (copies.length >= FILL_MAX_COPIES) break;
-  }
-  const capacity = copies.length;
-  const requested = Math.max(0, Math.round(input.requested ?? capacity));
-  const limited = copies.slice(0, Math.min(requested, FILL_MAX_COPIES));
-  return {
-    copies: limited,
-    capacity,
-    placed: limited.length,
-    remaining: Math.max(0, requested - limited.length),
-  };
-}
 
 export function parseRosterCsv(csv: string): RosterRow[] {
   return csv
