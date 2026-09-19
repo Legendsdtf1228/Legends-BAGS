@@ -1,4 +1,84 @@
 (function () {
+  function isCartAddUrl(url) {
+    if (!url) return false;
+    return String(url).indexOf("/cart/add") !== -1;
+  }
+
+  function mergeCartPropertiesIntoAddBody(body, properties) {
+    if (!body || !properties) return body;
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      Object.keys(properties).forEach(function (key) {
+        body.set("properties[" + key + "]", properties[key]);
+      });
+      return body;
+    }
+    if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+      Object.keys(properties).forEach(function (key) {
+        body.set("properties[" + key + "]", properties[key]);
+      });
+      return body;
+    }
+    if (typeof body === "string") {
+      try {
+        var json = JSON.parse(body);
+        if (json && typeof json === "object") {
+          json.properties = Object.assign({}, json.properties || {}, properties);
+          return JSON.stringify(json);
+        }
+      } catch (e) {
+        var params = new URLSearchParams(body);
+        Object.keys(properties).forEach(function (key) {
+          params.set("properties[" + key + "]", properties[key]);
+        });
+        return params.toString();
+      }
+    }
+    if (typeof body === "object") {
+      body.properties = Object.assign({}, body.properties || {}, properties);
+      return body;
+    }
+    return body;
+  }
+
+  function readRootCartProperties(rootEl) {
+    if (!rootEl || !rootEl.dataset.lgsDesignId) return null;
+    if (rootEl.dataset.lgsCartProperties) {
+      try {
+        return JSON.parse(rootEl.dataset.lgsCartProperties);
+      } catch (e) {}
+    }
+    return {
+      _lgs_design_id: rootEl.dataset.lgsDesignId,
+      _lgs_design_version: rootEl.dataset.lgsDesignVersion || "1",
+    };
+  }
+
+  function propertiesForCartAdd() {
+    var roots = window.__lgsAttachedRoots || [];
+    for (var i = 0; i < roots.length; i++) {
+      var props = readRootCartProperties(roots[i]);
+      if (props) return props;
+    }
+    return null;
+  }
+
+  function installCartAddFetchHook() {
+    if (window.__lgsCartAddHooked) return;
+    window.__lgsCartAddHooked = true;
+    if (typeof window.fetch !== "function") return;
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      var url = typeof input === "string" ? input : input && input.url ? input.url : "";
+      var props = isCartAddUrl(url) ? propertiesForCartAdd() : null;
+      if (props && init && init.body != null) {
+        var nextInit = Object.assign({}, init);
+        nextInit.body = mergeCartPropertiesIntoAddBody(init.body, props);
+        return origFetch.call(this, input, nextInit);
+      }
+      return origFetch.apply(this, arguments);
+    };
+  }
+
   function boot(root) {
     if (!root || root.dataset.lgsBooted) return;
     root.dataset.lgsBooted = "1";
@@ -253,6 +333,11 @@
       root.dataset.lgsDesignId = designId;
       root.dataset.lgsDesignVersion = String(version || 1);
       if (designName) root.dataset.lgsDesignName = designName;
+      if (cartProperties && typeof cartProperties === "object") {
+        try {
+          root.dataset.lgsCartProperties = JSON.stringify(cartProperties);
+        } catch (e) {}
+      }
       setStatus("Design attached — add to cart to continue.", "ok");
       cartForms().forEach(function (form) {
         if (cartProperties && typeof cartProperties === "object") {
@@ -271,6 +356,7 @@
       delete root.dataset.lgsDesignId;
       delete root.dataset.lgsDesignVersion;
       delete root.dataset.lgsDesignName;
+      delete root.dataset.lgsCartProperties;
       cartForms().forEach(function (form) {
         [
           "_lgs_design_id",
@@ -373,6 +459,17 @@
     function hydrateDesignFromUrl() {
       var params = new URLSearchParams(window.location.search);
       var fromUrl = params.get("lgs_design_id");
+      var shouldOpen = params.get("lgs_open") === "1";
+      function afterAttach() {
+        if (shouldOpen && hasDesign()) {
+          openModal({
+            designId: root.dataset.lgsDesignId,
+            designVersion: root.dataset.lgsDesignVersion || "1",
+          });
+          return;
+        }
+        syncUi();
+      }
       if (!fromUrl) {
         syncUi();
         return;
@@ -403,14 +500,17 @@
               } else {
                 attachDesign(fromUrl, version);
               }
+              afterAttach();
             })
             .catch(function () {
               attachDesign(fromUrl, version);
+              afterAttach();
             });
           return;
         }
       }
       attachDesign(fromUrl, version);
+      afterAttach();
     }
 
     function productNumericId() {
@@ -663,6 +763,11 @@
         handleVariantChange(variantSelect.value, true);
       });
 
+    if (!window.__lgsAttachedRoots) window.__lgsAttachedRoots = [];
+    if (window.__lgsAttachedRoots.indexOf(root) === -1) {
+      window.__lgsAttachedRoots.push(root);
+    }
+    installCartAddFetchHook();
     loadStorefrontConfig();
     hydrateDesignFromUrl();
   }

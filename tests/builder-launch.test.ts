@@ -124,6 +124,26 @@ describe("builder-launch-context", () => {
     expect(url).toContain("quantity=3");
   });
 
+  it("passes cart-edit designId through to the editor URL", () => {
+    const url = buildEditorLaunchUrl("https://upload-by-size-production.up.railway.app", {
+      shop: DEV_SHOP,
+      productId: "123",
+      productGid: "gid://shopify/Product/123",
+      variantId: "456",
+      variantGid: "gid://shopify/ProductVariant/456",
+      quantity: 1,
+      shopMode: "1",
+      builderType: "gang_sheet",
+    }, {
+      designId: "des_reopen",
+      designVersion: "4",
+      lgs_customer_key: "guest:cart-edit",
+    });
+    expect(url).toContain("designId=des_reopen");
+    expect(url).toContain("designVersion=4");
+    expect(url).toContain("lgs_customer_key=guest%3Acart-edit");
+  });
+
   it("converts numeric IDs to GIDs", () => {
     expect(toProductGid("10088258109734")).toBe("gid://shopify/Product/10088258109734");
     expect(toVariantGid("987654321")).toBe("gid://shopify/ProductVariant/987654321");
@@ -237,6 +257,7 @@ describe("app-url normalization", () => {
 
 describe("builder cart metadata compatibility", () => {
   it("keeps paid-order pipeline line properties", () => {
+    process.env.FILE_SIGNING_SECRET = "test-signing-secret-32chars!!";
     const props = buildCartLineProperties({
       shop: DEV_SHOP,
       designId: "design_123",

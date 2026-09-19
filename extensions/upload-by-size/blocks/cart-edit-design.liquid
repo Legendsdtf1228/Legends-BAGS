@@ -34,11 +34,21 @@
           {% assign lgs_version = item.properties['_lgs_design_version'] | default: '1' %}
           {% assign lgs_name = item.properties['Design'] | default: item.product.title %}
           {% assign lgs_token = item.properties['_lgs_design_token'] %}
+          {% comment %}
+            item.url already includes ?variant= — append with & so the launcher
+            can read lgs_design_id and reopen the saved design.
+          {% endcomment %}
+          {% assign lgs_sep = '?' %}
+          {% if item.url contains '?' %}
+            {% assign lgs_sep = '&' %}
+          {% endif %}
           {% assign lgs_edit_url = item.url
-            | append: '?lgs_design_id='
+            | append: lgs_sep
+            | append: 'lgs_design_id='
             | append: lgs_design_id
             | append: '&lgs_design_version='
-            | append: lgs_version %}
+            | append: lgs_version
+            | append: '&lgs_open=1' %}
           {% if lgs_token != blank %}
             {% assign lgs_edit_url = lgs_edit_url | append: '&lgs_token=' | append: lgs_token %}
           {% endif %}

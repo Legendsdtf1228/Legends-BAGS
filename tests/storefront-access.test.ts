@@ -9,6 +9,7 @@ import {
   assertCustomerApiContext,
   assertTestAccess,
 } from "../app/domain/security/test-access";
+import { createStorefrontSessionResponse } from "../app/lib/editor-auth.server";
 
 describe("storefront session", () => {
   const shop = "legends-bags-in2lwdll.myshopify.com";
@@ -64,6 +65,27 @@ describe("assertCustomerApiAccess", () => {
     });
     expect(assertCustomerApiAccess(req)).toBe(shop);
     expect(assertCustomerApiContext(req).customerKey).toBe("guest:test-session");
+  });
+
+  it("rejects expired storefront sessions", () => {
+    process.env.FILE_SIGNING_SECRET = secret;
+    const { token } = signStorefrontSession(shop, { secret, ttlSeconds: -10 });
+    expect(() => verifyStorefrontSession(token, secret)).toThrow(/expired/i);
+  });
+
+  it("issues app-proxy session JSON with customerKey", async () => {
+    process.env.FILE_SIGNING_SECRET = secret;
+    const response = createStorefrontSessionResponse(shop, "guest:proxy-session");
+    const json = (await response.json()) as {
+      shop: string;
+      sessionToken: string;
+      customerKey: string | null;
+    };
+    expect(json.shop).toBe(shop);
+    expect(json.customerKey).toBe("guest:proxy-session");
+    expect(verifyStorefrontSession(json.sessionToken, secret).customerKey).toBe(
+      "guest:proxy-session",
+    );
   });
 
   it("falls back to dev test token", () => {
