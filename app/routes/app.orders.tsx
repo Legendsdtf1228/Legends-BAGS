@@ -6,7 +6,31 @@ import prisma from "../db.server";
 import { enqueueRenderJob, processNextRenderJob } from "../services/design-service";
 import { importRecentShopifyOrders } from "../services/shopify-order-sync.server";
 import { shopifyOrderAdminUrl } from "../lib/shopify-admin-links";
+import {
+  filterOrderRowsByFulfillment,
+  orderRowDownloadPath,
+  parseFulfillmentFilter,
+} from "../lib/order-download.server";
 import { BagsPageHeader, BagsCard, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
+
+function ordersListHref(params: {
+  page?: number;
+  q: string;
+  builder: string;
+  payment: string;
+  render: string;
+  fulfillment: string;
+}) {
+  const usp = new URLSearchParams();
+  if (params.page && params.page > 1) usp.set("page", String(params.page));
+  if (params.q) usp.set("q", params.q);
+  if (params.builder) usp.set("builder", params.builder);
+  if (params.payment) usp.set("payment", params.payment);
+  if (params.render) usp.set("render", params.render);
+  if (params.fulfillment) usp.set("fulfillment", params.fulfillment);
+  const qs = usp.toString();
+  return qs ? `/app/orders?${qs}` : "/app/orders";
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -15,6 +39,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const builder = url.searchParams.get("builder") ?? "";
   const payment = url.searchParams.get("payment") ?? "";
   const render = url.searchParams.get("render") ?? "";
+  const fulfillment = parseFulfillmentFilter(url.searchParams.get("fulfillment"));
   const page = Math.max(1, Number(url.searchParams.get("page") || "1") || 1);
   const pageSize = 25;
 
@@ -80,6 +105,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       renderStatus: job?.status ?? null,
       renderError: job?.lastError ?? null,
       outputKey: job?.outputKey ?? null,
+      downloadPath: orderRowDownloadPath(session.shop, job?.outputKey),
       jobId: job?.id ?? null,
       paidAt: l.paidAt?.toISOString() ?? null,
       createdAt: l.createdAt.toISOString(),
@@ -89,6 +115,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (render) {
     rows = rows.filter((r) => (r.renderStatus ?? "none") === render);
   }
+  rows = filterOrderRowsByFulfillment(rows, fulfillment);
 
   const paged = rows.slice((page - 1) * pageSize, page * pageSize);
   const store = session.shop.replace(".myshopify.com", "");
@@ -99,6 +126,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     builder,
     payment,
     render,
+    fulfillment,
     page,
     pageCount: Math.max(1, Math.ceil(rows.length / pageSize)),
     total: rows.length,
@@ -157,6 +185,7 @@ export default function OrdersPage() {
     builder,
     payment,
     render,
+    fulfillment,
     page,
     pageCount,
     total,
@@ -164,6 +193,8 @@ export default function OrdersPage() {
     lastOrderSyncAt,
     lastOrderSyncError,
   } = useLoaderData<typeof loader>();
+  const listHref = (pageNum?: number) =>
+    ordersListHref({ page: pageNum, q, builder, payment, render, fulfillment });
 
   return (
     <>
@@ -194,10 +225,16 @@ export default function OrdersPage() {
               <option value="queued">Queued</option>
               <option value="failed">Failed</option>
             </select>
+            <select name="fulfillment" defaultValue={fulfillment}>
+              <option value="">All fulfillment</option>
+              <option value="fulfilled">Fulfilled</option>
+              <option value="unfulfilled">Unfulfilled</option>
+              <option value="unknown">Unknown</option>
+            </select>
             <button type="submit" className="bags-admin-btn primary">
               Filter
             </button>
-            {q || builder || payment || render ? (
+            {q || builder || payment || render || fulfillment ? (
               <Link to="/app/orders" className="bags-admin-btn ghost">
                 Clear
               </Link>
@@ -236,6 +273,7 @@ export default function OrdersPage() {
                     <th>Sheet</th>
                     <th>Qty</th>
                     <th>Payment</th>
+                    <th>Fulfillment</th>
                     <th>Render</th>
                     <th>Actions</th>
                   </tr>
@@ -281,6 +319,13 @@ export default function OrdersPage() {
                         )}
                       </td>
                       <td>
+                        {row.fulfillmentStatus ? (
+                          <BagsStatusBadge status={row.fulfillmentStatus} />
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
                         {row.renderStatus ? <BagsStatusBadge status={row.renderStatus} /> : "—"}
                         {row.renderError ? (
                           <div className="bags-admin-muted" style={{ fontSize: 11 }}>
@@ -289,10 +334,8 @@ export default function OrdersPage() {
                         ) : null}
                       </td>
                       <td>
-                        {row.outputKey ? (
-                          <Link to={`/api/downloads/${row.designId}?version=${row.designVersion}`}>
-                            Download
-                          </Link>
+                        {row.downloadPath ? (
+                          <a href={row.downloadPath}>Download</a>
                         ) : row.renderStatus === "failed" ? (
                           <Form method="post" style={{ display: "inline" }}>
                             <input type="hidden" name="intent" value="retry-render" />
@@ -303,7 +346,7 @@ export default function OrdersPage() {
                             </button>
                           </Form>
                         ) : (
-                          "—"
+                          <span className="bags-admin-muted">Not ready</span>
                         )}
                       </td>
                     </tr>
@@ -313,10 +356,7 @@ export default function OrdersPage() {
               {pageCount > 1 ? (
                 <div className="bags-admin-actions" style={{ marginTop: 12 }}>
                   {page > 1 ? (
-                    <Link
-                      to={`/app/orders?page=${page - 1}&q=${encodeURIComponent(q)}&builder=${builder}&payment=${payment}&render=${render}`}
-                      className="bags-admin-btn ghost"
-                    >
+                    <Link to={listHref(page - 1)} className="bags-admin-btn ghost">
                       Previous
                     </Link>
                   ) : null}
@@ -324,10 +364,7 @@ export default function OrdersPage() {
                     Page {page} of {pageCount}
                   </span>
                   {page < pageCount ? (
-                    <Link
-                      to={`/app/orders?page=${page + 1}&q=${encodeURIComponent(q)}&builder=${builder}&payment=${payment}&render=${render}`}
-                      className="bags-admin-btn ghost"
-                    >
+                    <Link to={listHref(page + 1)} className="bags-admin-btn ghost">
                       Next
                     </Link>
                   ) : null}
