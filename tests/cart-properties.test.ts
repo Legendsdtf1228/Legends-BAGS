@@ -4,6 +4,9 @@ import {
   CART_DESIGN_NAME_PROPERTY,
   CART_PIECE_COUNT_PROPERTY,
   CART_SHEET_SIZE_PROPERTY,
+  HIDDEN_CART_LINE_PROPERTIES,
+  VISIBLE_CART_LINE_PROPERTIES,
+  cartAddPropertyFieldName,
   pieceCount,
   sheetSizeLabel,
 } from "../app/domain/shopify/line-properties";
@@ -43,6 +46,17 @@ describe("cart line properties", () => {
     expect(props[CART_PIECE_COUNT_PROPERTY]).toBe(String(pieceCount(state)));
     expect(props[CART_DESIGN_NAME_PROPERTY]).toBe("Team Sheet");
     expect(props._lgs_price_ref).toBeTruthy();
+    expect(props._lgs_design_token).toBeTruthy();
+    expect(props._lgs_workflow).toBe("gang_sheet");
+    expect(props["Builder type"]).toBe("Gang Sheet");
+    expect(props["Sheet size"]).toBe(sheetSizeLabel(state));
+    for (const key of HIDDEN_CART_LINE_PROPERTIES) {
+      expect(props[key]).toBeTruthy();
+    }
+    for (const key of VISIBLE_CART_LINE_PROPERTIES) {
+      expect(props[key]).toBeTruthy();
+    }
+    expect(cartAddPropertyFieldName("_lgs_design_id")).toBe("properties[_lgs_design_id]");
   });
 
   it("builds upload-by-size cart properties", () => {

@@ -9,12 +9,13 @@ describe("cart line design extraction", () => {
         properties: [
           { name: "_lgs_design_id", value: "des_a" },
           { name: "_lgs_design_version", value: "2" },
+          { name: "_lgs_price_ref", value: "signed-ref" },
         ],
       },
       { id: 12, properties: [{ name: "Note", value: "no design" }] },
     ]);
     expect(lines).toEqual([
-      { lineItemId: "11", designId: "des_a", designVersion: 2 },
+      { lineItemId: "11", designId: "des_a", designVersion: 2, priceRef: "signed-ref" },
     ]);
   });
 
