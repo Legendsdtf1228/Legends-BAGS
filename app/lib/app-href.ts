@@ -80,6 +80,7 @@ export function staffSheetEditorUrl(params: {
     designId: params.designId,
     embedded: "1",
     shop_mode: "merchant",
+    context: "merchant-preview",
   });
 }
 
@@ -111,6 +112,7 @@ export function merchantProductBuilderUrl(params: {
     variantId,
     quantity: "1",
     shop_mode: "merchant",
+    context: "merchant-preview",
   });
 }
 

@@ -24,8 +24,8 @@ describe("Shop Builder editor URLs", () => {
     );
 
     expect(hrefs).toEqual([
-      `https://${RAILWAY_HOST}/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_alpha&embedded=1&shop_mode=merchant`,
-      `https://${RAILWAY_HOST}/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_beta&embedded=1&shop_mode=merchant`,
+      `https://${RAILWAY_HOST}/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_alpha&embedded=1&shop_mode=merchant&context=merchant-preview`,
+      `https://${RAILWAY_HOST}/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_beta&embedded=1&shop_mode=merchant&context=merchant-preview`,
     ]);
   });
 
@@ -37,7 +37,7 @@ describe("Shop Builder editor URLs", () => {
         designId: "des_1",
       }),
     ).toBe(
-      `https://${RAILWAY_HOST}/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_1&embedded=1&shop_mode=merchant`,
+      `https://${RAILWAY_HOST}/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_1&embedded=1&shop_mode=merchant&context=merchant-preview`,
     );
   });
 
@@ -49,7 +49,7 @@ describe("Shop Builder editor URLs", () => {
         designId: "des_1",
       }),
     ).toBe(
-      `/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_1&embedded=1&shop_mode=merchant`,
+      `/editor/studio?shop=${encodeURIComponent(DEV_SHOP)}&designId=des_1&embedded=1&shop_mode=merchant&context=merchant-preview`,
     );
     expect(
       staffSheetEditorUrl({
@@ -81,6 +81,7 @@ describe("merchant ProductBinding Open/Preview URLs", () => {
     expect(url).toContain("/editor/studio");
     expect(url).not.toContain("/editor/gang-sheet");
     expect(url).toContain("shop_mode=merchant");
+    expect(url).toContain("context=merchant-preview");
     expect(url).toContain("product=10088258109734");
     expect(url).toContain("variantId=987654321");
     expect(url).toContain(`productGid=${encodeURIComponent("gid://shopify/Product/10088258109734")}`);
@@ -97,5 +98,6 @@ describe("merchant ProductBinding Open/Preview URLs", () => {
     expect(url).not.toContain("/editor/studio");
     expect(url).not.toContain("/editor/gang-sheet");
     expect(url).toContain("shop_mode=merchant");
+    expect(url).toContain("context=merchant-preview");
   });
 });

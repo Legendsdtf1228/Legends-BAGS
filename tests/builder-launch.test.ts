@@ -261,6 +261,22 @@ describe("resolveBuilderLaunch", () => {
     expect(result.code).toBe("binding_not_found");
   });
 
+  it("does not launch a gang_sheet binding without a fixed sheet length", async () => {
+    await prisma.productBinding.updateMany({
+      where: { shop, productGid: gangProductGid },
+      data: { sheetHeightIn: null },
+    });
+    const result = await resolveBuilderLaunch({
+      shop,
+      product: numericIdFromGid(gangProductGid)!,
+      variant: numericIdFromGid(gangVariantGid)!,
+      quantity: "1",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("binding_not_found");
+  });
+
   it("does not fall through from a disabled requested variant to another enabled variant", async () => {
     await prisma.productBinding.updateMany({
       where: { shop, productGid: gangProductGid, variantGid: gangVariantGid },
@@ -384,6 +400,9 @@ describe("builder route loader", () => {
         productGid: gangProductGid,
         variantGid: gangVariantGid,
         builderType: "gang_sheet",
+        productStatus: "ACTIVE",
+        sheetHeightIn: 24,
+        enabled: true,
       },
     });
 
@@ -421,7 +440,9 @@ describe("builder route loader", () => {
         productGid: ubsProductGid,
         variantGid: "gid://shopify/ProductVariant/900031",
         builderType: "upload_by_size",
+        productStatus: "ACTIVE",
         pricePerSqIn: 0.049,
+        enabled: true,
       },
     });
 

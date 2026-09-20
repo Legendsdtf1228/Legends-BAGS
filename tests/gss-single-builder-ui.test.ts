@@ -73,6 +73,7 @@ describe("one authoritative gang-sheet builder (GSS)", () => {
     expect(url).toContain("/editor/studio");
     expect(url).not.toContain(LEGACY);
     expect(url).toContain("shop_mode=merchant");
+    expect(url).toContain("context=merchant-preview");
   });
 
   it("routes merchant Preview Builder (upload_by_size) to UBS, not the legacy canvas", () => {
@@ -95,12 +96,14 @@ describe("one authoritative gang-sheet builder (GSS)", () => {
     });
     expect(url).toContain("/editor/studio");
     expect(url).toContain("shop_mode=merchant");
-    expect(url).not.toContain(LEGACY);
+    expect(url).toContain("context=merchant-preview");
   });
 
   it("keeps the theme storefront CTA on /builder (not the legacy canvas)", () => {
     const launcher = readFileSync(path.join(ROOT, "extensions/upload-by-size/assets/lgs-launcher.full.js"), "utf8");
     expect(launcher).toContain('storefrontApiUrl("/builder")');
+    expect(launcher).toContain('searchParams.set("context", "customer")');
+    expect(launcher).not.toContain('searchParams.set("shop_mode", "1")');
     expect(launcher).not.toContain(LEGACY);
   });
 });

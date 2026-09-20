@@ -92,11 +92,31 @@ describe("launcher cart/add attach", () => {
     expect(launcher).toContain("installCartAddFetchHook");
     expect(launcher).toContain("customerKey");
     expect(launcher).toContain("/session");
+    expect(launcher).toContain('searchParams.set("context", "customer")');
+    expect(launcher).not.toContain('searchParams.set("shop_mode", "1")');
     for (const key of HIDDEN_CART_LINE_PROPERTIES) {
       expect(launcher).toContain(`"${key}"`);
     }
     for (const key of VISIBLE_CART_LINE_PROPERTIES) {
       expect(launcher).toContain(`"${key}"`);
+    }
+  });
+
+  it("ignores lgs:design-preview-saved and never attaches cart properties from it", () => {
+    const copies = [
+      read("extensions/upload-by-size/assets/lgs-launcher.full.js"),
+      read("public/lgs-launcher.full.js"),
+    ];
+    for (const launcher of copies) {
+      const messageHandler = launcher.slice(launcher.indexOf('window.addEventListener("message"'));
+      const previewIdx = messageHandler.indexOf('event.data.type === "lgs:design-preview-saved"');
+      const readyIdx = messageHandler.indexOf('event.data.type !== "lgs:design-ready"');
+      const attachIdx = messageHandler.indexOf("attachDesign(");
+      expect(previewIdx).toBeGreaterThan(-1);
+      expect(readyIdx).toBeGreaterThan(previewIdx);
+      expect(attachIdx).toBeGreaterThan(readyIdx);
+      expect(messageHandler.slice(previewIdx, readyIdx)).toContain("return;");
+      expect(messageHandler.slice(previewIdx, attachIdx)).not.toContain("upsertHidden");
     }
   });
 

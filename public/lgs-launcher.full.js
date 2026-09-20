@@ -550,7 +550,7 @@
       u.searchParams.set("product", productNumericId());
       u.searchParams.set("variant", currentVariantId() || "");
       u.searchParams.set("quantity", currentQuantity());
-      u.searchParams.set("shop_mode", "1");
+      u.searchParams.set("context", "customer");
       u.searchParams.set("embedded", "1");
       u.searchParams.set("parentOrigin", window.location.origin);
       if (customerKey) u.searchParams.set("lgs_customer_key", customerKey);
@@ -716,6 +716,8 @@
         handleVariantChange(event.data.variantId, false);
         return;
       }
+      // Merchant preview persist only. Never attach Shopify cart properties.
+      if (event.data.type === "lgs:design-preview-saved") return;
       if (event.data.type !== "lgs:design-ready") return;
       var designId = event.data.designId;
       var version = event.data.version;
