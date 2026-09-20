@@ -2,19 +2,18 @@ import type { LoaderFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
 import { mergeEditorLaunchFromUrl } from "../lib/editor-launch.server";
-import { isMerchantStudioLaunchEnabled } from "../lib/studio-builder.server";
+import { isStudioBuilderEnabled } from "../lib/studio-builder.server";
 
 /**
- * BAGS → Gang Sheet Studio launch shim (customer and merchant).
- * Sets the same API cookies as the legacy gang-sheet editor, then
+ * DEV-ONLY Studio launch shim.
+ * Sets the same customer API cookies as the legacy gang-sheet editor, then
  * redirects into the static Studio build at /studio/?host=bags&…
- * Legacy /editor/gang-sheet remains as a compatibility fallback only when
- * the synced Studio dist is missing.
+ * Legacy /editor/gang-sheet is intentionally left intact for rollback.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const launch = mergeEditorLaunchFromUrl(request, process.env.DEV_SHOP || "");
 
-  if (!isMerchantStudioLaunchEnabled()) {
+  if (!isStudioBuilderEnabled()) {
     const legacy = new URL("/editor/gang-sheet", request.url);
     legacy.search = new URL(request.url).search;
     if (!legacy.searchParams.get("shop") && launch.shop) {
