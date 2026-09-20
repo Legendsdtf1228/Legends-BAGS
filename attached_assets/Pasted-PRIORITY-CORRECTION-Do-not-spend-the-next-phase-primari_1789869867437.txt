@@ -1,0 +1,64 @@
+PRIORITY CORRECTION
+Do not spend the next phase primarily on branding infrastructure or secondary polish.
+Our immediate goal is to make Legends-BAGS a fully usable merchant system and get it testable inside the Shopify DEV store.
+Prioritize in this order:
+P0 — CORE MERCHANT EXPERIENCE
+- Merchant app shell/navigation
+- Dashboard
+- Products
+- Shopify product discovery/listing
+- ProductBinding management
+- Configure a product as gang_sheet
+- Builder enable/disable/configuration
+- Clear indication whether a product is connected and launch-ready
+- Designs/projects
+- Design detail
+- Orders
+- Order detail
+- Production status
+- Production-file/download workflow
+- Settings necessary for real operation
+P0 — SHOPIFY + STUDIO WORKFLOW
+Ensure the merchant system supports and clearly represents:
+Shopify product
+→ ProductBinding
+→ Legends-BAGS
+→ Gang Sheet Studio
+→ saved design
+→ cart
+→ Shopify order
+→ merchant Orders
+→ production output/download
+The merchant should be able to configure and understand this workflow WITHOUT manually editing database records.
+P1 — REAL SHOPIFY DEV VALIDATION
+Once the core merchant UI is functional, prepare it for testing inside the Shopify development store.
+Identify anything preventing:
+- embedded app authentication
+- Products loading
+- product binding
+- Studio launch
+- design/order visibility
+P2 — WHITE-LABEL BRANDING
+Preserve the branding work already implemented.
+Legends defaults:
+- Vegas Gold
+- Black
+- White
+Merchants must ultimately be able to use their own colors/logos.
+However, DO NOT prioritize advanced logo-storage infrastructure or modifying Gang Sheet Studio branding ahead of the core merchant workflows above.
+Keep the branding contract clean and ready for later integration.
+DO NOT modify Gang Sheet Studio during this phase.
+Before proposing additional follow-up work, finish the highest-value merchant workflows possible within this repository.
+At completion, report specifically whether I can:
+1. Open the merchant dashboard
+2. See Shopify products
+3. Configure a product for Gang Sheet Studio
+4. See customer designs
+5. See orders
+6. Open an order and identify its design
+7. Access its production output
+8. Configure operational settings
+9. See Legends branding
+10. Prepare/test the app in the Shopify DEV store
+Prioritize functional merchant workflows over polish.
+Continue implementation. Do not deploy production.
