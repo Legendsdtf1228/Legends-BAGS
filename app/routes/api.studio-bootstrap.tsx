@@ -4,6 +4,7 @@ import { loadEditorPageConfig } from "../lib/editor-config.server";
 import { getDesignState } from "../services/design-service";
 import prisma from "../db.server";
 import { toVariantGid } from "../domain/builder/builder-launch-context";
+import { getShopAppearance } from "../lib/shop-appearance.server";
 
 /**
  * DEV-ONLY bootstrap for Gang Sheet Studio hosted under BAGS.
@@ -38,6 +39,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     productGid || undefined,
     variantId || undefined,
   );
+  const appearance = await getShopAppearance(shop);
 
   let design: null | {
     designId: string;
@@ -108,6 +110,26 @@ export async function loader({ request }: LoaderFunctionArgs) {
           maxHeightIn: editorConfig.binding.maxHeightIn,
         }
       : null,
+    branding: {
+      version: 1,
+      storeName: appearance.businessName,
+      logoUrl: appearance.logoUrl,
+      logoLightUrl: appearance.logoLightUrl,
+      logoDarkUrl: appearance.logoDarkUrl,
+      faviconUrl: appearance.faviconUrl,
+      primaryColor: appearance.accentColor,
+      accentColor: appearance.accentColorDark,
+      backgroundColor: appearance.backgroundColor,
+      buttonColor: appearance.buttonColor,
+      textColor: appearance.textColor,
+      welcomeTitle: appearance.welcomeTitle,
+      welcomeSubtitle: appearance.welcomeSubtitle,
+      attribution: {
+        visible: true,
+        label: "Powered by Legends-BAGS",
+        controlledBy: "platform",
+      },
+    },
     design,
     productionOutput: {
       owner: "bags-render-pipeline",
