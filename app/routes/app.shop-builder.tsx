@@ -16,6 +16,8 @@ import {
   renameStaffSheet,
 } from "../services/design-service";
 import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
+import { staffSheetEditorUrl } from "../lib/app-href";
+import { resolveAppUrl } from "../lib/app-url.server";
 
 const SHEET_LENGTHS = [24, 36, 48, 60, 72, 84, 96, 108, 132, 150, 168, 192, 250];
 
@@ -26,7 +28,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const sheets = await listStaffSheets(session.shop, search || undefined);
   return {
     shop: session.shop,
-    appUrl: process.env.SHOPIFY_APP_URL || "",
+    appUrl: resolveAppUrl(),
     sheets,
     search,
     sheetLengths: SHEET_LENGTHS,
@@ -76,11 +78,7 @@ export default function ShopBuilderPage() {
   const actionData = useActionData<typeof action>();
 
   function editorUrl(designId: string) {
-    const u = new URL("/editor/gang-sheet", appUrl || "http://localhost");
-    u.searchParams.set("shop", shop);
-    u.searchParams.set("designId", designId);
-    u.searchParams.set("embedded", "1");
-    return u.toString();
+    return staffSheetEditorUrl({ appUrl, shop, designId });
   }
 
   return (
@@ -164,16 +162,14 @@ export default function ShopBuilderPage() {
                     <td>{new Date(sheet.updatedAt).toLocaleString()}</td>
                     <td>
                       <div className="bags-admin-actions">
-                        {appUrl ? (
-                          <a
-                            href={editorUrl(sheet.id)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="bags-admin-btn ghost"
-                          >
-                            Edit
-                          </a>
-                        ) : null}
+                        <a
+                          href={editorUrl(sheet.id)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bags-admin-btn ghost"
+                        >
+                          Edit
+                        </a>
                         {sheet.downloadPath ? (
                           <a href={sheet.downloadPath} className="bags-admin-btn primary">
                             Download

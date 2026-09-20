@@ -6,6 +6,7 @@ import {
   orderNumberFromPayload,
   paidAtFromPayload,
   parseOrderDesignLines,
+  shouldEnqueueOrderRender,
   type ShopifyOrderWebhookPayload,
 } from "../domain/shopify/order-webhook";
 import { linkOrderToDesigns } from "../services/design-service";
@@ -15,7 +16,7 @@ export async function ingestShopifyOrderWebhook(params: {
   topic: string;
   payload: ShopifyOrderWebhookPayload;
   webhookId?: string | null;
-  enqueueRender: boolean;
+  enqueueRender?: boolean;
 }) {
   const raw = JSON.stringify(params.payload);
   const payloadHash = hashPayload(raw);
@@ -52,7 +53,9 @@ export async function ingestShopifyOrderWebhook(params: {
     topic: params.topic,
     webhookId: params.webhookId ?? undefined,
     payloadHash,
-    enqueueRender: params.enqueueRender,
+    enqueueRender:
+      params.enqueueRender ??
+      shouldEnqueueOrderRender(params.topic, params.payload.financial_status),
   });
 
   return { ignored: false as const, ...result };

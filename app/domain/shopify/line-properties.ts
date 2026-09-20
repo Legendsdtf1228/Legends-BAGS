@@ -18,6 +18,37 @@ export const CART_SHEET_SIZE_VISIBLE_PROPERTY = "Sheet size" as const;
 export const CART_PRICE_REF_PROPERTY = "_lgs_price_ref" as const;
 export const CART_DESIGN_TOKEN_PROPERTY = "_lgs_design_token" as const;
 
+/** Hidden line properties written to `/cart/add` and parsed from order webhooks. */
+export const HIDDEN_CART_LINE_PROPERTIES = [
+  CART_DESIGN_ID_PROPERTY,
+  CART_DESIGN_VERSION_PROPERTY,
+  CART_WORKFLOW_PROPERTY,
+  CART_BUILDER_TYPE_PROPERTY,
+  CART_SHEET_SIZE_PROPERTY,
+  CART_SHEET_WIDTH_PROPERTY,
+  CART_SHEET_HEIGHT_PROPERTY,
+  CART_RENDER_STATUS_PROPERTY,
+  CART_PIECE_COUNT_PROPERTY,
+  CART_PRICE_REF_PROPERTY,
+  CART_DESIGN_TOKEN_PROPERTY,
+] as const;
+
+/** Customer-visible cart line properties (Shopify shows keys without `_`). */
+export const VISIBLE_CART_LINE_PROPERTIES = [
+  CART_DESIGN_NAME_PROPERTY,
+  CART_BUILDER_TYPE_VISIBLE_PROPERTY,
+  CART_SHEET_SIZE_VISIBLE_PROPERTY,
+] as const;
+
+export const CART_LINE_PROPERTY_KEYS = [
+  ...HIDDEN_CART_LINE_PROPERTIES,
+  ...VISIBLE_CART_LINE_PROPERTIES,
+] as const;
+
+export function cartAddPropertyFieldName(key: string): string {
+  return `properties[${key}]`;
+}
+
 export type ShopifyLineItem = {
   id: number | string;
   properties?: Array<{ name: string; value: string }> | Record<string, string>;

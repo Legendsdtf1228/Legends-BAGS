@@ -8,6 +8,11 @@ export type GalleryListItem = {
   thumb: string;
   widthIn: number;
   heightIn: number;
+  assetId: string;
+  widthPx: number | null;
+  heightPx: number | null;
+  dpi: number | null;
+  contentType: string | null;
 };
 
 export async function ensureDefaultGallery(shop: string) {
@@ -56,18 +61,35 @@ export async function listGalleryItems(
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    category: row.category.name,
-    tags: row.tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean),
-    thumb: row.thumbUrl || `/api/assets/${encodeURIComponent(row.assetId)}`,
-    widthIn: row.defaultWidthIn,
-    heightIn: row.defaultHeightIn,
-  }));
+  const assetIds = [...new Set(rows.map((row) => row.assetId))];
+  const assets = assetIds.length
+    ? await prisma.asset.findMany({
+        where: { shop, id: { in: assetIds } },
+        select: { id: true, widthPx: true, heightPx: true, dpi: true, contentType: true },
+      })
+    : [];
+  const byId = new Map(assets.map((asset) => [asset.id, asset]));
+
+  return rows.map((row) => {
+    const asset = byId.get(row.assetId);
+    return {
+      id: row.id,
+      name: row.name,
+      category: row.category.name,
+      tags: row.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean),
+      thumb: row.thumbUrl || `/api/assets/${encodeURIComponent(row.assetId)}`,
+      widthIn: row.defaultWidthIn,
+      heightIn: row.defaultHeightIn,
+      assetId: row.assetId,
+      widthPx: asset?.widthPx ?? null,
+      heightPx: asset?.heightPx ?? null,
+      dpi: asset?.dpi ?? null,
+      contentType: asset?.contentType ?? null,
+    };
+  });
 }
 
 export async function createGalleryCategory(shop: string, name: string) {

@@ -8,7 +8,15 @@ import {
   normalizeCustomerKey,
 } from "../domain/security/customer-key";
 
-const COOKIE_BASE = "Path=/; SameSite=None; Secure; HttpOnly";
+/** HTTPS (Shopify iframe / production) needs SameSite=None; Secure. HTTP localhost cannot store Secure cookies. */
+export function editorAuthCookieBase(request: Request): string {
+  const url = new URL(request.url);
+  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const https = url.protocol === "https:" || forwarded === "https";
+  return https
+    ? "Path=/; SameSite=None; Secure; HttpOnly"
+    : "Path=/; SameSite=Lax; HttpOnly";
+}
 
 /** Set editor API cookies from storefront session query param or dev test token. */
 export function buildEditorAuthHeaders(request: Request, shop: string): {
@@ -19,6 +27,7 @@ export function buildEditorAuthHeaders(request: Request, shop: string): {
   const url = new URL(request.url);
   const sessionParam = url.searchParams.get("lgs_session")?.trim();
   const customerKey = normalizeCustomerKey(url.searchParams.get("lgs_customer_key"));
+  const cookieBase = editorAuthCookieBase(request);
 
   if (sessionParam && shop) {
     try {
@@ -26,14 +35,14 @@ export function buildEditorAuthHeaders(request: Request, shop: string): {
       if (claims.shop === shop) {
         headers.append(
           "Set-Cookie",
-          `${STOREFRONT_SESSION_COOKIE}=${encodeURIComponent(sessionParam)}; ${COOKIE_BASE}`,
+          `${STOREFRONT_SESSION_COOKIE}=${encodeURIComponent(sessionParam)}; ${cookieBase}`,
         );
-        headers.append("Set-Cookie", `lgs_shop=${encodeURIComponent(shop)}; ${COOKIE_BASE}`);
+        headers.append("Set-Cookie", `lgs_shop=${encodeURIComponent(shop)}; ${cookieBase}`);
         const resolvedCustomerKey = normalizeCustomerKey(claims.customerKey ?? customerKey);
         if (resolvedCustomerKey) {
           headers.append(
             "Set-Cookie",
-            `${CUSTOMER_KEY_COOKIE}=${encodeURIComponent(resolvedCustomerKey)}; ${COOKIE_BASE}`,
+            `${CUSTOMER_KEY_COOKIE}=${encodeURIComponent(resolvedCustomerKey)}; ${cookieBase}`,
           );
         }
         return { headers, hasApiAuth: true };
@@ -45,15 +54,15 @@ export function buildEditorAuthHeaders(request: Request, shop: string): {
 
   const testToken = process.env.TEST_API_TOKEN || "";
   if (testToken && shop) {
-    headers.append("Set-Cookie", `lgs_shop=${encodeURIComponent(shop)}; ${COOKIE_BASE}`);
+    headers.append("Set-Cookie", `lgs_shop=${encodeURIComponent(shop)}; ${cookieBase}`);
     headers.append(
       "Set-Cookie",
-      `lgs_test_token=${encodeURIComponent(testToken)}; ${COOKIE_BASE}`,
+      `lgs_test_token=${encodeURIComponent(testToken)}; ${cookieBase}`,
     );
     if (customerKey) {
       headers.append(
         "Set-Cookie",
-        `${CUSTOMER_KEY_COOKIE}=${encodeURIComponent(customerKey)}; ${COOKIE_BASE}`,
+        `${CUSTOMER_KEY_COOKIE}=${encodeURIComponent(customerKey)}; ${cookieBase}`,
       );
     }
     return { headers, hasApiAuth: true };

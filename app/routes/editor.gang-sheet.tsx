@@ -2,19 +2,34 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { data, useLoaderData } from "react-router";
-import {
-  applyLongestSidePreset,
-  BAGS_BASE_CSS,
-  PresetSizeChips,
-  StepperField,
-} from "../components/editor/bags-ui";
+import { BAGS_BASE_CSS } from "../components/editor/bags-ui";
 import { EditorRailIcon } from "../components/editor/editor-rail-icons";
 import { GangSheetCommandBar, type OverflowAction } from "../components/editor/gang-sheet/gang-sheet-command-bar";
 import { GANG_SHEET_EDITOR_CSS } from "../components/editor/gang-sheet/gang-sheet-editor-styles";
 import { GangSheetSaveDialog } from "../components/editor/gang-sheet/gang-sheet-save-dialog";
-import { ToolbarIcon } from "../components/editor/gang-sheet/editor-toolbar-icons";
+import {
+  CanvasAlignToolbar,
+  CanvasEmptyState,
+  CanvasMetaBar,
+  CanvasRulers,
+  CanvasSelectionBounds,
+  CanvasSheetTabs,
+} from "../components/editor/gang-sheet/canvas-chrome";
+import {
+  ARTWORK_LIBRARY_CSS,
+  GalleryPanel,
+  UploadsPanel,
+  sortGallery,
+  type GallerySort,
+  type UploadSort,
+} from "../components/editor/gang-sheet/artwork-library";
+import { ArtworkInspector } from "../components/editor/gang-sheet/artwork-inspector";
+import { artworkPrintQuality } from "../components/editor/gang-sheet/artwork-inspector-quality";
+import { ARTWORK_INSPECTOR_CSS } from "../components/editor/gang-sheet/artwork-inspector-styles";
+import { galleryRecordToAsset } from "../components/editor/gang-sheet/gallery-placement";
 import { CanvasMinimap } from "../components/editor/gang-sheet/canvas-minimap";
-import { dpiQualityTier, summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
+import { selectionBounds } from "../components/editor/gang-sheet/canvas-workspace";
+import { summarizeQuality } from "../components/editor/gang-sheet/dpi-quality";
 import {
   fitWidthZoomPercent,
   smartFitZoomPercent,
@@ -74,6 +89,20 @@ import {
 import { loadEditorPageConfig } from "../lib/editor-config.server";
 import { buildEditorAuthHeaders } from "../lib/editor-auth.server";
 import { mergeEditorLaunchFromUrl } from "../lib/editor-launch.server";
+import { AutoBuildScreen } from "../components/editor/workflow/auto-build-screen";
+import { AutoFillScreen, type AutoFillSource } from "../components/editor/workflow/auto-fill-screen";
+import { NamesNumbersScreen } from "../components/editor/workflow/names-numbers-screen";
+import { PRODUCTION_WORKFLOW_CSS } from "../components/editor/workflow/workflow-styles";
+import {
+  commitAutoFill,
+  defaultRosterPlate,
+  findDuplicateRosterNumbers,
+  occupiedForAutoFill,
+  parseRosterCsv,
+  planFillSheetCopies,
+  planRosterPlacements,
+  type WorkflowPhase,
+} from "../components/editor/workflow/workflow-helpers";
 
 type Asset = {
   assetId: string;
@@ -161,7 +190,7 @@ type SidebarTab =
   | "templates"
   | "help";
 
-type Screen = "welcome" | "auto_build" | "canvas";
+type Screen = "welcome" | "auto_build" | "auto_fill" | "names" | "canvas";
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string; icon: string }[] = [
   { id: "uploads", label: "Uploads", icon: "uploads" },
@@ -210,8 +239,6 @@ type AutoNestPreview = {
 
 const SHEET_WIDTHS = GANG_SHEET_WIDTHS;
 const SHEET_HEIGHTS = [...GANG_SHEET_HEIGHTS];
-const AUTO_PRESETS = [2, 3, 4, 5, 6, 8, 10, 12] as const;
-
 function buildNestItemsFromDrafts(drafts: AutoDraft[]) {
   return drafts.flatMap((d) =>
     Array.from({ length: d.quantity }, () => ({
@@ -346,8 +373,8 @@ function pieceTransform(item: Pick<CanvasItem, "rotationDeg" | "flipX" | "flipY"
 
 function appearanceVars(appearance: ShopAppearance): CSSProperties {
   return {
-    ["--accent" as string]: appearance.accentColor,
-    ["--accent-dark" as string]: appearance.accentColorDark,
+    ["--shop-accent" as string]: appearance.accentColor,
+    ["--shop-accent-dark" as string]: appearance.accentColorDark,
   };
 }
 
@@ -385,6 +412,19 @@ export default function GangSheetEditor() {
   const [autoPreviewError, setAutoPreviewError] = useState("");
   const [selectedAutoId, setSelectedAutoId] = useState<string | null>(null);
   const [autoPhase, setAutoPhase] = useState<AutoPhase>("setup");
+  const [workflowReturn, setWorkflowReturn] = useState<"welcome" | "canvas">("welcome");
+  const [fillPhase, setFillPhase] = useState<WorkflowPhase>("setup");
+  const [fillSource, setFillSource] = useState<AutoFillSource | null>(null);
+  const [fillWidthIn, setFillWidthIn] = useState(4);
+  const [fillHeightIn, setFillHeightIn] = useState(4);
+  const [fillQuantity, setFillQuantity] = useState(1);
+  const [fillLockAspect, setFillLockAspect] = useState(true);
+  const [fillError, setFillError] = useState("");
+  const [namesPhase, setNamesPhase] = useState<WorkflowPhase>("setup");
+  const [rosterLockAspect, setRosterLockAspect] = useState(true);
+  const [rosterWidthIn, setRosterWidthIn] = useState(6);
+  const [rosterHeightIn, setRosterHeightIn] = useState(0.4);
+  const [namesError, setNamesError] = useState("");
   const [autoUploadTab, setAutoUploadTab] = useState<"upload" | "pool" | "gallery">("upload");
   const [allowRotate90, setAllowRotate90] = useState(true);
   const [uploadPool, setUploadPool] = useState<PoolItem[]>([]);
@@ -394,9 +434,10 @@ export default function GangSheetEditor() {
   const [hasStoredDraft, setHasStoredDraft] = useState(false);
   const [showFirstTip, setShowFirstTip] = useState(true);
   const [uploadSearch, setUploadSearch] = useState("");
-  const [uploadSort, setUploadSort] = useState<"recent" | "name">("recent");
+  const [uploadSort, setUploadSort] = useState<UploadSort>("recent");
   const [galleryCategory, setGalleryCategory] = useState<string>("All");
   const [gallerySearch, setGallerySearch] = useState("");
+  const [gallerySort, setGallerySort] = useState<GallerySort>("default");
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [galleryCategories, setGalleryCategories] = useState<string[]>([...GALLERY_CATEGORIES]);
   const [galleryLoading, setGalleryLoading] = useState(false);
@@ -433,6 +474,8 @@ export default function GangSheetEditor() {
   const [spacePan, setSpacePan] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [mobileDrawer, setMobileDrawer] = useState<"sidebar" | "properties" | null>(null);
+  const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
+  const [propsPanelOpen, setPropsPanelOpen] = useState(true);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveDialogError, setSaveDialogError] = useState("");
   const [saveDialogRequestId, setSaveDialogRequestId] = useState("");
@@ -467,6 +510,10 @@ export default function GangSheetEditor() {
     }
   }
   const paintedItems = useMemo(() => sortByZIndex(items), [items]);
+  const multiSelectBounds = useMemo(
+    () => selectionBounds(items, selectedIds),
+    [items, selectedIds],
+  );
 
   const usedArea = useMemo(
     () => items.reduce((s, i) => s + i.widthIn * i.heightIn, 0),
@@ -486,9 +533,9 @@ export default function GangSheetEditor() {
   const lowDpiCount = useMemo(
     () =>
       items.filter((i) => {
-        if (i.kind === "text") return false;
-        const tier = dpiQualityTier(i.dpi).tier;
-        return tier === "low" || tier === "poor" || tier === "unknown";
+        const q = artworkPrintQuality(i);
+        if (!q) return false;
+        return q.info.tier === "low" || q.info.tier === "poor" || q.info.tier === "unknown";
       }).length,
     [items],
   );
@@ -807,9 +854,7 @@ export default function GangSheetEditor() {
 
   function handleOverflowAction(action: OverflowAction) {
     if (action === "arrange") {
-      setScreen("auto_build");
-      setAutoPhase("setup");
-      setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
+      openAutoBuild("canvas");
       return;
     }
     if (action === "duplicate-design") {
@@ -911,13 +956,23 @@ export default function GangSheetEditor() {
     pushHistory(next);
   }
 
-  function placeFromPool(poolId: string) {
+  function placeFromPool(poolId: string, quantity = 1) {
     const entry = uploadPool.find((p) => p.id === poolId);
     if (!entry) return;
-    const placed = createPlacedItem(entry.asset, entry.previewUrl, entry.name, 0, items);
-    pushHistory([...items, placed]);
-    selectItem(placed.id);
-    setMessage(`Placed "${entry.name}" on the sheet — drag to position.`);
+    const qty = Math.max(1, Math.round(quantity));
+    const placed: CanvasItem[] = [];
+    for (let i = 0; i < qty; i++) {
+      placed.push(
+        createPlacedItem(entry.asset, entry.previewUrl, entry.name, i, [...items, ...placed]),
+      );
+    }
+    pushHistory([...items, ...placed]);
+    selectItem(placed.at(-1)?.id ?? null);
+    setMessage(
+      qty === 1
+        ? `Placed "${entry.name}" on the sheet — drag to position.`
+        : `Placed ${qty}× "${entry.name}" on the sheet.`,
+    );
   }
 
   function sheetCountForAsset(assetId: string) {
@@ -1101,16 +1156,16 @@ export default function GangSheetEditor() {
   async function addGalleryItemToAuto(g: GalleryItem) {
     setUploading(true);
     try {
-      const { asset, previewUrl } = await galleryThumbToAsset(g);
+      const { asset, previewUrl } = galleryRecordToAsset(g);
       const aspect = asset.widthPx / asset.heightPx;
-      const w = Math.min(g.widthIn ?? 6, sheetWidth - 0.4);
+      const w = Math.min(g.widthIn || 6, sheetWidth - 0.4);
       const draft: AutoDraft = {
         id: crypto.randomUUID(),
         asset,
         previewUrl,
         name: g.name,
         widthIn: w,
-        heightIn: g.heightIn ?? w / aspect,
+        heightIn: g.heightIn || w / aspect,
         quantity: 1,
         lockAspect: true,
       };
@@ -1124,20 +1179,87 @@ export default function GangSheetEditor() {
     }
   }
 
-  function fillSheet() {
-    if (!selected) return;
-    const copies: CanvasItem[] = [];
-    let z = nextZIndex(items);
-    for (let y = 0.1; y + selected.heightIn <= sheetHeight; y += selected.heightIn + gap) {
-      for (let x = 0.1; x + selected.widthIn <= sheetWidth; x += selected.widthIn + gap) {
-        copies.push({ ...selected, id: crypto.randomUUID(), xIn: x, yIn: y, zIndex: z++ });
-        if (copies.length >= 250) break;
-      }
-      if (copies.length >= 250) break;
+  function openAutoBuild(from: "welcome" | "canvas") {
+    setWorkflowReturn(from);
+    setScreen("auto_build");
+    setAutoPhase("setup");
+    setMessage("Auto Build — set size and quantity, preview, then Apply.");
+  }
+
+  function openAutoFill() {
+    if (!selected) {
+      setError("Select artwork on the sheet first, then Auto Fill.");
+      return;
     }
-    pushHistory([...items.filter((i) => i.id !== selected.id), ...copies]);
-    selectItem(copies[0]?.id ?? null);
-    setMessage(`Filled sheet with ${copies.length} copies.`);
+    const source: AutoFillSource = {
+      id: selected.id,
+      name: selected.name,
+      previewUrl: selected.previewUrl,
+      widthIn: selected.widthIn,
+      heightIn: selected.heightIn,
+      widthPx: selected.widthPx,
+      heightPx: selected.heightPx,
+      lockAspect: selected.lockAspect !== false && selected.kind !== "text",
+      kind: selected.kind,
+    };
+    const capacity = planFillSheetCopies({
+      widthIn: source.widthIn,
+      heightIn: source.heightIn,
+      sheetWidth,
+      sheetHeight,
+      gap,
+      occupied: occupiedForAutoFill(items, selected.id),
+    }).capacity;
+    setFillSource(source);
+    setFillWidthIn(source.widthIn);
+    setFillHeightIn(source.heightIn);
+    setFillLockAspect(source.lockAspect);
+    setFillQuantity(Math.max(1, capacity));
+    setFillPhase("setup");
+    setFillError("");
+    setWorkflowReturn("canvas");
+    setError("");
+    setScreen("auto_fill");
+  }
+
+  function applyFillToCanvas() {
+    if (!fillSource) return;
+    let z = nextZIndex(items);
+    const result = commitAutoFill({
+      items,
+      sourceId: fillSource.id,
+      widthIn: fillWidthIn,
+      heightIn: fillHeightIn,
+      sheetWidth,
+      sheetHeight,
+      gap,
+      requested: fillQuantity,
+      placeCopy: (sourceItem, copy) => ({
+        ...sourceItem,
+        id: crypto.randomUUID(),
+        xIn: copy.xIn,
+        yIn: copy.yIn,
+        widthIn: fillWidthIn,
+        heightIn: fillHeightIn,
+        zIndex: z++,
+      }),
+    });
+    if (!result.ok) {
+      setFillError(
+        result.reason === "no-source"
+          ? "Select artwork on the sheet first, then Auto Fill."
+          : "Nothing fits on this sheet.",
+      );
+      return;
+    }
+    pushHistory(result.items);
+    selectItem(result.copies[0]?.id ?? null);
+    setMessage(`Filled sheet with ${result.copies.length} of ${fillQuantity} copies.`);
+    setScreen("canvas");
+  }
+
+  function fillSheet() {
+    openAutoFill();
   }
 
   function autoArrange() {
@@ -1196,6 +1318,16 @@ export default function GangSheetEditor() {
       }
       if (e.code === "Space" && !spacePan) {
         setSpacePan(true);
+        return;
+      }
+      if (screen === "canvas" && e.key === "[" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setToolsPanelOpen((v) => !v);
+        return;
+      }
+      if (screen === "canvas" && e.key === "]" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        setPropsPanelOpen((v) => !v);
         return;
       }
       if (!selectedId || screen !== "canvas") return;
@@ -1262,45 +1394,26 @@ export default function GangSheetEditor() {
     setMessage(`Added text "${label}" — drag to position.`);
   }
 
-  async function rasterizeGalleryItem(g: GalleryItem): Promise<File> {
-    const image = new Image();
-    image.src = g.thumb;
-    await image.decode();
-    const canvasEl = document.createElement("canvas");
-    canvasEl.width = Math.max(1, Math.round(g.widthIn * 300));
-    canvasEl.height = Math.max(1, Math.round(g.heightIn * 300));
-    const context = canvasEl.getContext("2d");
-    if (!context) throw new Error("Could not prepare gallery artwork");
-    context.drawImage(image, 0, 0, canvasEl.width, canvasEl.height);
-    const blob = await new Promise<Blob>((resolve, reject) =>
-      canvasEl.toBlob(
-        (value) => (value ? resolve(value) : reject(new Error("Could not prepare gallery artwork"))),
-        "image/png",
-      ),
-    );
-    return new File([blob], `${g.name}.png`, { type: "image/png" });
-  }
-
-  async function galleryThumbToAsset(g: GalleryItem): Promise<{ asset: Asset; previewUrl: string }> {
-    const file = await rasterizeGalleryItem(g);
-    const asset = await postUpload(file);
-    return { asset, previewUrl: g.thumb };
-  }
-
-  async function placeGalleryItem(g: GalleryItem) {
+  async function placeGalleryItem(g: GalleryItem, quantity = 1) {
     setUploading(true);
     setError("");
     try {
-      const { asset, previewUrl } = await galleryThumbToAsset(g);
-      const placed = createPlacedItem(asset, previewUrl, g.name, 0, items);
-      placed.widthIn = g.widthIn;
-      placed.heightIn = g.heightIn;
-      placed.dpi = Math.round(
-        Math.min(asset.widthPx / g.widthIn, asset.heightPx / g.heightIn),
+      const { asset, previewUrl } = galleryRecordToAsset(g);
+      const qty = Math.max(1, Math.round(quantity));
+      const placed: CanvasItem[] = [];
+      for (let i = 0; i < qty; i++) {
+        const item = createPlacedItem(asset, previewUrl, g.name, i, [...items, ...placed]);
+        item.widthIn = g.widthIn;
+        item.heightIn = g.heightIn;
+        placed.push(item);
+      }
+      pushHistory([...items, ...placed]);
+      selectItem(placed.at(-1)?.id ?? null);
+      setMessage(
+        qty === 1
+          ? `Placed "${g.name}" from gallery.`
+          : `Placed ${qty}× "${g.name}" from gallery.`,
       );
-      pushHistory([...items, placed]);
-      selectItem(placed.id);
-      setMessage(`Placed "${g.name}" from gallery.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not place gallery item");
     } finally {
@@ -1308,60 +1421,69 @@ export default function GangSheetEditor() {
     }
   }
 
-  function parseRoster(csv: string) {
-    return csv
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const parts = line.split(/[,\t]/).map((p) => p.trim());
-        return { name: parts[0] ?? "", number: parts[1] ?? "" };
-      })
-      .filter((r) => r.name || r.number);
+  function openNamesWorkflow(from: "welcome" | "canvas") {
+    const plate = defaultRosterPlate(sheetWidth, rosterFontSize);
+    setRosterWidthIn(plate.widthIn);
+    setRosterHeightIn(plate.heightIn);
+    setRosterLockAspect(true);
+    setNamesPhase("setup");
+    setNamesError("");
+    setWorkflowReturn(from);
+    setScreen("names");
   }
 
   function generateRoster() {
-    const rows = parseRoster(rosterCsv);
+    const rows = parseRosterCsv(rosterCsv);
     if (!rows.length) {
+      setNamesError("Add roster rows — one name and number per line.");
       setError("Add roster rows — one name and number per line.");
       return;
     }
-    const dupes = rows.filter(
-      (r, i) => rows.findIndex((x) => x.number && x.number === r.number) !== i,
-    );
+    const dupes = findDuplicateRosterNumbers(rows);
     if (dupes.length) {
-      setError(`Duplicate numbers found: ${dupes.map((d) => d.number).join(", ")}`);
+      const msg = `Duplicate numbers found: ${dupes.join(", ")}`;
+      setNamesError(msg);
+      setError(msg);
       return;
     }
+    const plan = planRosterPlacements({
+      rows,
+      sheetWidth,
+      sheetHeight,
+      gap,
+      widthIn: rosterWidthIn,
+      heightIn: rosterHeightIn,
+    });
     const next: CanvasItem[] = [...items];
     let z = nextZIndex(next);
-    rows.forEach((row, idx) => {
-      const label = `${row.name}${row.number ? ` #${row.number}` : ""}`.trim();
-      const w = Math.min(6, sheetWidth - 0.4);
-      const h = Math.max(0.4, rosterFontSize / 72);
+    plan.placements.forEach((row) => {
       next.push({
         assetId: `text-roster-${crypto.randomUUID()}`,
         widthPx: 400,
         heightPx: 80,
         contentType: "image/svg+xml",
         id: crypto.randomUUID(),
-        name: label,
-        previewUrl: textPreviewDataUrl(label, rosterFontSize, "Impact", "#111827"),
-        xIn: 0.2,
-        yIn: 0.2 + idx * (h + gap),
-        widthIn: w,
-        heightIn: h,
+        name: row.label,
+        previewUrl: textPreviewDataUrl(row.label, rosterFontSize, "Impact", "#111827"),
+        xIn: row.xIn,
+        yIn: row.yIn,
+        widthIn: row.widthIn,
+        heightIn: row.heightIn,
         rotationDeg: 0,
         zIndex: z++,
         kind: "text",
-        textContent: label,
+        textContent: row.label,
         fontSize: rosterFontSize,
         fontFamily: "Impact",
         textColor: "#111827",
+        lockAspect: rosterLockAspect,
       });
     });
     pushHistory(next);
-    setMessage(`Generated ${rows.length} name/number set${rows.length === 1 ? "" : "s"}.`);
+    setMessage(
+      `Generated ${plan.requested} name/number set${plan.requested === 1 ? "" : "s"} · ${plan.onSheet} on sheet.`,
+    );
+    setScreen("canvas");
     setSidebarTab("layers");
     setMobileDrawer("sidebar");
   }
@@ -1412,12 +1534,20 @@ export default function GangSheetEditor() {
 
   function handleSidebarTab(tab: SidebarTab) {
     if (tab === "auto") {
-      setScreen("auto_build");
-      setAutoPhase("setup");
-      setMessage("Auto Arrange — upload, set quantities, preview, then apply.");
+      openAutoBuild("canvas");
+      return;
+    }
+    if (tab === "names") {
+      openNamesWorkflow("canvas");
+      return;
+    }
+    if (tab === sidebarTab && toolsPanelOpen) {
+      setToolsPanelOpen(false);
+      setMobileDrawer(null);
       return;
     }
     setSidebarTab(tab);
+    setToolsPanelOpen(true);
     setMobileDrawer("sidebar");
   }
 
@@ -1427,11 +1557,14 @@ export default function GangSheetEditor() {
       const q = uploadSearch.toLowerCase();
       list = list.filter((p) => p.name.toLowerCase().includes(q));
     }
-    list.sort((a, b) =>
-      uploadSort === "name"
-        ? a.name.localeCompare(b.name)
-        : b.uploadedAt - a.uploadedAt,
-    );
+    list.sort((a, b) => {
+      if (uploadSort === "name") return a.name.localeCompare(b.name);
+      if (uploadSort === "dpi") return (b.asset.dpi ?? -1) - (a.asset.dpi ?? -1);
+      if (uploadSort === "size") {
+        return b.asset.widthPx * b.asset.heightPx - a.asset.widthPx * a.asset.heightPx;
+      }
+      return b.uploadedAt - a.uploadedAt;
+    });
     return list;
   }, [uploadPool, uploadSearch, uploadSort]);
 
@@ -1446,12 +1579,18 @@ export default function GangSheetEditor() {
           g.tags.some((t) => t.toLowerCase().includes(q)),
       );
     }
-    return list;
-  }, [galleryCategory, gallerySearch, galleryItems]);
+    return sortGallery(list, gallerySort);
+  }, [galleryCategory, gallerySearch, galleryItems, gallerySort]);
 
   async function refreshGallery() {
     setGalleryLoading(true);
     setGalleryError("");
+    if (!page.shop) {
+      setGalleryItems([]);
+      setGalleryError("Open this editor from a shop to load gallery artwork.");
+      setGalleryLoading(false);
+      return;
+    }
     try {
       const params = new URLSearchParams();
       if (galleryCategory !== "All") params.set("category", galleryCategory);
@@ -1460,14 +1599,20 @@ export default function GangSheetEditor() {
         credentials: "include",
         headers: { "X-LGS-Shop": page.shop },
       });
-      const json = (await res.json()) as {
+      const json = (await res.json().catch(() => ({}))) as {
         categories?: string[];
         items?: GalleryItem[];
         error?: string;
       };
       if (!res.ok) {
         setGalleryItems([]);
-        setGalleryError(json.error || "Could not load gallery artwork.");
+        if (res.status === 401 || res.status === 403) {
+          setGalleryError(
+            "Gallery requires shop authentication. Open the editor from your storefront or a signed-in shop.",
+          );
+        } else {
+          setGalleryError(json.error || "Could not load gallery artwork.");
+        }
         return;
       }
       setGalleryItems(json.items ?? []);
@@ -2000,7 +2145,7 @@ export default function GangSheetEditor() {
     const ubsHref = `/editor/upload-by-size?shop=${encodeURIComponent(page.shop)}`;
     return (
       <div className="bags welcome lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{ARTWORK_INSPECTOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
         {restoreDialog}
         <div className="home-shell">
           <nav className="icon-rail" aria-label="Builder navigation">
@@ -2015,7 +2160,17 @@ export default function GangSheetEditor() {
                 className="rail-btn"
                 title={tab.label}
                 aria-label={tab.label}
-                onClick={() => openCanvas({ tab: tab.id === "auto" ? "uploads" : tab.id })}
+                onClick={() => {
+                  if (tab.id === "auto") {
+                    openAutoBuild("welcome");
+                    return;
+                  }
+                  if (tab.id === "names") {
+                    openNamesWorkflow("welcome");
+                    return;
+                  }
+                  openCanvas({ tab: tab.id });
+                }}
               >
                 <EditorRailIcon name={tab.icon} label={tab.label} />
                 <span className="rail-label">{tab.label}</span>
@@ -2028,8 +2183,8 @@ export default function GangSheetEditor() {
               <div className="brand center">
                 <b>L</b>
                 <span>
-                  <strong>LEGENDS BAGS</strong>
-                  <small>Welcome Center</small>
+                  <strong>LEGENDS</strong>
+                  <small>Gang Sheet Studio</small>
                 </span>
               </div>
               <h1>{page.appearance.welcomeTitle}</h1>
@@ -2094,13 +2249,11 @@ export default function GangSheetEditor() {
                   type="button"
                   className="welcome-opt"
                   onClick={() => {
-                    setScreen("auto_build");
-                    setAutoPhase("setup");
                     setAutoDrafts([]);
                     setAutoPreview(null);
                     setAutoPreviewError("");
                     setSelectedAutoId(null);
-                    setMessage("Upload all designs, set size & quantity — preview updates live.");
+                    openAutoBuild("welcome");
                   }}
                 >
                   <div className="welcome-icon"><EditorRailIcon name="auto" label="Auto Build" /></div>
@@ -2338,502 +2491,211 @@ export default function GangSheetEditor() {
     );
   }
 
+  const workflowCss = BAGS_BASE_CSS + GANG_SHEET_EDITOR_CSS + BACKGROUND_REMOVAL_MODAL_CSS + PRODUCTION_WORKFLOW_CSS;
+  const appearanceStyle = appearanceVars(page.appearance);
+  const leaveWorkflow = () => setScreen(workflowReturn);
+
   if (screen === "auto_build") {
-    const previewW = autoPreview?.sheetWidthIn ?? sheetWidth;
-    const previewH = autoPreview?.sheetHeightIn ?? sheetHeight;
-    const heightWarning =
-      autoPreview && autoPreview.sheetHeightIn > sheetHeight
-        ? `Needs ~${autoPreview.sheetHeightIn.toFixed(1)} in length — increase max sheet length or remove items.`
-        : "";
-
     return (
-      <div className="bags auto-mode lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-        <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
-        <header>
-          <div className="brand">
-            <b>L</b>
-            <span>
-              <strong>Auto Arrange</strong>
-              <small>{autoPhase === "setup" ? "Upload → quantity → Apply" : "Review → Continue"}</small>
-            </span>
-          </div>
-          <nav>
-            <button type="button" onClick={() => setScreen("welcome")}>
-              ← Back
-            </button>
-            {autoPhase === "setup" ? (
-              <>
-                <label className="btn-upload">
-                  {uploading ? "Uploading…" : "＋ Upload images"}
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg"
-                    hidden
-                    onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="save"
-                  disabled={!autoDrafts.length || !!autoPreviewError || autoPreviewLoading}
-                  onClick={() => {
-                    void refreshAutoPreview().then((p) => {
-                      if (p?.pieces.length) setAutoPhase("review");
-                    });
-                  }}
-                >
-                  Apply
-                </button>
-              </>
-            ) : (
-              <>
-                <button type="button" onClick={undoAutoResult} aria-label="Undo auto nest result">
-                  Undo
-                </button>
-                <button
-                  type="button"
-                  disabled={autoPreviewLoading || !autoDrafts.length}
-                  onClick={() => void refreshAutoPreview()}
-                  aria-label="Regenerate nest preview"
-                >
-                  {autoPreviewLoading ? "Regenerating…" : "Regenerate"}
-                </button>
-                <button type="button" onClick={() => setAutoPhase("setup")}>
-                  Back and adjust
-                </button>
-                <button
-                  type="button"
-                  className="save"
-                  disabled={autoBusy || !autoPreview?.pieces.length}
-                  onClick={() => void applyAutoBuild()}
-                  aria-label="Accept nest and continue to editor"
-                >
-                  {autoBusy ? "Building…" : "Accept & Continue"}
-                </button>
-              </>
-            )}
-          </nav>
-        </header>
+      <AutoBuildScreen
+        appearanceStyle={appearanceStyle}
+        extraCss={workflowCss}
+        phase={autoPhase}
+        drafts={autoDrafts}
+        selectedDraftId={selectedAutoId}
+        onSelectDraft={setSelectedAutoId}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        gap={gap}
+        sheetWidths={SHEET_WIDTHS}
+        sheetHeights={SHEET_HEIGHTS}
+        onSheetWidth={setSheetWidth}
+        onSheetHeight={setSheetHeight}
+        onGap={setGap}
+        allowRotate90={allowRotate90}
+        onAllowRotate90={setAllowRotate90}
+        uploadTab={autoUploadTab}
+        onUploadTab={setAutoUploadTab}
+        uploading={uploading}
+        onUploadFiles={(files) => void uploadFiles(files, "auto")}
+        uploadPool={uploadPool}
+        galleryItems={filteredGallery}
+        onAddPoolItem={(id) => {
+          const entry = uploadPool.find((p) => p.id === id);
+          if (entry) addPoolItemToAuto(entry);
+        }}
+        onAddGalleryItem={(id) => {
+          const g = filteredGallery.find((item) => item.id === id);
+          if (g) void addGalleryItemToAuto(g);
+        }}
+        onPatchDraft={(id, patch) =>
+          setAutoDrafts((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+        }
+        onDuplicateDraft={(id) =>
+          setAutoDrafts((rows) => {
+            const src = rows.find((r) => r.id === id);
+            if (!src) return rows;
+            return [
+              ...rows,
+              {
+                ...src,
+                id: crypto.randomUUID(),
+                name: `${src.name.replace(/\.[^.]+$/, "")} (copy)`,
+              },
+            ];
+          })
+        }
+        onRemoveDraft={(id) => {
+          setAutoDrafts((rows) => rows.filter((r) => r.id !== id));
+          if (selectedAutoId === id) setSelectedAutoId(null);
+        }}
+        preview={autoPreview}
+        previewLoading={autoPreviewLoading}
+        previewError={autoPreviewError}
+        error={error}
+        message={message}
+        busy={autoBusy}
+        onBack={leaveWorkflow}
+        onApplyReview={() => {
+          void refreshAutoPreview().then((p) => {
+            if (p?.pieces.length) setAutoPhase("review");
+          });
+        }}
+        onUndo={undoAutoResult}
+        onRegenerate={() => void refreshAutoPreview()}
+        onBackAdjust={() => setAutoPhase("setup")}
+        onBuild={() => void applyAutoBuild()}
+      />
+    );
+  }
 
-        <div className="auto-split">
-          <section className={`auto-upload-panel ${autoPhase === "review" ? "readonly" : ""}`}>
-            <div className="auto-panel-head">
-              <h2>{autoPhase === "setup" ? "1. Upload & size" : "Your designs"}</h2>
-              <p>{autoDrafts.length} design{autoDrafts.length === 1 ? "" : "s"}</p>
-            </div>
+  if (screen === "auto_fill" && fillSource) {
+    const aspect = fillSource.widthPx / Math.max(0.01, fillSource.heightPx);
+    const fillOccupied = occupiedForAutoFill(items, fillSource.id).map((item) => ({
+      id: item.id,
+      xIn: item.xIn,
+      yIn: item.yIn,
+      widthIn: item.widthIn,
+      heightIn: item.heightIn,
+      previewUrl: item.previewUrl,
+      label: item.name,
+      rotationDeg: item.rotationDeg,
+    }));
+    return (
+      <AutoFillScreen
+        appearanceStyle={appearanceStyle}
+        extraCss={workflowCss}
+        phase={fillPhase}
+        source={fillSource}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        gap={gap}
+        occupied={fillOccupied}
+        widthIn={fillWidthIn}
+        heightIn={fillHeightIn}
+        quantity={fillQuantity}
+        lockAspect={fillLockAspect}
+        onWidth={(w) => {
+          setFillWidthIn(w);
+          if (fillLockAspect) setFillHeightIn(w / aspect);
+        }}
+        onHeight={(h) => {
+          setFillHeightIn(h);
+          if (fillLockAspect) setFillWidthIn(h * aspect);
+        }}
+        onQuantity={setFillQuantity}
+        onLockAspect={setFillLockAspect}
+        onPreset={(inches) => {
+          if (aspect >= 1) {
+            setFillWidthIn(inches);
+            setFillHeightIn(inches / aspect);
+          } else {
+            setFillWidthIn(inches * aspect);
+            setFillHeightIn(inches);
+          }
+          setFillLockAspect(true);
+        }}
+        error={fillError}
+        onBack={leaveWorkflow}
+        onApplyReview={() => {
+          const plan = planFillSheetCopies({
+            widthIn: fillWidthIn,
+            heightIn: fillHeightIn,
+            sheetWidth,
+            sheetHeight,
+            gap,
+            requested: fillQuantity,
+            occupied: fillOccupied,
+          });
+          if (!plan.placed) {
+            setFillError("Nothing fits on this sheet.");
+            return;
+          }
+          setFillError("");
+          setFillPhase("review");
+        }}
+        onBackAdjust={() => setFillPhase("setup")}
+        onBuild={applyFillToCanvas}
+      />
+    );
+  }
 
-            {autoPhase === "setup" ? (
-              <div className="upload-tabs">
-                <button
-                  type="button"
-                  className={autoUploadTab === "upload" ? "tab active" : "tab"}
-                  onClick={() => setAutoUploadTab("upload")}
-                >
-                  Upload image(s)
-                </button>
-                <button
-                  type="button"
-                  className={autoUploadTab === "pool" ? "tab active" : "tab"}
-                  onClick={() => setAutoUploadTab("pool")}
-                >
-                  My images
-                </button>
-                <button
-                  type="button"
-                  className={autoUploadTab === "gallery" ? "tab active" : "tab"}
-                  onClick={() => {
-                    setAutoUploadTab("gallery");
-                    void refreshGallery();
-                  }}
-                >
-                  Gallery
-                </button>
-              </div>
-            ) : null}
-
-            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "upload" ? (
-              <label className="drop large">
-                <b>⬆</b>
-                <strong>Upload all your images</strong>
-                <small>PNG/JPEG/SVG · select multiple files at once</small>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg,image/svg+xml,.svg"
-                  hidden
-                  onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-                />
-              </label>
-            ) : null}
-
-            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "pool" ? (
-              <div className="pool-grid">
-                {!uploadPool.length ? (
-                  <p className="muted">Upload images in the main editor first — they appear here.</p>
-                ) : (
-                  uploadPool.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="pool-item"
-                      onClick={() => addPoolItemToAuto(p)}
-                      disabled={uploading}
-                    >
-                      <img src={p.previewUrl} alt="" />
-                      <span>{p.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            ) : null}
-
-            {!autoDrafts.length && autoPhase === "setup" && autoUploadTab === "gallery" ? (
-              <div className="pool-grid">
-                {filteredGallery.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    className="pool-item"
-                    onClick={() => void addGalleryItemToAuto(g)}
-                    disabled={uploading}
-                  >
-                    <img src={g.thumb} alt="" />
-                    <span>{g.name}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {autoDrafts.length > 0 ? (
-              <>
-                <div className="auto-sheet-settings">
-                  <label>
-                    Sheet width
-                    <select
-                      value={sheetWidth}
-                      onChange={(e) => setSheetWidth(+e.target.value)}
-                    >
-                      {SHEET_WIDTHS.map((w) => (
-                        <option key={w} value={w}>
-                          {w} in
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Max length
-                    <select
-                      value={sheetHeight}
-                      onChange={(e) => setSheetHeight(+e.target.value)}
-                    >
-                      {SHEET_HEIGHTS.map((h) => (
-                        <option key={h} value={h}>
-                          {h} in
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Spacing
-                    <input
-                      type="number"
-                      min={0}
-                      max={0.5}
-                      step={0.05}
-                      value={gap}
-                      onChange={(e) => setGap(+e.target.value)}
-                    />
-                  </label>
-                </div>
-                <label className="lock-aspect rotate-toggle">
-                  <input
-                    type="checkbox"
-                    checked={allowRotate90}
-                    disabled={autoPhase === "review"}
-                    onChange={(e) => setAllowRotate90(e.target.checked)}
-                  />
-                  Allow 90° rotation when nesting
-                </label>
-
-                <div className="auto-list compact">
-                  {autoDrafts.map((d) => (
-                    <article
-                      key={d.id}
-                      className={`auto-row ${d.id === selectedAutoId ? "active" : ""}`}
-                      onClick={() => setSelectedAutoId(d.id)}
-                    >
-                      <img src={d.previewUrl} alt="" />
-                      <div className="auto-fields">
-                        <strong>{d.name}</strong>
-                        <div className="preset-row">
-                          <PresetSizeChips
-                            presets={AUTO_PRESETS}
-                            onPick={(inches) => {
-                              const dims = applyLongestSidePreset(
-                                d.asset.widthPx,
-                                d.asset.heightPx,
-                                inches,
-                              );
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id ? { ...r, ...dims, lockAspect: true } : r,
-                                ),
-                              );
-                            }}
-                          />
-                        </div>
-                        <div className="auto-dims">
-                          <StepperField
-                            label="Width"
-                            value={d.widthIn}
-                            step={0.1}
-                            onChange={(w) => {
-                              const aspect = d.asset.widthPx / d.asset.heightPx;
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id
-                                    ? {
-                                        ...r,
-                                        widthIn: w,
-                                        heightIn: r.lockAspect ? w / aspect : r.heightIn,
-                                      }
-                                    : r,
-                                ),
-                              );
-                            }}
-                          />
-                          <StepperField
-                            label="Height"
-                            value={d.heightIn}
-                            step={0.1}
-                            onChange={(h) => {
-                              const aspect = d.asset.widthPx / d.asset.heightPx;
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id
-                                    ? {
-                                        ...r,
-                                        heightIn: h,
-                                        widthIn: r.lockAspect ? h * aspect : r.widthIn,
-                                      }
-                                    : r,
-                                ),
-                              );
-                            }}
-                          />
-                          <StepperField
-                            label="Qty"
-                            value={d.quantity}
-                            step={1}
-                            min={1}
-                            onChange={(q) =>
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id
-                                    ? { ...r, quantity: Math.max(1, Math.round(q)) }
-                                    : r,
-                                ),
-                              )
-                            }
-                          />
-                        </div>
-                        <label className="lock-aspect">
-                          <input
-                            type="checkbox"
-                            checked={d.lockAspect}
-                            disabled={autoPhase === "review"}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) =>
-                              setAutoDrafts((rows) =>
-                                rows.map((r) =>
-                                  r.id === d.id ? { ...r, lockAspect: e.target.checked } : r,
-                                ),
-                              )
-                            }
-                          />
-                          Lock aspect ratio
-                        </label>
-                        <small>
-                          {(d.widthIn * d.heightIn * d.quantity).toFixed(2)} in² ·{" "}
-                          {d.asset.widthPx}×{d.asset.heightPx}px
-                        </small>
-                      </div>
-                      <div className="auto-actions">
-                        {autoPhase === "setup" ? (
-                          <button
-                            type="button"
-                            className="dup"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAutoDrafts((rows) => {
-                                const src = rows.find((r) => r.id === d.id);
-                                if (!src) return rows;
-                                return [
-                                  ...rows,
-                                  {
-                                    ...src,
-                                    id: crypto.randomUUID(),
-                                    name: `${src.name.replace(/\.[^.]+$/, "")} (copy)`,
-                                  },
-                                ];
-                              });
-                            }}
-                          >
-                            Duplicate
-                          </button>
-                        ) : null}
-                        {autoPhase === "setup" ? (
-                          <button
-                            type="button"
-                            className="remove"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAutoDrafts((rows) => rows.filter((r) => r.id !== d.id));
-                              if (selectedAutoId === d.id) setSelectedAutoId(null);
-                            }}
-                          >
-                            ×
-                          </button>
-                        ) : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                <label className="btn ghost block">
-                  ＋ Add more images
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/png,image/jpeg"
-                    hidden
-                    disabled={autoPhase === "review"}
-                    onChange={(e) => void uploadFiles(Array.from(e.target.files ?? []), "auto")}
-                  />
-                </label>
-              </>
-            ) : null}
-          </section>
-
-          <section className="auto-preview-panel">
-            <div className="auto-panel-head">
-              <h2>{autoPhase === "setup" ? "2. Auto nest preview" : "Nest preview"}</h2>
-              {autoPreviewLoading ? (
-                <span className="preview-status">Updating…</span>
-              ) : autoPreview ? (
-                <span className="preview-status ok">
-                  {autoPhase === "review" ? "Ready to continue" : "Live preview"}
-                </span>
-              ) : (
-                <span className="preview-status">Waiting for uploads</span>
-              )}
-            </div>
-
-            <div className="nest-preview-wrap">
-              {autoPreview?.pieces.length ? (
-                <div
-                  className="nest-preview-sheet"
-                  style={{ aspectRatio: `${previewW}/${previewH}` }}
-                >
-                  <i />
-                  {autoPreview.pieces.map((p) => (
-                    <div
-                      key={p.id}
-                      className={`nest-piece ${p.draftId === selectedAutoId ? "highlight" : ""}`}
-                      style={{
-                        left: `${(p.xIn / previewW) * 100}%`,
-                        top: `${(p.yIn / previewH) * 100}%`,
-                        width: `${(p.widthIn / previewW) * 100}%`,
-                        height: `${(p.heightIn / previewH) * 100}%`,
-                      }}
-                      title={p.name}
-                    >
-                      <img
-                        src={p.previewUrl}
-                        alt=""
-                        style={{ transform: `rotate(${p.rotationDeg}deg)` }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="nest-preview-empty">
-                  {autoPreviewError ? (
-                    <p className="error">{autoPreviewError}</p>
-                  ) : (
-                    <>
-                      <strong>Preview appears here</strong>
-                      <p>Upload images and set sizes — nesting updates automatically.</p>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="nest-stats">
-              <p>
-                <span>Sheet size</span>
-                <strong>
-                  {previewW} × {previewH.toFixed(1)} in
-                </strong>
-              </p>
-              <p>
-                <span>Total pieces</span>
-                <strong>{autoPreview?.totalPieces ?? 0}</strong>
-              </p>
-              {autoPreview?.fittedCount != null && autoPreview.remainingCount != null ? (
-                <p className="overflow-note">
-                  <span>Fit status</span>
-                  <strong>
-                    Fitted {autoPreview.fittedCount} of {autoPreview.totalPieces} —{" "}
-                    {autoPreview.remainingCount} remain
-                  </strong>
-                </p>
-              ) : null}
-              <p>
-                <span>Printed area</span>
-                <strong>{(autoPreview?.totalAreaSqIn ?? 0).toFixed(2)} in²</strong>
-              </p>
-              <p>
-                <span>Utilization</span>
-                <strong>
-                  {autoPreview ? `${Math.round(autoPreview.utilization * 100)}%` : "—"}
-                </strong>
-              </p>
-              <p className="total">
-                <span>Est. price</span>
-                <strong>${(autoPreview?.estimateUsd ?? 0).toFixed(2)}</strong>
-              </p>
-            </div>
-
-            {heightWarning ? <p className="error block">{heightWarning}</p> : null}
-            {error ? <p className="error block">{error}</p> : null}
-            {!error && message ? <p className="message block">{message}</p> : null}
-
-            <p className="fine">
-              {autoPhase === "setup" ? (
-                <>
-                  When sizing looks good, click <strong>Apply</strong> to review the nest before
-                  opening the full editor.
-                </>
-              ) : (
-                <>
-                  <strong>Accept &amp; Continue</strong> opens the canvas with these placements.
-                  Use <strong>Undo</strong> or <strong>Regenerate</strong> to try again, or{" "}
-                  <strong>Back and adjust</strong> to change sizes.
-                </>
-              )}
-            </p>
-          </section>
-        </div>
-      </div>
+  if (screen === "names") {
+    const aspect = rosterWidthIn / Math.max(0.01, rosterHeightIn);
+    return (
+      <NamesNumbersScreen
+        appearanceStyle={appearanceStyle}
+        extraCss={workflowCss}
+        phase={namesPhase}
+        rosterCsv={rosterCsv}
+        onRosterCsv={setRosterCsv}
+        fontSize={rosterFontSize}
+        onFontSize={(n) => {
+          setRosterFontSize(n);
+          const nextH = Math.max(0.4, n / 72);
+          setRosterHeightIn(nextH);
+          if (rosterLockAspect) setRosterWidthIn(nextH * aspect);
+        }}
+        widthIn={rosterWidthIn}
+        heightIn={rosterHeightIn}
+        lockAspect={rosterLockAspect}
+        onWidth={(w) => {
+          setRosterWidthIn(w);
+          if (rosterLockAspect) setRosterHeightIn(w / aspect);
+        }}
+        onHeight={(h) => {
+          setRosterHeightIn(h);
+          if (rosterLockAspect) setRosterWidthIn(h * aspect);
+        }}
+        onLockAspect={setRosterLockAspect}
+        sheetWidth={sheetWidth}
+        sheetHeight={sheetHeight}
+        gap={gap}
+        error={namesError}
+        onBack={leaveWorkflow}
+        onApplyReview={() => {
+          const rows = parseRosterCsv(rosterCsv);
+          const dupes = findDuplicateRosterNumbers(rows);
+          if (!rows.length) {
+            setNamesError("Add roster rows — one name and number per line.");
+            return;
+          }
+          if (dupes.length) {
+            setNamesError(`Duplicate numbers found: ${dupes.join(", ")}`);
+            return;
+          }
+          setNamesError("");
+          setNamesPhase("review");
+        }}
+        onBackAdjust={() => setNamesPhase("setup")}
+        onBuild={generateRoster}
+      />
     );
   }
 
   return (
     <div className="bags lgs-editor gs-editor-v2" style={appearanceVars(page.appearance)}>
-      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
+      <style>{BAGS_BASE_CSS}{GANG_SHEET_EDITOR_CSS}{ARTWORK_LIBRARY_CSS}{ARTWORK_INSPECTOR_CSS}{BACKGROUND_REMOVAL_MODAL_CSS}</style>
       {restoreDialog}
       {librarySaveDialog}
       <GangSheetSaveDialog
@@ -2853,6 +2715,13 @@ export default function GangSheetEditor() {
         lowDpiCount={lowDpiCount}
         qualitySummary={qualitySummary}
         previewUrl={savePreviewUrl}
+        artwork={items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          previewUrl: item.previewUrl,
+          assetId: item.assetId,
+          kind: item.kind,
+        }))}
         saving={saving}
         error={saveDialogError}
         requestId={saveDialogRequestId}
@@ -2902,6 +2771,7 @@ export default function GangSheetEditor() {
         }}
         onFitWidth={() => fitToViewport("width")}
         onFitSheet={() => fitToViewport("sheet")}
+        showZoom={false}
         panMode={spacePan}
         onTogglePan={() => setSpacePan((v) => !v)}
         gridVisible={gridVisible}
@@ -2916,6 +2786,10 @@ export default function GangSheetEditor() {
         saving={saving}
         hasItems={items.length > 0}
         onOverflowAction={handleOverflowAction}
+        toolsPanelOpen={toolsPanelOpen}
+        propsPanelOpen={propsPanelOpen}
+        onToggleToolsPanel={() => setToolsPanelOpen((v) => !v)}
+        onTogglePropsPanel={() => setPropsPanelOpen((v) => !v)}
         qualityButton={
           <QualityStatusButton
             summary={qualitySummary}
@@ -2948,7 +2822,7 @@ export default function GangSheetEditor() {
           </button>
         </p>
       ) : null}
-      <div className="workspace">
+      <div className={`workspace${toolsPanelOpen ? "" : " tools-collapsed"}${propsPanelOpen ? "" : " props-collapsed"}`}>
         <nav className="icon-rail" aria-label="Builder navigation">
           <button
             type="button"
@@ -2988,127 +2862,46 @@ export default function GangSheetEditor() {
             ×
           </button>
           {sidebarTab === "uploads" ? (
-            <>
-              <div className="heading">
-                <span>
-                  <strong>Uploads</strong>
-                  <small>{uploadPool.length} file{uploadPool.length === 1 ? "" : "s"}</small>
-                </span>
-                <button
-                  type="button"
-                  className="refresh-btn"
-                  title="Refresh uploads"
-                  aria-label="Refresh uploads"
-                  onClick={() => setPoolTick((t) => t + 1)}
-                >
-                  <ToolbarIcon name="refresh" />
-                </button>
-              </div>
-              <div className="sidebar-tools">
-                <input
-                  type="search"
-                  placeholder="Search uploads…"
-                  value={uploadSearch}
-                  onChange={(e) => setUploadSearch(e.target.value)}
-                  aria-label="Search uploads"
-                />
-                <select value={uploadSort} onChange={(e) => setUploadSort(e.target.value as "recent" | "name")} aria-label="Sort uploads">
-                  <option value="recent">Recent</option>
-                  <option value="name">Name</option>
-                </select>
-              </div>
-              <p className="sidebar-hint">Drag files here or click to upload — then click a thumbnail to place.</p>
-              <label
-                className="sidebar-upload-btn drop-target"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas");
-                }}
-              >
-                {uploading ? "Uploading…" : "Upload image(s)"}
-                <input
-                  ref={sidebarUploadRef}
-                  type="file"
-                  multiple
-                  accept="image/png,image/jpeg"
-                  hidden
-                  onChange={(e) => {
-                    void uploadFiles(Array.from(e.target.files ?? []), "canvas");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-              {!filteredPool.length ? (
-                <label className="drop compact drop-target" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas"); }}>
-                  <strong>{uploadPool.length ? "No matches" : "No uploads yet"}</strong>
-                  <small>Drop PNG/JPEG files here or browse above</small>
-                  <input type="file" multiple accept="image/png,image/jpeg" hidden onChange={(e) => { void uploadFiles(Array.from(e.target.files ?? []), "canvas"); e.target.value = ""; }} />
-                </label>
-              ) : (
-                <div className="pool-grid" key={poolTick}>
-                  {filteredPool.map((p) => {
-                    const dpiInfo = dpiQualityTier(p.asset.dpi);
-                    const onSheet = sheetCountForAsset(p.asset.assetId);
-                    return (
-                      <div key={p.id} className="pool-item-wrap">
-                        <button type="button" className="pool-item" onClick={() => placeFromPool(p.id)} title="Click to place on gang sheet" draggable onDragStart={(e) => e.dataTransfer.setData("text/pool-id", p.id)}>
-                          <img src={p.previewUrl} alt="" className="checkerboard" />
-                          <span>{p.name}</span>
-                          {onSheet ? <em className="on-sheet">{onSheet} on sheet</em> : null}
-                          {dpiInfo.tier !== "excellent" && dpiInfo.tier !== "good" ? (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label} DPI</em>
-                          ) : (
-                            <em className={`dpi-badge tier-${dpiInfo.tier}`}>{dpiInfo.label}</em>
-                          )}
-                        </button>
-                        <div className="pool-item-actions">
-                          <input type="text" defaultValue={p.name} aria-label="Rename upload" onBlur={(e) => renamePoolItem(p.id, e.target.value || p.name)} />
-                          <button type="button" aria-label="Remove background" title="Remove background" onClick={() => openBgRemoveForAsset(p.asset.assetId, p.previewUrl)}>Cut</button>
-                          <button type="button" aria-label="Delete upload" onClick={() => deletePoolItem(p.id)}>Del</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+            <UploadsPanel
+              items={filteredPool.map((p) => ({
+                id: p.id,
+                name: p.name,
+                previewUrl: p.previewUrl,
+                uploadedAt: p.uploadedAt,
+                asset: p.asset,
+                onSheetCount: sheetCountForAsset(p.asset.assetId),
+              }))}
+              totalCount={uploadPool.length}
+              search={uploadSearch}
+              sort={uploadSort}
+              uploading={uploading}
+              gridKey={poolTick}
+              inputRef={sidebarUploadRef}
+              onSearchChange={setUploadSearch}
+              onSortChange={setUploadSort}
+              onRefresh={() => setPoolTick((t) => t + 1)}
+              onFiles={(files) => void uploadFiles(files, "canvas")}
+              onAddToSheet={(id, qty) => placeFromPool(id, qty)}
+              onRename={renamePoolItem}
+              onRemoveBackground={(assetId, previewUrl) => openBgRemoveForAsset(assetId, previewUrl)}
+              onDelete={deletePoolItem}
+            />
           ) : sidebarTab === "gallery" ? (
-            <>
-              <div className="heading"><span><strong>Gallery</strong><small>Merchant artwork</small></span></div>
-              <p className="panel-lead">Artwork from your shop&apos;s Gallery Settings — not sample placeholders.</p>
-              <div className="sidebar-tools">
-                <input type="search" placeholder="Search gallery…" value={gallerySearch} onChange={(e) => setGallerySearch(e.target.value)} aria-label="Search gallery" />
-                <button type="button" className="refresh-btn" aria-label="Refresh gallery" onClick={() => void refreshGallery()}>
-                  <ToolbarIcon name="refresh" />
-                </button>
-              </div>
-              <div className="chip-row">
-                {galleryCategories.map((cat) => (
-                  <button key={cat} type="button" className={galleryCategory === cat ? "chip active" : "chip"} onClick={() => setGalleryCategory(cat)}>{cat}</button>
-                ))}
-              </div>
-              {galleryLoading ? <p className="sidebar-empty">Loading gallery…</p> : null}
-              {galleryError ? (
-                <p className="gs-save-error" style={{ margin: "0 16px 12px" }}>
-                  {galleryError}{" "}
-                  <button type="button" className="gs-ghost-btn" onClick={() => void refreshGallery()}>Retry</button>
-                </p>
-              ) : null}
-              {!galleryLoading && !filteredGallery.length ? (
-                <p className="sidebar-empty">No gallery artwork yet. Add images in Gallery Settings.</p>
-              ) : (
-                <div className="pool-grid">
-                  {filteredGallery.map((g) => (
-                    <button key={g.id} type="button" className="pool-item" onClick={() => void placeGalleryItem(g)} disabled={uploading}>
-                      <img src={g.thumb} alt="" />
-                      <span>{g.name}</span>
-                      <em>{g.widthIn}×{g.heightIn}″</em>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+            <GalleryPanel
+              items={filteredGallery}
+              categories={galleryCategories}
+              category={galleryCategory}
+              search={gallerySearch}
+              sort={gallerySort}
+              loading={galleryLoading}
+              error={galleryError}
+              uploading={uploading}
+              onSearchChange={setGallerySearch}
+              onCategoryChange={setGalleryCategory}
+              onSortChange={setGallerySort}
+              onRefresh={() => void refreshGallery()}
+              onAddToSheet={(item, qty) => void placeGalleryItem(item, qty)}
+            />
           ) : sidebarTab === "text" ? (
             <>
               <div className="heading"><span><strong>Text</strong><small>Add labels &amp; titles</small></span></div>
@@ -3128,11 +2921,10 @@ export default function GangSheetEditor() {
           ) : sidebarTab === "names" ? (
             <>
               <div className="heading"><span><strong>Names &amp; Numbers</strong><small>Roster generator</small></span></div>
-              <p className="sidebar-hint">Paste from Excel or CSV — one row per player: Name, Number</p>
+              <p className="sidebar-hint">Paste a roster, set plate size, preview requested vs placed, then Build.</p>
               <div className="sidebar-form">
-                <label>Roster<textarea rows={8} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
-                <label>Font size<input type="number" min={12} max={96} value={rosterFontSize} onChange={(e) => setRosterFontSize(+e.target.value)} /></label>
-                <button type="button" className="sidebar-upload-btn" onClick={generateRoster}>Generate on sheet</button>
+                <label>Roster<textarea rows={6} value={rosterCsv} placeholder={"Smith, 12\nJones, 7"} onChange={(e) => setRosterCsv(e.target.value)} aria-label="Roster CSV" /></label>
+                <button type="button" className="sidebar-upload-btn" onClick={() => openNamesWorkflow("canvas")}>Open Names &amp; Numbers</button>
               </div>
             </>
           ) : sidebarTab === "layers" ? (
@@ -3185,11 +2977,26 @@ export default function GangSheetEditor() {
           ) : null}
         </aside>
         <main className="canvas-main">
-          <div className="canvas-meta">
-            <strong>{sheetWidth} × {sheetHeight} in</strong>
-            <span>{utilization}% used · {items.length} piece{items.length === 1 ? "" : "s"}</span>
-            <label className="toggle-row inline"><input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} /> Snap</label>
-          </div>
+          <CanvasMetaBar
+            sheetWidth={sheetWidth}
+            sheetHeight={sheetHeight}
+            utilization={utilization}
+            itemCount={items.length}
+            selectedCount={selectedIds.size}
+            snapEnabled={snapEnabled}
+            onSnapChange={setSnapEnabled}
+            zoomLabel={zoomLabel}
+            onZoomOut={() => {
+              setZoom((z) => Math.max(15, z - 10));
+              setZoomMode("custom");
+            }}
+            onZoomIn={() => {
+              setZoom((z) => Math.min(200, z + 10));
+              setZoomMode("custom");
+            }}
+            onFitWidth={() => fitToViewport("width")}
+            onFitSheet={() => fitToViewport("sheet")}
+          />
           <div
             className={`scroll ${spacePan ? "pan-mode" : ""}`}
             ref={scrollRef}
@@ -3216,18 +3023,13 @@ export default function GangSheetEditor() {
               else void uploadFiles(Array.from(e.dataTransfer.files ?? []), "canvas", { placeOnSheet: true });
             }}
           >
-            <div className="ruler-corner" aria-hidden />
-            <div className="ruler-h" aria-hidden>
-              {Array.from({ length: Math.ceil(sheetWidth) + 1 }, (_, i) => (
-                <span key={i} style={{ left: `${(i / sheetWidth) * 100}%` }}>{i}</span>
-              ))}
-            </div>
-            <div className="ruler-v" aria-hidden>
-              {Array.from({ length: Math.min(Math.ceil(sheetHeight) + 1, 48) }, (_, i) => (
-                <span key={i} style={{ top: `${(i / sheetHeight) * 100}%` }}>{i}</span>
-              ))}
-            </div>
+            <CanvasRulers sheetWidth={sheetWidth} sheetHeight={sheetHeight} />
             <div className="canvas-stage">
+            <CanvasAlignToolbar
+              selectedCount={selectedIds.size}
+              onAlign={alignSelection}
+              onDistribute={distributeSelection}
+            />
             <CanvasMinimap
               sheetWidth={sheetWidth}
               sheetHeight={sheetHeight}
@@ -3262,6 +3064,8 @@ export default function GangSheetEditor() {
                 <div
                   key={i.id}
                   className={`piece ${selectedIds.has(i.id) ? "selected" : ""} ${
+                    selectedIds.has(i.id) && selectedIds.size > 1 ? "multi" : ""
+                  } ${
                     qualityPrefs.showOverlapOutlines && overlappingIds.has(i.id) ? "overlap" : ""
                   } ${qualityPrefs.showOobShading && oobIds.has(i.id) ? "oob" : ""}`}
                   style={{
@@ -3337,175 +3141,67 @@ export default function GangSheetEditor() {
                   ) : null}
                 </div>
               ))}
+              <CanvasSelectionBounds
+                bounds={multiSelectBounds}
+                sheetWidth={sheetWidth}
+                sheetHeight={sheetHeight}
+              />
               {!items.length && (
-                <div className="empty">
-                  <b>＋</b>
-                  <strong>Your gang sheet starts here</strong>
-                  <small>Add artwork from Uploads, Gallery, or Text — then drag to position.</small>
-                </div>
+                <CanvasEmptyState
+                  onUpload={() => {
+                    handleSidebarTab("uploads");
+                    sidebarUploadRef.current?.click();
+                  }}
+                  onGallery={() => handleSidebarTab("gallery")}
+                  onText={() => handleSidebarTab("text")}
+                />
               )}
             </div>
             </div>
           </div>
+          <CanvasSheetTabs
+            templates={SHEET_TEMPLATES}
+            sheetWidth={sheetWidth}
+            sheetHeight={sheetHeight}
+            onSelect={requestSheetSize}
+          />
         </main>
-        <aside className={`properties ${mobileDrawer === "properties" ? "mobile-open" : ""}`}>
-          <button
-            type="button"
-            className="mobile-drawer-close"
-            onClick={() => setMobileDrawer(null)}
-            aria-label="Close properties panel"
-          >
-            ×
-          </button>
-          <div className="heading">
-            <span>
-              <strong>Properties</strong>
-              <small>{selected ? "Artwork selected" : "Select an item"}</small>
-            </span>
-          </div>
-          {selected ? (
-            <>
-              <div className="preview">
-                {selected.kind === "text" ? (
-                  <span className="text-preview">{selected.textContent ?? selected.name}</span>
-                ) : (
-                  <img src={selected.previewUrl} alt="" className="checkerboard" />
-                )}
-                <strong>{selected.name}</strong>
-                <small>
-                  {selected.kind === "text"
-                    ? `${selected.fontFamily} · ${selected.fontSize}pt`
-                    : `${selected.widthPx} × ${selected.heightPx}px · ${selected.dpi ? `${selected.dpi} DPI` : "DPI not tagged"}`}
-                </small>
-              </div>
-              <div className="fields grid-2">
-                <label>
-                  X (in)
-                  <input type="number" step={0.05} value={round(selected.xIn)} disabled={selected.lockPosition} onChange={(e) => change({ xIn: +e.target.value })} />
-                </label>
-                <label>
-                  Y (in)
-                  <input type="number" step={0.05} value={round(selected.yIn)} disabled={selected.lockPosition} onChange={(e) => change({ yIn: +e.target.value })} />
-                </label>
-                <label>
-                  Width (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.widthIn)}
-                    onChange={(e) => {
-                      const w = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ widthIn: w });
-                      else change({ widthIn: w, heightIn: w / (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Height (in)
-                  <input
-                    type="number"
-                    min={0.1}
-                    step={0.1}
-                    value={round(selected.heightIn)}
-                    onChange={(e) => {
-                      const h = +e.target.value;
-                      if (selected.kind === "text" || selected.lockAspect === false) change({ heightIn: h });
-                      else change({ heightIn: h, widthIn: h * (selected.widthPx / selected.heightPx) });
-                    }}
-                  />
-                </label>
-                <label>
-                  Rotation
-                  <select value={selected.rotationDeg} onChange={(e) => change({ rotationDeg: +e.target.value as 0 | 90 })}>
-                    <option value={0}>0°</option>
-                    <option value={90}>90°</option>
-                  </select>
-                </label>
-              </div>
-              <div className="align-row">
-                <span>Align</span>
-                <button type="button" onClick={() => alignSelection("left")} aria-label="Align left">⫷</button>
-                <button type="button" onClick={() => alignSelection("center-h")} aria-label="Align center">⫿</button>
-                <button type="button" onClick={() => alignSelection("right")} aria-label="Align right">⫸</button>
-                <button type="button" onClick={() => alignSelection("top")} aria-label="Align top">⫠</button>
-                <button type="button" onClick={() => alignSelection("center-v")} aria-label="Align middle">⫟</button>
-                <button type="button" onClick={() => alignSelection("bottom")} aria-label="Align bottom">⫡</button>
-              </div>
-              <div className="align-row">
-                <span>Distribute</span>
-                <button type="button" onClick={() => distributeSelection("horizontal")}>Horizontal</button>
-                <button type="button" onClick={() => distributeSelection("vertical")}>Vertical</button>
-              </div>
-              <label className="toggle-row"><input type="checkbox" checked={selected.lockAspect !== false && selected.kind !== "text"} onChange={(e) => change({ lockAspect: e.target.checked })} /> Lock aspect ratio</label>
-              <label className="toggle-row"><input type="checkbox" checked={Boolean(selected.lockPosition)} onChange={(e) => change({ lockPosition: e.target.checked })} /> Lock position</label>
-              <div className="actions">
-                <button type="button" onClick={duplicate} aria-label="Duplicate selected">⧉ Duplicate</button>
-                <button type="button" onClick={rotate} aria-label="Rotate selected">↻ Rotate</button>
-                <button type="button" onClick={flipHorizontal} aria-label="Flip horizontal">⇋ Flip H</button>
-                <button type="button" onClick={flipVertical} aria-label="Flip vertical">⇅ Flip V</button>
-                {selected.kind !== "text" && !selected.assetId.startsWith("text-") ? (
-                  <button
-                    type="button"
-                    onClick={() => openBgRemoveForAsset(selected.assetId, selected.previewUrl)}
-                    aria-label="Remove background"
-                  >
-                    ✂ Remove BG
-                  </button>
-                ) : null}
-                <button type="button" onClick={fillSheet} aria-label="Fill sheet with copies">▦ Fill sheet</button>
-                <button type="button" onClick={removeSelected} aria-label="Delete selected">⌫ Delete</button>
-              </div>
-              <div className="layer-actions">
-                <span>Layer</span>
-                <button type="button" onClick={() => layerAction("forward")} aria-label="Bring forward">Forward</button>
-                <button type="button" onClick={() => layerAction("backward")} aria-label="Send backward">Backward</button>
-                <button type="button" onClick={() => layerAction("front")} aria-label="Bring to front">To front</button>
-                <button type="button" onClick={() => layerAction("back")} aria-label="Send to back">To back</button>
-              </div>
-              <label className="spacing">
-                Spacing <span>{gap.toFixed(2)} in</span>
-                <input type="range" min={0} max={0.5} step={0.05} value={gap} aria-label="Spacing between pieces" onChange={(e) => setGap(+e.target.value)} />
-              </label>
-              <button
-                type="button"
-                className="ghost-save-btn"
-                onClick={() => {
-                  setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
-                  setShowLibrarySave(true);
-                }}
-              >
-                Save to library
-              </button>
-            </>
-          ) : (
-            <div className="none">
-              <b>↖</b>
-              <p>Click artwork on the sheet to resize, rotate, duplicate, or fill the sheet.</p>
-            </div>
-          )}
-          <section className="summary">
-            <p>
-              <span>Printed area</span>
-              <strong>{usedArea.toFixed(2)} in²</strong>
-            </p>
-            <p>
-              <span>Sheet usage</span>
-              <strong>{utilization}%</strong>
-            </p>
-            <p className="total">
-              <span>Estimated total</span>
-              <strong>${estimate.toFixed(2)}</strong>
-            </p>
-          </section>
-        </aside>
+        <ArtworkInspector
+          selected={selected}
+          gap={gap}
+          usedArea={usedArea}
+          utilization={utilization}
+          estimate={estimate}
+          mobileOpen={mobileDrawer === "properties"}
+          onCloseMobile={() => setMobileDrawer(null)}
+          onChange={change}
+          onDuplicate={duplicate}
+          onRotate={rotate}
+          onFlipHorizontal={flipHorizontal}
+          onFlipVertical={flipVertical}
+          onDelete={removeSelected}
+          onFillSheet={fillSheet}
+          onRemoveBackground={() => {
+            if (!selected) return;
+            openBgRemoveForAsset(selected.assetId, selected.previewUrl);
+          }}
+          onAlign={alignSelection}
+          onDistribute={distributeSelection}
+          onLayer={layerAction}
+          onGapChange={setGap}
+          onSaveToLibrary={() => {
+            setLibraryName(designName || `Gang sheet ${new Date().toLocaleDateString()}`);
+            setShowLibrarySave(true);
+          }}
+        />
+
       </div>
       <nav className="mobile-bar" aria-label="Mobile toolbar">
-        <button type="button" onClick={() => { setSidebarTab("uploads"); setMobileDrawer("sidebar"); }}>Uploads</button>
-        <button type="button" onClick={() => { setSidebarTab("gallery"); setMobileDrawer("sidebar"); }}>Gallery</button>
-        <button type="button" onClick={() => handleOverflowAction("arrange")}>Auto Arrange</button>
-        <button type="button" onClick={() => { setSidebarTab("layers"); setMobileDrawer("sidebar"); }}>Layers</button>
-        <button type="button" className="save" onClick={openSaveDialog} disabled={saving || !items.length}>
+        <button type="button" aria-label="Open uploads" onClick={() => { setSidebarTab("uploads"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Uploads</button>
+        <button type="button" aria-label="Open gallery" onClick={() => { setSidebarTab("gallery"); setToolsPanelOpen(true); setMobileDrawer("sidebar"); }}>Gallery</button>
+        <button type="button" aria-label="Auto Arrange" onClick={() => handleOverflowAction("arrange")}>Auto</button>
+        <button type="button" aria-label="Open artwork properties" onClick={() => { setPropsPanelOpen(true); setMobileDrawer("properties"); }}>Props</button>
+        <button type="button" className="save" aria-label="Production Review" onClick={openSaveDialog} disabled={saving || !items.length}>
           {saving ? "Saving…" : "Save"}
         </button>
       </nav>

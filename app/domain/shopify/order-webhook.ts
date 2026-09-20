@@ -137,3 +137,23 @@ export function cancelledAtFromPayload(payload: ShopifyOrderWebhookPayload): Dat
   const date = new Date(payload.cancelled_at);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
+
+/** Normalize REST (`orders/paid`) and Admin GraphQL (`ORDERS_PAID`) topic strings. */
+export function normalizeOrderWebhookTopic(topic: string): string {
+  return topic.trim().toLowerCase().replace(/_/g, "/");
+}
+
+/**
+ * Paid webhook always enqueues render. `orders/create` is the missed-paid backup
+ * and only enqueues when Shopify already marked the order paid.
+ * `orders/updated` stays link-only so fulfillment noise does not re-queue renders.
+ */
+export function shouldEnqueueOrderRender(
+  topic: string,
+  financialStatus?: string | null,
+): boolean {
+  const normalized = normalizeOrderWebhookTopic(topic);
+  if (normalized === "orders/paid") return true;
+  if (normalized === "orders/create") return financialStatus === "paid";
+  return false;
+}

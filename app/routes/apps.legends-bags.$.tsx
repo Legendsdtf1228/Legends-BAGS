@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildDesignApiResponse,
@@ -19,11 +19,17 @@ let launcherScriptCache: string | null = null;
 
 function readLauncherScript(): string {
   if (launcherScriptCache) return launcherScriptCache;
-  launcherScriptCache = readFileSync(
+  const candidates = [
     join(process.cwd(), "public", "lgs-launcher.full.js"),
-    "utf8",
-  );
-  return launcherScriptCache;
+    join(process.cwd(), "build", "client", "lgs-launcher.full.js"),
+    join(process.cwd(), "extensions", "upload-by-size", "assets", "lgs-launcher.full.js"),
+  ];
+  for (const file of candidates) {
+    if (!existsSync(file)) continue;
+    launcherScriptCache = readFileSync(file, "utf8");
+    return launcherScriptCache;
+  }
+  throw new Error("lgs-launcher.full.js is missing from the app bundle");
 }
 
 /**

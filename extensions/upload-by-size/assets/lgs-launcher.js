@@ -1,19 +1,47 @@
 (function () {
   var SEL = "#lgs-upload-by-size,#lgs-gang-sheet,.lgs-ubs,.lgs-gs";
 
-  function isStorefrontRoot(root) {
-    var shop = root.getAttribute("data-shop") || "";
-    if (!shop) return false;
-    var host = window.location.hostname;
-    return host === shop || host.endsWith(".myshopify.com");
+  function shopDomain(root) {
+    var fromData = (root && root.getAttribute("data-shop")) || "";
+    var fromShopify = (window.Shopify && window.Shopify.shop) || "";
+    return String(fromData || fromShopify)
+      .replace(/^https?:\/\//, "")
+      .replace(/\/$/, "");
   }
 
-  function resolveScriptBase(root) {
-    if (isStorefrontRoot(root)) {
+  function isShopifyStorefront(root) {
+    if (window.Shopify && window.Shopify.shop) return true;
+    var host = window.location.hostname;
+    if (host.endsWith(".myshopify.com")) return true;
+    var shop = shopDomain(root);
+    return Boolean(shop && host === shop);
+  }
+
+  function resolveAppProxyBase(root) {
+    if (isShopifyStorefront(root)) {
       return window.location.origin.replace(/\/$/, "") + "/apps/legends-bags";
     }
-    var base = (root.getAttribute("data-editor-base") || "").replace(/\/$/, "");
-    return base;
+    var override = ((root && root.getAttribute("data-editor-base")) || "").replace(/\/$/, "");
+    if (override) return override;
+    var shop = shopDomain(root);
+    if (shop) return "https://" + shop + "/apps/legends-bags";
+    return "";
+  }
+
+  function themeFullScriptSrc() {
+    var current = document.currentScript;
+    var src = current && current.src ? String(current.src) : "";
+    if (src && /lgs-launcher\.js(\?|$)/.test(src)) {
+      return src.replace(/lgs-launcher\.js(?=\?|$)/, "lgs-launcher.full.js");
+    }
+    var tags = document.getElementsByTagName("script");
+    for (var i = tags.length - 1; i >= 0; i--) {
+      var href = tags[i].src || "";
+      if (/lgs-launcher\.js(\?|$)/.test(href)) {
+        return href.replace(/lgs-launcher\.js(?=\?|$)/, "lgs-launcher.full.js");
+      }
+    }
+    return "";
   }
 
   function bootAll() {
@@ -23,50 +51,58 @@
     });
   }
 
+  function showLoadError(roots, message) {
+    roots.forEach(function (root) {
+      var status = root.querySelector("[data-lgs-status]");
+      if (status) {
+        status.hidden = false;
+        status.textContent = message;
+        status.classList.add("lgs-status--error");
+      }
+    });
+  }
+
   var roots = document.querySelectorAll(SEL);
   if (!roots.length) return;
-
-  var scriptBase = resolveScriptBase(roots[0]);
-  if (!scriptBase) {
-    console.error("[Legends BAGS] Launcher not configured — app proxy or Editor base URL required.");
-    roots.forEach(function (root) {
-      var btn = root.querySelector("[data-lgs-open]");
-      if (!btn || btn.dataset.lgsMisconfigBound) return;
-      btn.dataset.lgsMisconfigBound = "1";
-      btn.addEventListener("click", function () {
-        window.alert(
-          "Legends BAGS editor is not available yet. Install the Legends BAGS app and enable the app proxy, or set Editor base URL in the theme block settings.",
-        );
-      });
-    });
-    return;
-  }
 
   if (window.__lgsBoot) {
     bootAll();
     return;
   }
 
-  var s = document.createElement("script");
-  s.src = scriptBase + "/lgs-launcher.full.js";
-  s.async = true;
-  s.onload = bootAll;
-  s.onerror = function () {
-    if (!isStorefrontRoot(roots[0])) {
-      console.error("[Legends BAGS] Could not load launcher from " + s.src);
-      roots.forEach(function (root) {
-        var status = root.querySelector("[data-lgs-status]");
-        if (status) {
-          status.hidden = false;
-          status.textContent = "Could not load the design editor. Check that Legends BAGS is installed.";
-          status.classList.add("lgs-status--error");
-        }
-      });
+  var proxyBase = resolveAppProxyBase(roots[0]);
+  var themeSrc = themeFullScriptSrc();
+  var proxySrc = proxyBase ? proxyBase + "/lgs-launcher.full.js" : "";
+  var loadError =
+    "Could not load the design editor. Refresh this page and try again.";
+
+  function loadScript(src, onFail) {
+    var s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = bootAll;
+    s.onerror = onFail;
+    document.head.appendChild(s);
+  }
+
+  function tryProxy() {
+    if (!proxySrc) {
+      showLoadError(roots, loadError);
       return;
     }
-    var fallback = window.location.origin.replace(/\/$/, "") + "/apps/legends-bags/lgs-launcher.full.js";
-    if (s.src === fallback) return;
-    s.src = fallback;
-  };
-  document.head.appendChild(s);
+    loadScript(proxySrc, function () {
+      showLoadError(roots, loadError);
+    });
+  }
+
+  if (themeSrc) {
+    loadScript(themeSrc, tryProxy);
+    return;
+  }
+  if (proxySrc) {
+    tryProxy();
+    return;
+  }
+
+  showLoadError(roots, loadError);
 })();
