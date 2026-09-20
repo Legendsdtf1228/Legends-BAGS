@@ -15,7 +15,7 @@ export type ShopAppearance = {
 export const DEFAULT_APPEARANCE: ShopAppearance = {
   accentColor: "#f97316",
   accentColorDark: "#ea580c",
-  launcherOpenLabel: "Build your gang sheet",
+  launcherOpenLabel: "Build Your Gang Sheet",
   launcherEditLabel: "Edit design",
   welcomeTitle: "Welcome to Legends BAGS",
   welcomeSubtitle: "Upload artwork, arrange on the sheet, then save to cart.",
