@@ -2,9 +2,12 @@ import { redirect } from "react-router";
 import {
   buildEditorLaunchUrl,
   type BuilderLaunchParseError,
+  type BuilderLaunchContext,
+  type EditorLaunchPassthrough,
 } from "../domain/builder/builder-launch-context";
 import { resolveBuilderLaunch } from "./builder-launch.server";
 import { resolveAppUrl } from "./app-url.server";
+import { isStudioBuilderEnabled, studioEditorPath } from "./studio-builder.server";
 
 function passthroughFromRequest(url: URL) {
   return {
@@ -110,6 +113,35 @@ function builderErrorHtml(props: {
 </html>`;
 }
 
+/** DEV: gang_sheet → Studio editor when USE_STUDIO_BUILDER is enabled. Legacy editor remains at /editor/gang-sheet. */
+export function buildLaunchEditorUrl(
+  baseUrl: string,
+  context: BuilderLaunchContext,
+  passthrough: EditorLaunchPassthrough = {},
+): string {
+  if (isStudioBuilderEnabled() && context.builderType === "gang_sheet") {
+    const base = baseUrl.replace(/\/$/, "");
+    const url = new URL(studioEditorPath(), base.endsWith("/") ? base : `${base}/`);
+    url.searchParams.set("shop", context.shop);
+    url.searchParams.set("productGid", context.productGid);
+    url.searchParams.set("product", context.productId);
+    if (context.variantId) url.searchParams.set("variantId", context.variantId);
+    if (context.variantId) url.searchParams.set("variant", context.variantId);
+    url.searchParams.set("quantity", String(context.quantity));
+    if (context.shopMode) url.searchParams.set("shop_mode", context.shopMode);
+    if (passthrough.embedded) url.searchParams.set("embedded", passthrough.embedded);
+    if (passthrough.parentOrigin) url.searchParams.set("parentOrigin", passthrough.parentOrigin);
+    if (passthrough.lgs_session) url.searchParams.set("lgs_session", passthrough.lgs_session);
+    if (passthrough.lgs_customer_key) {
+      url.searchParams.set("lgs_customer_key", passthrough.lgs_customer_key);
+    }
+    if (passthrough.designId) url.searchParams.set("designId", passthrough.designId);
+    if (passthrough.designVersion) url.searchParams.set("designVersion", passthrough.designVersion);
+    return url.toString();
+  }
+  return buildEditorLaunchUrl(baseUrl, context, passthrough);
+}
+
 /** Shared /builder and app-proxy builder launch handler. */
 export async function handleBuilderLaunchRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -138,6 +170,6 @@ export async function handleBuilderLaunchRequest(request: Request): Promise<Resp
   }
 
   const appUrl = resolveAppUrl() || url.origin;
-  const editorUrl = buildEditorLaunchUrl(appUrl, result.context, passthroughFromRequest(url));
+  const editorUrl = buildLaunchEditorUrl(appUrl, result.context, passthroughFromRequest(url));
   throw redirect(editorUrl);
 }
