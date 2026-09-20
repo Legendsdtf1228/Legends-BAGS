@@ -4,6 +4,6 @@ export function customerEditorUrls(shop: string, appUrl: string) {
   const q = `shop=${encodeURIComponent(shop)}`;
   return {
     uploadBySize: `${base}/editor/upload-by-size?${q}`,
-    gangSheet: `${base}/editor/studio?${q}`,
+    gangSheet: `${base}/editor/gang-sheet?${q}`,
   };
 }

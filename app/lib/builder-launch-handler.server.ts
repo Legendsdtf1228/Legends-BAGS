@@ -113,7 +113,7 @@ function builderErrorHtml(props: {
 </html>`;
 }
 
-/** gang_sheet → Studio when enabled (default: Studio bridge present). UBS stays on /editor/upload-by-size. */
+/** DEV: gang_sheet → Studio editor when USE_STUDIO_BUILDER is enabled. Legacy editor remains at /editor/gang-sheet. */
 export function buildLaunchEditorUrl(
   baseUrl: string,
   context: BuilderLaunchContext,

@@ -15,8 +15,6 @@ import {
 } from "../services/shopify-product-sync.server";
 import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-links";
 import { BagsPageHeader, BagsCard, BagsStatusBadge, BagsPageBody } from "../components/merchant/bags-admin-ui";
-import { merchantProductBuilderUrl } from "../lib/app-href";
-import { resolveAppUrl } from "../lib/app-url.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
@@ -60,7 +58,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const importCandidates = catalogPreview.filter((p) => !boundProductGids.has(p.id)).slice(0, 12);
 
   const paged = bindings.slice((page - 1) * pageSize, page * pageSize);
-  const appUrl = resolveAppUrl();
 
   return {
     q,
@@ -72,13 +69,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       productGid: b.productGid,
       variantGid: b.variantGid,
       builderType: b.builderType,
-      openBuilderUrl: merchantProductBuilderUrl({
-        appUrl,
-        shop: session.shop,
-        builderType: b.builderType,
-        productGid: b.productGid,
-        variantGid: b.variantGid,
-      }),
       pricePerSqIn: b.pricePerSqIn,
       sheetWidthIn: b.sheetWidthIn,
       maxHeightIn: b.maxHeightIn,
@@ -384,7 +374,6 @@ export default function ProductsPage() {
                     <th>Variant</th>
                     <th>Sheet / price</th>
                     <th>Sync</th>
-                    <th>Preview</th>
                     <th>Links</th>
                   </tr>
                 </thead>
@@ -429,16 +418,6 @@ export default function ProductsPage() {
                         </td>
                         <td>
                           <BagsStatusBadge status={b.syncStatus} />
-                        </td>
-                        <td>
-                          <a
-                            href={b.openBuilderUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="bags-admin-btn ghost"
-                          >
-                            {b.builderType === "gang_sheet" ? "Open Builder" : "Preview Builder"}
-                          </a>
                         </td>
                         <td style={{ fontSize: 12 }}>
                           <a href={adminProductUrl(shop, b.productGid)} target="_blank" rel="noreferrer">
