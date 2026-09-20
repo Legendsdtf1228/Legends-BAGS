@@ -418,8 +418,8 @@
 
     function applyAppearanceLabels(appearance) {
       if (!appearance) return;
-      if (openBtn) {
-        openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build Your Gang Sheet");
+      if (openBtn && appearance.launcherOpenLabel && builderType !== "gang_sheet") {
+        openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel);
         openBtn.setAttribute("data-label-edit", appearance.launcherEditLabel || "Edit design");
       }
       syncUi();

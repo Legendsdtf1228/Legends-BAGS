@@ -38,6 +38,10 @@
   gap: 0.35rem;
 }
 
+.lgs-gs__variant-picker[hidden] {
+  display: none;
+}
+
 .lgs-gs__variant-label {
   display: grid;
   gap: 0.35rem;
