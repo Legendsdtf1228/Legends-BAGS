@@ -76,6 +76,7 @@ Captured from the Aug 26 2026 live audit; overridable per product later.
 
 ## Related docs
 
+- [Merchant platform V1](./merchant-platform.md)
 - [API contracts](./api-contracts.md)
 - [Data model](./data-model.md)
 - [Agent ownership](./agent-ownership.md)
