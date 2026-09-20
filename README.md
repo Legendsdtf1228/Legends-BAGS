@@ -17,10 +17,10 @@ Multi-design queue with presets, custom dimensions, aspect lock, quantity, and l
 
 ### Gang Sheet Builder (~34% of sheet volume)
 
-Canvas editor with drag, resize, rotate, duplicate, fill, auto-arrange, and undo/redo.
+Canvas editor (Gang Sheet Studio) with drag, resize, rotate, duplicate, fill, auto-arrange, and undo/redo.
 
-- Editor: `/editor/gang-sheet`
-- Theme block: **LGS Gang Sheet Builder**
+- Editor: `/editor/studio` → `/studio/` (legacy `/editor/gang-sheet` is fallback-only)
+- Theme block: **LGS Gang Sheet Builder** (storefront `/builder`)
 
 ### Auto Build
 
@@ -50,7 +50,7 @@ Extension: `extensions/upload-by-size`
 | Block | Route |
 |---|---|
 | LGS Upload by Size | `/editor/upload-by-size` |
-| LGS Gang Sheet Builder | `/editor/gang-sheet` |
+| LGS Gang Sheet Builder | `/builder` → `/editor/studio` |
 
 On the development storefront, blocks use the **app proxy** at `/apps/legends-bags/` automatically. Leave **Editor base URL** blank in block settings — you do not need to update theme blocks when the dev tunnel restarts.
 

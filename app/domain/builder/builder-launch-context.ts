@@ -180,6 +180,11 @@ export function builderTypeFromBinding(raw: string | null | undefined): BuilderT
   return null;
 }
 
+/**
+ * Fallback editor paths used when Studio routing is explicitly disabled
+ * (`USE_STUDIO_BUILDER=0`). Normal gang_sheet launches use `studioEditorPath()`
+ * (`/editor/studio`) via `buildLaunchEditorUrl` / merchant helpers instead.
+ */
 export function editorPathForBuilderType(builderType: BuilderType): string {
   return builderType === "gang_sheet" ? "/editor/gang-sheet" : "/editor/upload-by-size";
 }

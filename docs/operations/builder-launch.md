@@ -10,8 +10,10 @@ GET /builder?shop=legends-bags-in2lwdll.myshopify.com&product=PRODUCT_ID&variant
 
 The route validates input, resolves `ProductBinding`, and redirects to:
 
-- `/editor/gang-sheet` when `builderType = gang_sheet`
+- `/editor/studio` (Gang Sheet Studio) when `builderType = gang_sheet`
 - `/editor/upload-by-size` when `builderType = upload_by_size`
+
+`/editor/gang-sheet` is an emergency fallback for gang_sheet only when `USE_STUDIO_BUILDER=0`. It is not a selectable second builder.
 
 Launch context (`shop`, product/variant GIDs, quantity, `shop_mode`) is preserved on the editor URL.
 
