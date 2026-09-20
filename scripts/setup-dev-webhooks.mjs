@@ -2,6 +2,7 @@
  * Register tunnel-backed, shop-specific webhooks for a development store.
  * Production should use app-specific subscriptions from shopify.app.toml.
  */
+/* global process */
 import { PrismaClient } from "@prisma/client";
 
 const shop = process.env.DEV_SHOP;
@@ -10,8 +11,8 @@ if (!shop || !base) {
   console.error("Set DEV_SHOP and LGS_APP_URL before running setup:dev-webhooks.");
   process.exit(1);
 }
-if (!base.startsWith("https://") || !base.includes("trycloudflare.com")) {
-  console.error("Refusing to register dev webhooks outside an HTTPS trycloudflare tunnel.");
+if (!base.startsWith("https://")) {
+  console.error("Refusing to register dev webhooks without an HTTPS app URL.");
   process.exit(1);
 }
 
@@ -27,7 +28,7 @@ if (!session?.accessToken) {
 }
 
 async function graphql(query, variables = {}) {
-  const response = await fetch(`https://${shop}/admin/api/2026-04/graphql.json`, {
+  const response = await fetch(`https://${shop}/admin/api/2025-10/graphql.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -43,13 +44,18 @@ async function graphql(query, variables = {}) {
 }
 
 const topics = [
+  { topic: "ORDERS_CREATE", uri: `${base}/webhooks/orders/create` },
   { topic: "ORDERS_PAID", uri: `${base}/webhooks/orders/paid` },
   { topic: "ORDERS_UPDATED", uri: `${base}/webhooks/orders/updated` },
+  { topic: "ORDERS_CANCELLED", uri: `${base}/webhooks/orders/cancelled` },
+  { topic: "PRODUCTS_CREATE", uri: `${base}/webhooks/products` },
+  { topic: "PRODUCTS_UPDATE", uri: `${base}/webhooks/products` },
+  { topic: "PRODUCTS_DELETE", uri: `${base}/webhooks/products` },
 ];
 
 const existing = await graphql(`#graphql
   query DevWebhookSubscriptions {
-    webhookSubscriptions(first: 100, topics: [ORDERS_PAID, ORDERS_UPDATED]) {
+    webhookSubscriptions(first: 100, topics: [ORDERS_CREATE, ORDERS_PAID, ORDERS_UPDATED, ORDERS_CANCELLED, PRODUCTS_CREATE, PRODUCTS_UPDATE, PRODUCTS_DELETE]) {
       nodes { id topic uri }
     }
   }

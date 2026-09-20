@@ -4,7 +4,7 @@ import {
   DEFAULT_UPLOAD_BY_SIZE_SHEET,
   type SheetConfig,
 } from "../domain/design/types";
-import { DEFAULT_GANG_SHEET_HEIGHT_IN, resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
+import { resolveGangSheetHeight } from "../domain/design/gang-sheet-sheet";
 import { ensureShopConfig } from "./merchant-loaders.server";
 import { getShopAppearance, type ShopAppearance } from "./shop-appearance.server";
 
@@ -13,6 +13,7 @@ export type EditorBindingConfig = {
   productGid: string;
   variantGid: string | null;
   builderType: string;
+  enabled: boolean;
   pricePerSqIn: number | null;
   variantPriceCents: number | null;
   sheetWidthIn: number | null;
@@ -45,12 +46,57 @@ export async function resolveProductBinding(
 ) {
   if (variantGid) {
     const byVariant = await prisma.productBinding.findFirst({
-      where: { shop, variantGid },
+      where: {
+        shop,
+        variantGid,
+        enabled: true,
+        productStatus: "ACTIVE",
+        AND: [
+          {
+            OR: [
+              { builderType: { not: "gang_sheet" } },
+              { sheetHeightIn: { gt: 0 } },
+            ],
+          },
+        ],
+      },
     });
     if (byVariant) return byVariant;
+    return prisma.productBinding.findFirst({
+      where: {
+        shop,
+        productGid,
+        variantGid: null,
+        enabled: true,
+        productStatus: "ACTIVE",
+        AND: [
+          {
+            OR: [
+              { builderType: { not: "gang_sheet" } },
+              { sheetHeightIn: { gt: 0 } },
+            ],
+          },
+        ],
+      },
+    });
   }
   if (productGid) {
-    return prisma.productBinding.findFirst({ where: { shop, productGid } });
+    return prisma.productBinding.findFirst({
+      where: {
+        shop,
+        productGid,
+        enabled: true,
+        productStatus: "ACTIVE",
+        AND: [
+          {
+            OR: [
+              { builderType: { not: "gang_sheet" } },
+              { sheetHeightIn: { gt: 0 } },
+            ],
+          },
+        ],
+      },
+    });
   }
   return null;
 }
@@ -61,6 +107,7 @@ function mapBinding(row: NonNullable<Awaited<ReturnType<typeof resolveProductBin
     productGid: row.productGid,
     variantGid: row.variantGid,
     builderType: row.builderType,
+    enabled: row.enabled,
     pricePerSqIn: row.pricePerSqIn,
     variantPriceCents: row.variantPriceCents,
     sheetWidthIn: row.sheetWidthIn,
@@ -83,7 +130,7 @@ export async function loadEditorPageConfig(
     getShopAppearance(shop),
     productGid
       ? prisma.productBinding.findMany({
-          where: { shop, productGid, builderType: "gang_sheet" },
+          where: { shop, productGid, builderType: "gang_sheet", enabled: true },
           orderBy: { sheetHeightIn: "asc" },
         })
       : Promise.resolve([]),

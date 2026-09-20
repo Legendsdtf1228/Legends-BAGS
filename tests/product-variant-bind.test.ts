@@ -51,4 +51,28 @@ describe("resolveVariantGidForBinding", () => {
       }),
     ).rejects.toThrow(/Select a variant/);
   });
+
+  it("rejects a variant that does not belong to the product", async () => {
+    const admin = {
+      graphql: vi.fn().mockResolvedValue({
+        json: async () => ({
+          data: {
+            product: {
+              variants: {
+                nodes: [{ id: "gid://shopify/ProductVariant/1", title: "24 in", price: "17.00" }],
+              },
+            },
+          },
+        }),
+      }),
+    };
+
+    await expect(
+      resolveVariantGidForBinding({
+        admin,
+        productGid: "gid://shopify/Product/100",
+        variantGidRaw: "999",
+      }),
+    ).rejects.toThrow(/does not belong/);
+  });
 });

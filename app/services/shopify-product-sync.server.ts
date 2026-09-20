@@ -113,6 +113,7 @@ const PRODUCT_VARIANTS = `#graphql
     product(id: $id) {
       id
       title
+      status
       variants(first: 100) {
         nodes {
           id
@@ -127,11 +128,15 @@ const PRODUCT_VARIANTS = `#graphql
 export async function fetchShopifyProductVariants(
   admin: AdminClient,
   productGid: string,
-): Promise<Array<{ id: string; title: string; price: string }>> {
+): Promise<{
+  variants: Array<{ id: string; title: string; price: string }>;
+  productStatus?: string;
+}> {
   const res = await admin.graphql(PRODUCT_VARIANTS, { variables: { id: productGid } });
   const json = (await res.json()) as {
     data?: {
       product?: {
+        status?: string;
         variants?: { nodes?: Array<{ id: string; title: string; price: string }> };
       };
     };
@@ -140,7 +145,10 @@ export async function fetchShopifyProductVariants(
   if (json.errors?.length) {
     throw new Error(json.errors.map((e) => e.message).join("; "));
   }
-  return json.data?.product?.variants?.nodes ?? [];
+  return {
+    variants: json.data?.product?.variants?.nodes ?? [],
+    productStatus: json.data?.product?.status,
+  };
 }
 
 function normalizeVariantGid(raw: string): string {
@@ -153,24 +161,31 @@ export async function resolveVariantGidForBinding(params: {
   admin: AdminClient;
   productGid: string;
   variantGidRaw?: string;
-}): Promise<{ variantGid: string; variantTitle?: string; variantCount: number }> {
+}): Promise<{ variantGid: string; variantTitle?: string; variantCount: number; productStatus?: string }> {
   const explicit = params.variantGidRaw ? normalizeVariantGid(params.variantGidRaw) : "";
   if (explicit) {
-    const variants = await fetchShopifyProductVariants(params.admin, params.productGid);
+    const product = await fetchShopifyProductVariants(params.admin, params.productGid);
+    const variants = product.variants;
     const match = variants.find((v) => v.id === explicit);
+    if (!match) {
+      throw new Error("The selected variant does not belong to this Shopify product.");
+    }
     return {
       variantGid: explicit,
-      variantTitle: match?.title,
+      variantTitle: match.title,
       variantCount: variants.length,
+      productStatus: product.productStatus,
     };
   }
 
-  const variants = await fetchShopifyProductVariants(params.admin, params.productGid);
+  const product = await fetchShopifyProductVariants(params.admin, params.productGid);
+  const variants = product.variants;
   if (variants.length === 1) {
     return {
       variantGid: variants[0].id,
       variantTitle: variants[0].title,
       variantCount: 1,
+      productStatus: product.productStatus,
     };
   }
   if (variants.length === 0) {

@@ -3,7 +3,7 @@ import { Form, Link, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
-import { enqueueRenderJob, processNextRenderJob } from "../services/design-service";
+import { enqueueRenderJob, processNextRenderJob, recoverStuckJobs } from "../services/design-service";
 import { importRecentShopifyOrders } from "../services/shopify-order-sync.server";
 import { shopifyOrderAdminUrl } from "../lib/shopify-admin-links";
 import {
@@ -168,9 +168,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
     if (!link) return { error: "Order line not found" };
 
+    await recoverStuckJobs(new Date(), session.shop);
+    const latest = await prisma.renderJob.findFirst({
+      where: { shop: session.shop, orderLinkId: link.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (latest && latest.status !== "failed") {
+      return { error: `A production render is already ${latest.status}.` };
+    }
     await enqueueRenderJob({ shop: session.shop, designId, orderLinkId: link.id });
     if (process.env.RENDER_INLINE_ON_WEBHOOK === "1") {
-      await processNextRenderJob();
+      await processNextRenderJob(session.shop);
     }
     return { retried: true };
   }

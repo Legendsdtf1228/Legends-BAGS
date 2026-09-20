@@ -12,6 +12,7 @@ import {
   enqueueRenderJob,
   getDesignState,
   processNextRenderJob,
+  recoverStuckJobs,
 } from "../services/design-service";
 import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
 
@@ -25,12 +26,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     orderBy: { createdAt: "desc" },
   });
 
-  const latest = jobs[0];
-  const downloadPath = latest?.outputKey
-    ? signedFileDownloadPath(shop, latest.outputKey)
+  const standaloneJobs = jobs.filter((job) => job.orderLinkId === null);
+  const latest = standaloneJobs[0];
+  const latestCompleted = standaloneJobs.find((job) => job.status === "completed" && job.outputKey);
+  const downloadPath = latestCompleted?.outputKey
+    ? signedFileDownloadPath(shop, latestCompleted.outputKey)
     : null;
-  const previewPath = latest?.previewKey
-    ? signedFileDownloadPath(shop, latest.previewKey)
+  const previewPath = latestCompleted?.previewKey
+    ? signedFileDownloadPath(shop, latestCompleted.previewKey)
     : null;
 
   const audits = await prisma.auditEvent.findMany({
@@ -75,6 +78,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     })),
     downloadPath,
     previewPath,
+    canRetry: !latest || latest.status === "failed",
+    currentJobStatus: latest?.status ?? null,
     defaultSheetWidth: state.sheet.widthIn,
   };
 };
@@ -86,8 +91,17 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
   if (intent === "retry") {
+    await recoverStuckJobs(new Date(), shop);
+    const latest = await prisma.renderJob.findFirst({
+      where: { shop, designId, orderLinkId: null },
+      orderBy: { createdAt: "desc" },
+    });
+    if (latest && latest.status !== "failed") {
+      return { error: `A render is already ${latest.status}. Retry is available only after a failure.` };
+    }
     await enqueueRenderJob({ shop, designId });
-    await processNextRenderJob();
+    if (process.env.RENDER_INLINE_ON_WEBHOOK === "1") await processNextRenderJob(shop);
+    return { queued: true };
   }
   if (intent === "reprocess") {
     const raw = String(form.get("reprocessWidthIn") || "").trim();
@@ -96,7 +110,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return { error: "Enter a valid sheet width in inches." };
     }
     await enqueueRenderJob({ shop, designId, reprocessWidthIn });
-    await processNextRenderJob();
+    await processNextRenderJob(shop);
   }
   if (intent === "reorder") {
     const { duplicateDesignForReorder } = await import("../services/design-service");
@@ -148,12 +162,14 @@ export default function DesignDetail() {
                 Download print PNG
               </a>
             ) : null}
-            <Form method="post">
-              <input type="hidden" name="intent" value="retry" />
-              <button type="submit" className="bags-admin-btn secondary">
-                Retry / regenerate
-              </button>
-            </Form>
+            {data.canRetry ? (
+              <Form method="post">
+                <input type="hidden" name="intent" value="retry" />
+                <button type="submit" className="bags-admin-btn secondary">
+                  {data.currentJobStatus === "failed" ? "Retry failed render" : "Create production file"}
+                </button>
+              </Form>
+            ) : null}
             <Form method="post">
               <input type="hidden" name="intent" value="reorder" />
               <button type="submit" className="bags-admin-btn ghost">

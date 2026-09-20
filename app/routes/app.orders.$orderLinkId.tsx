@@ -3,7 +3,7 @@ import { Form, Link, useActionData, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { enqueueRenderJob, processNextRenderJob } from "../services/design-service";
+import { enqueueRenderJob, processNextRenderJob, recoverStuckJobs } from "../services/design-service";
 import { orderRowDownloadPath } from "../lib/order-download.server";
 import { shopifyOrderAdminUrl } from "../lib/shopify-admin-links";
 import { BagsAlert, BagsCard, BagsPageBody, BagsPageHeader, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
@@ -16,6 +16,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   });
   if (!link) throw new Response("Order line not found", { status: 404 });
   const latest = link.renderJobs[0];
+  const latestCompleted = link.renderJobs.find((job) => job.status === "completed" && job.outputKey);
   return {
     link: {
       id: link.id,
@@ -36,18 +37,30 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       createdAt: link.createdAt.toISOString(),
     },
     job: latest ? { id: latest.id, status: latest.status, lastError: latest.lastError, widthPx: latest.widthPx, heightPx: latest.heightPx, updatedAt: latest.updatedAt.toISOString() } : null,
-    downloadPath: orderRowDownloadPath(session.shop, latest?.outputKey),
+    downloadPath: orderRowDownloadPath(session.shop, latestCompleted?.outputKey),
     adminUrl: shopifyOrderAdminUrl(session.shop.replace(".myshopify.com", ""), link.orderId),
   };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const form = await request.formData();
+  if (String(form.get("intent") || "") !== "retry") {
+    return { retried: false, error: "Unsupported action." };
+  }
   const link = await prisma.orderLink.findFirst({ where: { id: params.orderLinkId, shop: session.shop } });
   if (!link) throw new Response("Order line not found", { status: 404 });
+  await recoverStuckJobs(new Date(), session.shop);
+  const latest = await prisma.renderJob.findFirst({
+    where: { shop: session.shop, orderLinkId: link.id },
+    orderBy: { createdAt: "desc" },
+  });
+  if (latest && latest.status !== "failed") {
+    return { retried: false, error: `A production render is already ${latest.status}.` };
+  }
   await enqueueRenderJob({ shop: session.shop, designId: link.designId, orderLinkId: link.id });
-  if (process.env.RENDER_INLINE_ON_WEBHOOK === "1") await processNextRenderJob();
-  return { retried: true };
+  if (process.env.RENDER_INLINE_ON_WEBHOOK === "1") await processNextRenderJob(session.shop);
+  return { retried: true, error: null };
 };
 
 export default function OrderDetailPage() {
@@ -59,6 +72,7 @@ export default function OrderDetailPage() {
       <BagsPageHeader title={`Order ${link.orderNumber || link.orderId}`} subtitle="Production detail and linked customer project" actions={<Link to="/app/orders" className="bags-admin-btn ghost">All orders</Link>} />
       <div className="bags-admin-content"><BagsPageBody>
         {result?.retried ? <BagsAlert tone="success" title="Render queued">The production file is being regenerated.</BagsAlert> : null}
+        {result?.error ? <BagsAlert tone="danger" title="Render not queued">{result.error}</BagsAlert> : null}
         {needsAttention ? <BagsAlert tone="warning" title="Production needs attention">{job?.lastError || "No production render has been created for this order line."}</BagsAlert> : null}
         <div className="bags-admin-grid two">
           <BagsCard title="Order">
@@ -84,7 +98,7 @@ export default function OrderDetailPage() {
               {job ? <BagsStatusBadge status={job.status} /> : <BagsStatusBadge status="missing" />}
               {job?.widthPx && job.heightPx ? <span className="bags-admin-muted">{job.widthPx} × {job.heightPx}px</span> : null}
               {downloadPath ? <a href={downloadPath} className="bags-admin-btn primary">Download production PNG</a> : null}
-              {!downloadPath ? <Form method="post"><button type="submit" className="bags-admin-btn secondary">{job?.status === "failed" ? "Retry render" : "Create production file"}</button></Form> : null}
+               {(!job || job.status === "failed") ? <Form method="post"><input type="hidden" name="intent" value="retry" /><button type="submit" className="bags-admin-btn secondary">{job?.status === "failed" ? "Retry render" : "Create production file"}</button></Form> : null}
             </div>
             {job?.lastError ? <p className="bags-field-error">{job.lastError}</p> : null}
           </BagsCard>

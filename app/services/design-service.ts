@@ -1,18 +1,21 @@
 import prisma from "../db.server";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   buildUploadBySizeState,
   buildUploadBySizeStateFromLines,
   nestAndRenderDesign,
 } from "../domain/design/pipeline";
-import type { DesignStateV1 } from "../domain/design/types";
-import { DEFAULT_PRICE_PER_SQ_IN, DESIGN_STATE_SCHEMA_VERSION } from "../domain/design/types";
-import { buildGangSheetPricingSnapshot, buildPricingSnapshot } from "../domain/pricing";
+import {
+  assertDesignStateV1,
+  DEFAULT_PRICE_PER_SQ_IN,
+  DESIGN_STATE_SCHEMA_VERSION,
+  type DesignStateV1,
+} from "../domain/design/types";
+import { buildGangSheetPricingSnapshot } from "../domain/pricing";
 import { validateUpload } from "../domain/design/upload";
 import { canEnqueue, shouldRequeueStuckProcessing, type JobStatus } from "../domain/jobs";
 import type { SizeInput } from "../domain/pricing";
 import { assetKey, getObjectStore } from "../domain/storage";
-import { assertDesignStateV1 } from "../domain/design/types";
 import { verifyPriceRef } from "../domain/security/design-access";
 import { signDownload } from "../domain/security/signed-urls";
 import { removeBackgroundFromBytes, type BackgroundRemovalTuning } from "../domain/image/background-removal";
@@ -357,6 +360,7 @@ export async function upsertProductBinding(params: {
       productGid: params.productGid,
       variantGid: params.variantGid,
       builderType: params.builderType,
+      productStatus: "ACTIVE",
       pricePerSqIn: params.pricePerSqIn,
       sheetWidthIn: params.sheetWidthIn,
       maxHeightIn: params.maxHeightIn,
@@ -366,6 +370,7 @@ export async function upsertProductBinding(params: {
     update: {
       variantGid: params.variantGid,
       builderType: params.builderType,
+      productStatus: "ACTIVE",
       pricePerSqIn: params.pricePerSqIn,
       sheetWidthIn: params.sheetWidthIn,
       maxHeightIn: params.maxHeightIn,
@@ -1052,6 +1057,23 @@ export async function enqueueRenderJob(params: {
   orderLinkId?: string;
   reprocessWidthIn?: number;
 }) {
+  const design = await prisma.design.findFirst({
+    where: { id: params.designId, shop: params.shop },
+    select: { id: true },
+  });
+  if (!design) throw new Error("Design not found");
+  if (params.orderLinkId) {
+    const orderLink = await prisma.orderLink.findFirst({
+      where: {
+        id: params.orderLinkId,
+        shop: params.shop,
+        designId: params.designId,
+      },
+      select: { id: true },
+    });
+    if (!orderLink) throw new Error("Order line not found");
+  }
+
   const existing = await prisma.renderJob.findMany({
     where: {
       shop: params.shop,
@@ -1064,28 +1086,48 @@ export async function enqueueRenderJob(params: {
     return existing[0];
   }
 
-  const job = await prisma.renderJob.create({
-    data: {
-      shop: params.shop,
-      designId: params.designId,
-      orderLinkId: params.orderLinkId,
-      reprocessWidthIn: params.reprocessWidthIn ?? null,
-      status: "queued",
-      attempt: 0,
-    },
-  });
+  let job;
+  try {
+    job = await prisma.renderJob.create({
+      data: {
+        shop: params.shop,
+        designId: params.designId,
+        orderLinkId: params.orderLinkId,
+        reprocessWidthIn: params.reprocessWidthIn ?? null,
+        status: "queued",
+        attempt: 0,
+      },
+    });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+    const active = await prisma.renderJob.findFirst({
+      where: {
+        shop: params.shop,
+        designId: params.designId,
+        orderLinkId: params.orderLinkId ?? null,
+        status: { in: ["queued", "processing"] },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!active) throw error;
+    return active;
+  }
 
-  await prisma.design.update({
-    where: { id: params.designId },
-    data: { status: "processing" },
-  });
+  if (!params.orderLinkId) {
+    await prisma.design.updateMany({
+      where: { id: params.designId, shop: params.shop },
+      data: { status: "processing" },
+    });
+  }
 
   return job;
 }
 
-export async function recoverStuckJobs(now = new Date()) {
+export async function recoverStuckJobs(now = new Date(), shop?: string) {
   const processing = await prisma.renderJob.findMany({
-    where: { status: "processing" },
+    where: { status: "processing", ...(shop ? { shop } : {}) },
   });
   let recovered = 0;
   for (const job of processing) {
@@ -1098,29 +1140,54 @@ export async function recoverStuckJobs(now = new Date()) {
         leaseExpiresAt: job.leaseExpiresAt,
       }, now)
     ) {
-      await prisma.renderJob.update({
-        where: { id: job.id },
+      const recoveryWhere = job.leaseExpiresAt
+        ? { leaseExpiresAt: { lte: now } }
+        : { leaseExpiresAt: null, updatedAt: job.updatedAt };
+      const requeued = await prisma.renderJob.updateMany({
+        where: {
+          id: job.id,
+          status: "processing",
+          ...recoveryWhere,
+        },
         data: {
           status: "queued",
           lastError: "Worker lease expired; requeued",
           leaseExpiresAt: null,
         },
       });
-      recovered += 1;
+      recovered += requeued.count;
     }
   }
   return recovered;
 }
 
-export async function processNextRenderJob(): Promise<
+export async function resolveRenderJobDesignVersion(job: {
+  shop: string;
+  designId: string;
+  orderLinkId: string | null;
+}): Promise<number | undefined> {
+  if (!job.orderLinkId) return undefined;
+  const orderLink = await prisma.orderLink.findFirst({
+    where: {
+      id: job.orderLinkId,
+      shop: job.shop,
+      designId: job.designId,
+    },
+    select: { designVersion: true },
+  });
+  if (!orderLink) throw new Error("Order line not found for render job");
+  return orderLink.designVersion;
+}
+
+export async function processNextRenderJob(shop?: string): Promise<
   | { ok: true; jobId: string }
   | { ok: false; reason: string }
   | { ok: true; jobId: string; failed: true; error: string }
 > {
-  await recoverStuckJobs();
+  await recoverStuckJobs(new Date(), shop);
 
   const job = await prisma.renderJob.findFirst({
-    where: { status: "queued" },
+    where: { status: "queued", ...(shop ? { shop } : {}) },
     orderBy: { createdAt: "asc" },
   });
   if (!job) return { ok: false, reason: "empty" };
@@ -1138,18 +1205,27 @@ export async function processNextRenderJob(): Promise<
   if (claimed.count !== 1) return { ok: false, reason: "race" };
 
   try {
-    const { state } = await getDesignState(job.shop, job.designId);
+    const designVersion = await resolveRenderJobDesignVersion(job);
+    const { state } = await getDesignState(
+      job.shop,
+      job.designId,
+      designVersion,
+    );
     const result = await nestAndRenderDesign({
       shop: job.shop,
       designId: job.designId,
-      jobId: job.id,
+      jobId: `${job.id}-attempt-${job.attempt + 1}`,
       state,
       store: getObjectStore(),
       reprocessWidthIn: job.reprocessWidthIn ?? undefined,
     });
 
-    await prisma.renderJob.update({
-      where: { id: job.id },
+    const finalized = await prisma.renderJob.updateMany({
+      where: {
+        id: job.id,
+        status: "processing",
+        leaseExpiresAt,
+      },
       data: {
         status: "completed",
         outputKey: result.outputObjectKey,
@@ -1164,13 +1240,17 @@ export async function processNextRenderJob(): Promise<
       },
     });
 
-    await prisma.design.update({
-      where: { id: job.designId },
-      data: {
-        status: "completed",
-        previewKey: result.previewObjectKey,
-      },
-    });
+    if (finalized.count !== 1) return { ok: false, reason: "lease_lost" };
+
+    if (!job.orderLinkId) {
+      await prisma.design.updateMany({
+        where: { id: job.designId, shop: job.shop },
+        data: {
+          status: "completed",
+          previewKey: result.previewObjectKey,
+        },
+      });
+    }
 
     await prisma.auditEvent.create({
       data: {
@@ -1189,8 +1269,12 @@ export async function processNextRenderJob(): Promise<
     return { ok: true, jobId: job.id };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Render failed";
-    await prisma.renderJob.update({
-      where: { id: job.id },
+    const failed = await prisma.renderJob.updateMany({
+      where: {
+        id: job.id,
+        status: "processing",
+        leaseExpiresAt,
+      },
       data: {
         status: "failed",
         lastError: message.slice(0, 500),
@@ -1198,10 +1282,13 @@ export async function processNextRenderJob(): Promise<
         leaseExpiresAt: null,
       },
     });
-    await prisma.design.update({
-      where: { id: job.designId },
-      data: { status: "failed" },
-    });
+    if (failed.count !== 1) return { ok: false, reason: "lease_lost" };
+    if (!job.orderLinkId) {
+      await prisma.design.updateMany({
+        where: { id: job.designId, shop: job.shop },
+        data: { status: "failed" },
+      });
+    }
     return { ok: true, jobId: job.id, failed: true, error: message };
   }
 }
@@ -1239,107 +1326,142 @@ export async function linkOrderToDesigns(params: {
   const existing = await prisma.webhookDelivery.findUnique({
     where: { idempotencyKey: params.idempotencyKey },
   });
-  if (existing) {
+  if (existing?.status === "processed") {
+    return { duplicate: true as const, linked: [] as string[] };
+  }
+  if (
+    existing?.status === "processing" &&
+    existing.createdAt.getTime() > Date.now() - 5 * 60 * 1000
+  ) {
     return { duplicate: true as const, linked: [] as string[] };
   }
 
-  await prisma.webhookDelivery.create({
-    data: {
-      shop: params.shop,
-      topic: params.topic,
-      webhookId: params.webhookId,
-      orderId: params.orderId,
-      payloadHash: params.payloadHash,
-      idempotencyKey: params.idempotencyKey,
-      status: "processed",
-    },
-  });
+  if (existing) {
+    await prisma.webhookDelivery.update({
+      where: { id: existing.id },
+      data: {
+        status: "processing",
+        payloadHash: params.payloadHash,
+      },
+    });
+  } else {
+    try {
+      await prisma.webhookDelivery.create({
+        data: {
+          shop: params.shop,
+          topic: params.topic,
+          webhookId: params.webhookId,
+          orderId: params.orderId,
+          payloadHash: params.payloadHash,
+          idempotencyKey: params.idempotencyKey,
+          status: "processing",
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return { duplicate: true as const, linked: [] as string[] };
+      }
+      throw error;
+    }
+  }
 
   const linked: string[] = [];
   const enqueueRender = params.enqueueRender ?? true;
-  for (const line of params.lines) {
-    const design = await prisma.design.findFirst({
-      where: { id: line.designId, shop: params.shop },
-    });
-    if (!design) continue;
-
-    const version = line.designVersion ?? design.currentVersion;
-    try {
-      await validateDesignForCheckout({
-        shop: params.shop,
-        designId: line.designId,
-        designVersion: version,
-        priceRef: line.priceRef,
+  try {
+    for (const line of params.lines) {
+      const design = await prisma.design.findFirst({
+        where: { id: line.designId, shop: params.shop },
       });
-    } catch {
-      continue;
-    }
+      if (!design) continue;
 
-    const orderLink = await prisma.orderLink.upsert({
-      where: {
-        shop_orderId_lineItemId_designId: {
+      const version = line.designVersion ?? design.currentVersion;
+      try {
+        await validateDesignForCheckout({
+          shop: params.shop,
+          designId: line.designId,
+          designVersion: version,
+          priceRef: line.priceRef,
+        });
+      } catch {
+        continue;
+      }
+
+      const orderLink = await prisma.orderLink.upsert({
+        where: {
+          shop_orderId_lineItemId_designId: {
+            shop: params.shop,
+            orderId: params.orderId,
+            lineItemId: line.lineItemId,
+            designId: line.designId,
+          },
+        },
+        create: {
           shop: params.shop,
           orderId: params.orderId,
+          orderGid: params.orderGid,
+          orderNumber: params.orderNumber,
           lineItemId: line.lineItemId,
           designId: line.designId,
+          designVersion: line.designVersion ?? design.currentVersion,
+          productGid: line.productGid,
+          variantGid: line.variantGid,
+          customerGid: params.customerGid,
+          customerEmail: params.customerEmail,
+          customerName: params.customerName,
+          builderType: line.builderType,
+          sheetWidthIn: line.sheetWidthIn,
+          sheetHeightIn: line.sheetHeightIn,
+          quantity: line.quantity ?? 1,
+          financialStatus: params.financialStatus,
+          fulfillmentStatus: params.fulfillmentStatus ?? undefined,
+          paidAt: params.paidAt,
+          cancelledAt: params.cancelledAt,
         },
-      },
-      create: {
-        shop: params.shop,
-        orderId: params.orderId,
-        orderGid: params.orderGid,
-        orderNumber: params.orderNumber,
-        lineItemId: line.lineItemId,
-        designId: line.designId,
-        designVersion: line.designVersion ?? design.currentVersion,
-        productGid: line.productGid,
-        variantGid: line.variantGid,
-        customerGid: params.customerGid,
-        customerEmail: params.customerEmail,
-        customerName: params.customerName,
-        builderType: line.builderType,
-        sheetWidthIn: line.sheetWidthIn,
-        sheetHeightIn: line.sheetHeightIn,
-        quantity: line.quantity ?? 1,
-        financialStatus: params.financialStatus,
-        fulfillmentStatus: params.fulfillmentStatus ?? undefined,
-        paidAt: params.paidAt,
-        cancelledAt: params.cancelledAt,
-      },
-      update: {
-        orderGid: params.orderGid,
-        orderNumber: params.orderNumber,
-        designVersion: line.designVersion ?? design.currentVersion,
-        productGid: line.productGid,
-        variantGid: line.variantGid,
-        customerGid: params.customerGid,
-        customerEmail: params.customerEmail,
-        customerName: params.customerName,
-        builderType: line.builderType,
-        sheetWidthIn: line.sheetWidthIn,
-        sheetHeightIn: line.sheetHeightIn,
-        quantity: line.quantity ?? 1,
-        financialStatus: params.financialStatus,
-        fulfillmentStatus: params.fulfillmentStatus ?? undefined,
-        paidAt: params.paidAt ?? undefined,
-        cancelledAt: params.cancelledAt ?? undefined,
-      },
-    });
-
-    if (enqueueRender) {
-      await prisma.design.update({
-        where: { id: design.id },
-        data: { status: "ordered" },
+        update: {
+          orderGid: params.orderGid,
+          orderNumber: params.orderNumber,
+          designVersion: line.designVersion ?? design.currentVersion,
+          productGid: line.productGid,
+          variantGid: line.variantGid,
+          customerGid: params.customerGid,
+          customerEmail: params.customerEmail,
+          customerName: params.customerName,
+          builderType: line.builderType,
+          sheetWidthIn: line.sheetWidthIn,
+          sheetHeightIn: line.sheetHeightIn,
+          quantity: line.quantity ?? 1,
+          financialStatus: params.financialStatus,
+          fulfillmentStatus: params.fulfillmentStatus ?? undefined,
+          paidAt: params.paidAt ?? undefined,
+          cancelledAt: params.cancelledAt ?? undefined,
+        },
       });
 
-      await enqueueRenderJob({
-        shop: params.shop,
-        designId: design.id,
-        orderLinkId: orderLink.id,
-      });
+      if (enqueueRender) {
+        await prisma.design.updateMany({
+          where: { id: design.id, shop: params.shop },
+          data: { status: "ordered" },
+        });
+
+        await enqueueRenderJob({
+          shop: params.shop,
+          designId: design.id,
+          orderLinkId: orderLink.id,
+        });
+      }
+      linked.push(design.id);
     }
-    linked.push(design.id);
-  }
 
-  return { duplicate: false as const, linked };
+    await prisma.webhookDelivery.update({
+      where: { idempotencyKey: params.idempotencyKey },
+      data: { status: "processed" },
+    });
+    return { duplicate: false as const, linked };
+  } catch (error) {
+    await prisma.webhookDelivery.updateMany({
+      where: { idempotencyKey: params.idempotencyKey },
+      data: { status: "failed" },
+    });
+    throw error;
+  }
 }

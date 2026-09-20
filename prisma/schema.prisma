@@ -68,6 +68,7 @@ model ProductBinding {
   productGid       String
   variantGid       String?
   builderType      String   @default("upload_by_size")
+  enabled          Boolean  @default(true)
   pricePerSqIn     Float?
   sheetWidthIn     Float?
   maxHeightIn      Float?
