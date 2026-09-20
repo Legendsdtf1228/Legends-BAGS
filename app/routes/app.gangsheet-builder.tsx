@@ -9,6 +9,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { ensureShopConfig } from "../lib/merchant-loaders.server";
 import { BagsPageHeader, BagsCard } from "../components/merchant/bags-admin-ui";
+import { merchantProductBuilderUrl } from "../lib/app-href";
+import { resolveAppUrl } from "../lib/app-url.server";
 
 const SHEET_LENGTHS = [24, 36, 48, 60, 72, 84, 96, 108, 132, 150, 168, 192, 250];
 
@@ -19,7 +21,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: { shop: session.shop, builderType: "gang_sheet" },
     orderBy: { updatedAt: "desc" },
   });
-  return { config, bindings, sheetLengths: SHEET_LENGTHS };
+  const appUrl = resolveAppUrl();
+  return {
+    config,
+    sheetLengths: SHEET_LENGTHS,
+    bindings: bindings.map((b) => ({
+      id: b.id,
+      productGid: b.productGid,
+      variantGid: b.variantGid,
+      sheetHeightIn: b.sheetHeightIn,
+      variantPriceCents: b.variantPriceCents,
+      openBuilderUrl: merchantProductBuilderUrl({
+        appUrl,
+        shop: session.shop,
+        builderType: "gang_sheet",
+        productGid: b.productGid,
+        variantGid: b.variantGid,
+      }),
+    })),
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -116,6 +136,7 @@ export default function GangsheetBuilderSettingsPage() {
                   <th>Variant</th>
                   <th>Set price (USD)</th>
                   <th>Current</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -145,6 +166,16 @@ export default function GangsheetBuilderSettingsPage() {
                       </Form>
                     </td>
                     <td>{b.variantPriceCents != null ? `$${(b.variantPriceCents / 100).toFixed(2)}` : "—"}</td>
+                    <td>
+                      <a
+                        href={b.openBuilderUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bags-admin-btn ghost"
+                      >
+                        Preview Builder
+                      </a>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -41,7 +41,7 @@ export default function Landing() {
           Upload-by-Size editor
         </a>
         {" · "}
-        <a href={`/editor/gang-sheet?shop=${encodeURIComponent(shop)}`}>
+        <a href={`/editor/studio?shop=${encodeURIComponent(shop)}`}>
           Gang sheet builder
         </a>
       </p>
