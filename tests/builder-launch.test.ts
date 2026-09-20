@@ -279,7 +279,7 @@ describe("builder cart metadata compatibility", () => {
 });
 
 describe("builder route loader", () => {
-  it("redirects gang sheet products to the gang sheet editor", async () => {
+  it("defaults gang_sheet /builder to /editor/studio when the Studio bridge is present", async () => {
     vi.stubEnv("DEV_SHOP", DEV_SHOP);
     vi.stubEnv("SHOPIFY_APP_URL", "https://upload-by-size-production.up.railway.app");
     delete process.env.USE_STUDIO_BUILDER;
@@ -315,11 +315,89 @@ describe("builder route loader", () => {
       });
       const response = error as Response;
       const location = response.headers.get("Location") || "";
-      expect(location).toContain("/editor/gang-sheet");
+      expect(location).toContain("/editor/studio");
+      expect(location).not.toContain("/editor/gang-sheet");
       expect(location).toContain("shop_mode=1");
       expect(location).toContain("variantId=900011");
     } finally {
       await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: gangProductGid } });
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rolls gang_sheet /builder back to /editor/gang-sheet when USE_STUDIO_BUILDER=0", async () => {
+    vi.stubEnv("DEV_SHOP", DEV_SHOP);
+    vi.stubEnv("SHOPIFY_APP_URL", "https://upload-by-size-production.up.railway.app");
+    vi.stubEnv("USE_STUDIO_BUILDER", "0");
+
+    const gangProductGid = "gid://shopify/Product/900012";
+    const gangVariantGid = "gid://shopify/ProductVariant/900013";
+    await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: gangProductGid } });
+    await prisma.productBinding.create({
+      data: {
+        shop: DEV_SHOP,
+        productGid: gangProductGid,
+        variantGid: gangVariantGid,
+        builderType: "gang_sheet",
+      },
+    });
+
+    const { loader } = await import("../app/routes/builder");
+    try {
+      await loader({
+        request: new Request(
+          `https://upload-by-size-production.up.railway.app/builder?shop=${DEV_SHOP}&product=900012&variant=900013&quantity=1&shop_mode=1`,
+        ),
+        params: {},
+        context: {},
+      } as never);
+      expect.unreachable("expected redirect");
+    } catch (error) {
+      const response = error as Response;
+      const location = response.headers.get("Location") || "";
+      expect(location).toContain("/editor/gang-sheet");
+      expect(location).not.toContain("/editor/studio");
+    } finally {
+      await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: gangProductGid } });
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps upload_by_size /builder on the UBS editor", async () => {
+    vi.stubEnv("DEV_SHOP", DEV_SHOP);
+    vi.stubEnv("SHOPIFY_APP_URL", "https://upload-by-size-production.up.railway.app");
+    delete process.env.USE_STUDIO_BUILDER;
+
+    const ubsProductGid = "gid://shopify/Product/900030";
+    await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: ubsProductGid } });
+    await prisma.productBinding.create({
+      data: {
+        shop: DEV_SHOP,
+        productGid: ubsProductGid,
+        variantGid: "gid://shopify/ProductVariant/900031",
+        builderType: "upload_by_size",
+        pricePerSqIn: 0.049,
+      },
+    });
+
+    const { loader } = await import("../app/routes/builder");
+    try {
+      await loader({
+        request: new Request(
+          `https://upload-by-size-production.up.railway.app/builder?shop=${DEV_SHOP}&product=900030&variant=900031&quantity=1`,
+        ),
+        params: {},
+        context: {},
+      } as never);
+      expect.unreachable("expected redirect");
+    } catch (error) {
+      const response = error as Response;
+      const location = response.headers.get("Location") || "";
+      expect(location).toContain("/editor/upload-by-size");
+      expect(location).not.toContain("/editor/studio");
+      expect(location).not.toContain("/editor/gang-sheet");
+    } finally {
+      await prisma.productBinding.deleteMany({ where: { shop: DEV_SHOP, productGid: ubsProductGid } });
       vi.unstubAllEnvs();
     }
   });
@@ -377,8 +455,8 @@ describe("buildLaunchEditorUrl studio flag", () => {
     process.env.USE_STUDIO_BUILDER = original;
   });
 
-  it("keeps legacy gang-sheet path when studio flag is off", async () => {
-    delete process.env.USE_STUDIO_BUILDER;
+  it("keeps legacy gang-sheet path when USE_STUDIO_BUILDER=0", async () => {
+    process.env.USE_STUDIO_BUILDER = "0";
     const { buildLaunchEditorUrl } = await import("../app/lib/builder-launch-handler.server");
     const url = buildLaunchEditorUrl("https://example.com", {
       shop: DEV_SHOP,
@@ -388,6 +466,20 @@ describe("buildLaunchEditorUrl studio flag", () => {
       builderType: "gang_sheet",
     });
     expect(url).toContain("/editor/gang-sheet");
+  });
+
+  it("defaults gang_sheet to /editor/studio when the flag is unset and the bridge exists", async () => {
+    delete process.env.USE_STUDIO_BUILDER;
+    const { buildLaunchEditorUrl } = await import("../app/lib/builder-launch-handler.server");
+    const url = buildLaunchEditorUrl("https://example.com", {
+      shop: DEV_SHOP,
+      productId: "1",
+      productGid: "gid://shopify/Product/1",
+      quantity: 1,
+      builderType: "gang_sheet",
+    });
+    expect(url).toContain("/editor/studio");
+    expect(url).not.toContain("/editor/gang-sheet");
   });
 
   it("uses /editor/studio for gang_sheet when USE_STUDIO_BUILDER=1", async () => {

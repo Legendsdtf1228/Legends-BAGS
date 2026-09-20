@@ -275,8 +275,8 @@ export function EditorTryCard(props: {
   return (
     <BagsCard title="Customer editors" style={props.style}>
       <p className="bags-admin-muted">
-        Upload and canvas editing happen in the storefront editors — same as live BAGS. Use these
-        links to test the full customer experience.
+        Gang sheet products open Gang Sheet Studio through the BAGS bridge. Upload by Size stays on
+        its own editor. Use these links to test the customer experience.
       </p>
       <div className="bags-admin-actions" style={{ marginTop: 12 }}>
         <a
@@ -285,7 +285,7 @@ export function EditorTryCard(props: {
           rel="noopener noreferrer"
           className="bags-admin-btn primary"
         >
-          Gang Sheet Builder
+          Open Builder
         </a>
         <a
           href={props.uploadBySizeUrl}

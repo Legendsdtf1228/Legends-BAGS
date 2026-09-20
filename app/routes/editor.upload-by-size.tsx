@@ -661,7 +661,7 @@ export default function UploadBySizeEditor() {
   const activeDims = active ? resolvedDims(active) : null;
   const activeCents = lineCents(activeQuote);
   const showWelcome = emptyQueue && !loadingDesign;
-  const gangHref = `/editor/gang-sheet?shop=${encodeURIComponent(page.shop)}`;
+  const gangHref = `/editor/studio?shop=${encodeURIComponent(page.shop)}`;
   const requestedCopies = queue.reduce((sum, line) => sum + Math.max(0, line.quantity), 0);
   const quotedCopies = quoteLines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
   const placedCopies =
