@@ -322,7 +322,7 @@ describe("builder cart metadata compatibility", () => {
 });
 
 describe("builder route loader", () => {
-  it("redirects gang sheet products to the gang sheet editor", async () => {
+  it("defaults gang_sheet /builder to /editor/studio when the Studio bridge is present", async () => {
     vi.stubEnv("DEV_SHOP", DEV_SHOP);
     vi.stubEnv("SHOPIFY_APP_URL", "https://upload-by-size-production.up.railway.app");
     delete process.env.USE_STUDIO_BUILDER;
@@ -360,7 +360,8 @@ describe("builder route loader", () => {
       });
       const response = error as Response;
       const location = response.headers.get("Location") || "";
-      expect(location).toContain("/editor/gang-sheet");
+      expect(location).toContain("/editor/studio");
+      expect(location).not.toContain("/editor/gang-sheet");
       expect(location).toContain("shop_mode=1");
       expect(location).toContain("variantId=900011");
     } finally {
@@ -423,8 +424,8 @@ describe("buildLaunchEditorUrl studio flag", () => {
     process.env.USE_STUDIO_BUILDER = original;
   });
 
-  it("keeps legacy gang-sheet path when studio flag is off", async () => {
-    delete process.env.USE_STUDIO_BUILDER;
+  it("keeps legacy gang-sheet path when USE_STUDIO_BUILDER=0", async () => {
+    process.env.USE_STUDIO_BUILDER = "0";
     const { buildLaunchEditorUrl } = await import("../app/lib/builder-launch-handler.server");
     const url = buildLaunchEditorUrl("https://example.com", {
       shop: DEV_SHOP,
@@ -434,6 +435,20 @@ describe("buildLaunchEditorUrl studio flag", () => {
       builderType: "gang_sheet",
     });
     expect(url).toContain("/editor/gang-sheet");
+  });
+
+  it("defaults gang_sheet to /editor/studio when the flag is unset and the bridge exists", async () => {
+    delete process.env.USE_STUDIO_BUILDER;
+    const { buildLaunchEditorUrl } = await import("../app/lib/builder-launch-handler.server");
+    const url = buildLaunchEditorUrl("https://example.com", {
+      shop: DEV_SHOP,
+      productId: "1",
+      productGid: "gid://shopify/Product/1",
+      quantity: 1,
+      builderType: "gang_sheet",
+    });
+    expect(url).toContain("/editor/studio");
+    expect(url).not.toContain("/editor/gang-sheet");
   });
 
   it("uses /editor/studio for gang_sheet when USE_STUDIO_BUILDER=1", async () => {

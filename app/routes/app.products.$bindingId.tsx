@@ -4,6 +4,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { BagsAlert, BagsCard, BagsPageBody, BagsPageHeader, BagsStatusBadge } from "../components/merchant/bags-admin-ui";
+import { merchantProductBuilderUrl } from "../lib/app-href";
+import { resolveAppUrl } from "../lib/app-url.server";
+import { studioBridgePresent } from "../lib/studio-builder.server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -16,7 +19,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       updatedAt: binding.updatedAt.toISOString(),
       shopifyUpdatedAt: binding.shopifyUpdatedAt?.toISOString() ?? null,
     },
-    studioEnabled: process.env.USE_STUDIO_BUILDER === "1",
+    studioEnabled: studioBridgePresent(),
+    openBuilderUrl: merchantProductBuilderUrl({
+      appUrl: resolveAppUrl(),
+      shop: session.shop,
+      builderType: binding.builderType,
+      productGid: binding.productGid,
+      variantGid: binding.variantGid,
+    }),
   };
 };
 
@@ -80,7 +90,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function ProductBindingDetailPage() {
-  const { binding, studioEnabled } = useLoaderData<typeof loader>();
+  const { binding, studioEnabled, openBuilderUrl } = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const shopifyActive = !binding.productStatus || binding.productStatus === "ACTIVE";
   const configurationComplete =
@@ -128,7 +138,14 @@ export default function ProductBindingDetailPage() {
               </dl>
               {!configurationComplete ? <BagsAlert tone="warning" title="Sheet length required">Set a fixed sheet length before enabling this Gang Sheet Studio product.</BagsAlert> : null}
               {!shopifyActive ? <BagsAlert tone="warning" title="Shopify product is not active">Activate the product in Shopify before launching the customer builder.</BagsAlert> : null}
-              {!studioEnabled && binding.builderType === "gang_sheet" ? <BagsAlert tone="warning" title="Studio bridge disabled">The legacy BAGS editor remains the fallback until the approved development environment enables USE_STUDIO_BUILDER. This product is not Studio-ready yet.</BagsAlert> : null}
+              {!studioEnabled && binding.builderType === "gang_sheet" ? <BagsAlert tone="warning" title="Studio dist missing">Gang Sheet Studio files are not present under public/studio. Open Builder stays unavailable until the Studio dist is synced. The legacy /editor/gang-sheet route is fallback-only.</BagsAlert> : null}
+              {studioEnabled ? (
+                <div className="bags-admin-actions" style={{ marginTop: 12 }}>
+                  <a href={openBuilderUrl} target="_blank" rel="noopener noreferrer" className="bags-admin-btn primary">
+                    {binding.builderType === "gang_sheet" ? "Open Builder" : "Preview Builder"}
+                  </a>
+                </div>
+              ) : null}
             </BagsCard>
             <BagsCard title="Remove connection">
               <p className="bags-admin-muted">Removing this binding disables builder launches for this variant. Existing designs and orders are preserved.</p>

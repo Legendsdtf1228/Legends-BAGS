@@ -10,6 +10,7 @@ import {
   BagsPageHeader,
   BagsStatusBadge,
 } from "../components/merchant/bags-admin-ui";
+import { studioBridgePresent } from "../lib/studio-builder.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -21,7 +22,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop: session.shop,
     products,
     configured: Boolean(config),
-    studioEnabled: process.env.USE_STUDIO_BUILDER === "1",
+    studioEnabled: studioBridgePresent(),
   };
 };
 
@@ -61,7 +62,7 @@ export default function SettingsPage() {
             <div className="bags-readiness-grid">
               <div><span>Shopify shop</span><strong>{data.shop}</strong><BagsStatusBadge status="connected" /></div>
               <div><span>Builder products</span><strong>{data.products}</strong><BagsStatusBadge status={data.products ? "configured" : "missing"} /></div>
-              <div><span>Gang Sheet Studio</span><strong>{data.studioEnabled ? "Enabled" : "Disabled"}</strong><BagsStatusBadge status={data.studioEnabled ? "configured" : "missing"} /></div>
+              <div><span>Gang Sheet Studio</span><strong>{data.studioEnabled ? "Connected" : "Missing"}</strong><BagsStatusBadge status={data.studioEnabled ? "configured" : "missing"} /></div>
             </div>
           </BagsCard>
         </BagsPageBody>

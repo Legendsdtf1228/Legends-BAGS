@@ -15,6 +15,9 @@ import {
 } from "../services/shopify-product-sync.server";
 import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-links";
 import { BagsPageHeader, BagsCard, BagsStatusBadge, BagsPageBody } from "../components/merchant/bags-admin-ui";
+import { merchantProductBuilderUrl } from "../lib/app-href";
+import { resolveAppUrl } from "../lib/app-url.server";
+import { studioBridgePresent } from "../lib/studio-builder.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
@@ -81,6 +84,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .filter((product) => product.variants.length > 0);
 
   const paged = bindings.slice((page - 1) * pageSize, page * pageSize);
+  const appUrl = resolveAppUrl();
 
   return {
     q,
@@ -93,6 +97,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       variantGid: b.variantGid,
       builderType: b.builderType,
       enabled: b.enabled,
+      openBuilderUrl: merchantProductBuilderUrl({
+        appUrl,
+        shop: session.shop,
+        builderType: b.builderType,
+        productGid: b.productGid,
+        variantGid: b.variantGid,
+      }),
       pricePerSqIn: b.pricePerSqIn,
       sheetWidthIn: b.sheetWidthIn,
       maxHeightIn: b.maxHeightIn,
@@ -118,7 +129,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     lastProductSyncError: shopConfig?.lastProductSyncError ?? null,
     shop: session.shop,
     totalBindings: bindings.length,
-    studioEnabled: process.env.USE_STUDIO_BUILDER === "1",
+    studioEnabled: studioBridgePresent(),
   };
 };
 
@@ -471,6 +482,15 @@ export default function ProductsPage() {
                           <BagsStatusBadge status={b.syncStatus} />
                         </td>
                         <td style={{ fontSize: 12 }}>
+                          <a
+                            href={b.openBuilderUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bags-admin-btn ghost"
+                          >
+                            {b.builderType === "gang_sheet" ? "Open Builder" : "Preview Builder"}
+                          </a>
+                          {" · "}
                           <Link to={`/app/products/${b.id}`}>Configure</Link>
                           {" · "}
                           <a href={adminProductUrl(shop, b.productGid)} target="_blank" rel="noreferrer">

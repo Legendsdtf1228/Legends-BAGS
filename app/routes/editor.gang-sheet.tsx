@@ -1,3 +1,11 @@
+/**
+ * FALLBACK ONLY — not a selectable gang-sheet builder.
+ *
+ * Normal gang_sheet launches (customer /builder, merchant Open/Preview, Shop Builder)
+ * go through /editor/studio → /studio/ (Gang Sheet Studio). This route remains in
+ * source for emergency rollback when USE_STUDIO_BUILDER=0 or the Studio dist is missing.
+ * Do not add merchant/customer UI links that present this canvas as a second builder.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { LoaderFunctionArgs } from "react-router";

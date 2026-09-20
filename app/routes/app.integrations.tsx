@@ -10,6 +10,7 @@ import {
   BagsPageHeader,
   BagsStatusBadge,
 } from "../components/merchant/bags-admin-ui";
+import { studioBridgePresent } from "../lib/studio-builder.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -24,7 +25,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     lastProductSyncError: config?.lastProductSyncError ?? null,
     lastOrderSyncAt: config?.lastOrderSyncAt?.toISOString() ?? null,
     lastOrderSyncError: config?.lastOrderSyncError ?? null,
-    studioEnabled: process.env.USE_STUDIO_BUILDER === "1",
+    studioEnabled: studioBridgePresent(),
   };
 };
 
@@ -51,8 +52,8 @@ export default function IntegrationsPage() {
               <p className="bags-admin-muted">
                 Studio remains the authoritative customer-facing canvas. Legends-BAGS configures launches, persists projects, links orders, and handles production.
               </p>
-              <BagsAlert tone={data.studioEnabled ? "success" : "warning"} title={data.studioEnabled ? "Launch bridge ready" : "Development flag disabled"}>
-                {data.studioEnabled ? "Configured builder products can launch the existing Studio bridge." : "Enable USE_STUDIO_BUILDER only in an approved development environment."}
+              <BagsAlert tone={data.studioEnabled ? "success" : "warning"} title={data.studioEnabled ? "Launch bridge ready" : "Studio dist missing"}>
+                {data.studioEnabled ? "Configured builder products launch Gang Sheet Studio through /editor/studio." : "Sync public/studio before merchants can open the gang-sheet builder. Legacy /editor/gang-sheet is fallback-only."}
               </BagsAlert>
             </BagsCard>
           </div>
