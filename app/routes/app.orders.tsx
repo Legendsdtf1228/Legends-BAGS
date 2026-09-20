@@ -289,6 +289,7 @@ export default function OrdersPage() {
                         >
                           {row.orderNumber || row.orderId}
                         </a>
+                        <div><Link to={`/app/orders/${row.id}`}>Production detail</Link></div>
                         <div style={{ fontSize: 11 }}>v{row.designVersion}</div>
                       </td>
                       <td style={{ fontSize: 12 }}>

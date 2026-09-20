@@ -397,7 +397,7 @@ export default function ProductsPage() {
                               />
                             ) : null}
                             <div>
-                              <strong>{b.productTitle || b.productGid}</strong>
+                              <strong><Link to={`/app/products/${b.id}`}>{b.productTitle || b.productGid}</Link></strong>
                               <div style={{ fontSize: 11, wordBreak: "break-all" }}>{b.productGid}</div>
                             </div>
                           </div>
@@ -420,6 +420,8 @@ export default function ProductsPage() {
                           <BagsStatusBadge status={b.syncStatus} />
                         </td>
                         <td style={{ fontSize: 12 }}>
+                          <Link to={`/app/products/${b.id}`}>Configure</Link>
+                          {" · "}
                           <a href={adminProductUrl(shop, b.productGid)} target="_blank" rel="noreferrer">
                             Admin
                           </a>
