@@ -16,6 +16,7 @@
 3. `7299e39` — Build merchant operations and settings experience
 4. `b8e664c` — Document merchant platform and Replit setup
 5. `65bc433` — Complete merchant core workflows
+6. `554e319` — Add Cursor continuation checkpoint
 
 ## Completed P0 functionality
 
@@ -34,21 +35,27 @@
 - Shopify API/webhook configuration aligned to `2025-10`.
 - Merchant branding persistence and Studio bootstrap contract are preserved without extending Studio branding.
 
+## Current DEV environment
+
+- Existing app: **Legends BAGS Dev**
+- Existing store: `legends-bags-in2lwdll.myshopify.com`
+- Existing BAGS DEV deployment is already connected to Shopify.
+- The DEV storefront has already been proven to launch BAGS and open Gang Sheet Studio after ProductBinding.
+- Do not create another Shopify app, Partner credential set, DEV store, or deployment.
+- Live embedded validation can continue separately in this existing environment.
+
 ## Partial or intentionally deferred work
 
-- Embedded Shopify DEV-store visual/authentication validation is not complete because an approved Partner DEV-store session was unavailable.
-- Gang Sheet Studio bridge code is present behind `USE_STUDIO_BUILDER`, but the live DEV launch was not exercised.
+- Full embedded order-to-production validation remains separate follow-on work in the existing DEV environment.
 - Branding settings and contracts exist, but advanced white-label polish, Studio branding application, and advanced logo storage are intentionally deferred.
 - The render queue is safe, but continuous production processing still needs a durable scheduled worker configuration.
 
 ## Remaining P0 work
 
-1. Install/open the app in the approved Shopify DEV store.
-2. Configure DEV-only Shopify credentials/session and app URL without using production credentials.
-3. Register DEV webhooks with `npm run setup:dev-webhooks`.
-4. Verify product/variant loading, binding configuration, enable/disable, and storefront Studio launch.
-5. Create a DEV order and verify order/design association, purchased-version rendering, queue status, retry, and signed PNG download.
-6. Configure and validate a continuously scheduled protected render worker.
+1. Integrate this branch into the current DEV BAGS integration branch outside this checkpoint.
+2. Register or refresh existing DEV webhooks with `npm run setup:dev-webhooks` if needed.
+3. Create a DEV order and verify order/design association, purchased-version rendering, queue status, retry, and signed PNG download.
+4. Configure and validate a continuously scheduled protected render worker.
 
 ## Remaining lower-priority work
 
@@ -58,6 +65,24 @@
 - P2: Additional merchant branding controls and white-label polish.
 - P2: Apply merchant branding inside Gang Sheet Studio only if that separate application explicitly adopts the bootstrap contract.
 - P3: Animations, cosmetic refactors, and pixel-perfect visual passes.
+
+## Integration handoff
+
+Integrate the commits on `feature/merchant-platform-v1` into the current DEV BAGS
+integration branch; do not perform that integration here:
+
+- `2706be8`, `7299e39`, `b8e664c`, and `65bc433` contain the merchant platform work.
+- `554e319` contains this handoff update.
+- Preserve the existing Studio bridge and DEV storefront fixes from the current integration branch.
+- Resolve conflicts by preserving the current Studio launch contract and applying the merchant-side ProductBinding, order, and production changes around it.
+- Do not cherry-pick or merge the branch automatically from this checkpoint.
+
+Expected conflict areas:
+
+- `app/routes/builder.tsx` and `app/routes/app.shop-builder.tsx`: preserve the working DEV Studio redirect/bridge behavior.
+- `app/lib/editor-config.server.ts` and `app/routes/api.studio-bootstrap.tsx`: preserve the Studio bootstrap contract while retaining active/enabled binding checks.
+- `shopify.app.toml` and webhook routes: preserve existing DEV app configuration, then reconcile merchant webhook topics without creating a second app.
+- `app/services/design-service.ts`: retain tenant isolation, purchased-version pinning, queue deduplication, lease fencing, and webhook retry behavior.
 
 ## Unfinished-work locations
 
@@ -100,7 +125,7 @@
 ## Known issues and constraints
 
 - No confirmed application bug remains in the locally exercised core workflow.
-- Embedded Shopify authentication, live catalog behavior, Studio launch, and webhook delivery still require DEV-store validation.
+- Full order-to-production behavior still requires validation in the existing DEV app/store.
 - Build reports an informational Vite warning because `design-service.ts` is both statically and dynamically imported.
 - Do not use production Shopify credentials, deploy, merge, or modify Gang Sheet Studio during continuation.
 
@@ -115,10 +140,9 @@ DATABASE_URL='file:./dev.sqlite' npm test
 DATABASE_URL='file:./dev.sqlite' npm run build
 ```
 
-For approved DEV-store validation:
+For existing DEV-store validation:
 
 ```bash
-# Configure DEV-only environment values through the platform secret/environment UI.
 npm run setup:dev-webhooks
 ```
 
@@ -135,15 +159,18 @@ dashboard, ProductBinding, design/order association, production queue, or
 settings work.
 
 Prioritize only:
-1. Approved Shopify DEV-store embedded validation.
-2. End-to-end DEV product binding -> Studio launch -> cart/order -> linked
+1. Integrating this branch into the current DEV BAGS integration branch without
+   creating another Shopify app, store, deployment, or credential set.
+2. End-to-end validation in the existing DEV environment:
+   product binding -> Studio launch -> cart/order -> linked
    design -> purchased-version render -> signed PNG download.
-3. A durable protected render worker if DEV validation confirms it is needed.
+3. A durable protected render worker if validation confirms it is needed.
 4. Fix only P0 defects discovered by those checks.
 
-Do not deploy, merge, use production credentials, modify production Shopify,
-modify Gang Sheet Studio, or spend time on branding polish, logo infrastructure,
-animations, cosmetic refactors, or optional features.
+Do not create another Shopify app, store, deployment, or credential set.
+Do not deploy from Replit, modify production Shopify, modify Gang Sheet Studio,
+or spend time on branding polish, logo infrastructure, animations, cosmetic
+refactors, or optional features.
 
 Before changing code, run:
   DATABASE_URL='file:./dev.sqlite' npx prisma migrate deploy
