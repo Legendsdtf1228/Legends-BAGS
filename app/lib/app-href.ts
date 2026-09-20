@@ -69,48 +69,15 @@ export function joinAppHref(
   return url.toString();
 }
 
-/** Staff Shop Builder sheets — Gang Sheet Studio via the BAGS bridge, not the legacy canvas. */
 export function staffSheetEditorUrl(params: {
   appUrl?: string | null;
   shop: string;
   designId: string;
 }): string {
-  return joinAppHref("/editor/studio", params.appUrl, {
+  return joinAppHref("/editor/gang-sheet", params.appUrl, {
     shop: params.shop,
     designId: params.designId,
     embedded: "1",
-    shop_mode: "merchant",
-  });
-}
-
-function numericIdFromGid(gid: string | null | undefined): string | undefined {
-  if (!gid) return undefined;
-  const match = gid.match(/(\d+)$/);
-  return match?.[1];
-}
-
-/**
- * Merchant Products / Gangsheet Builder Open/Preview.
- * gang_sheet → /editor/studio (GSS). upload_by_size stays on the UBS editor.
- */
-export function merchantProductBuilderUrl(params: {
-  appUrl?: string | null;
-  shop: string;
-  builderType: string;
-  productGid: string;
-  variantGid?: string | null;
-}): string {
-  const productId = numericIdFromGid(params.productGid);
-  const variantId = numericIdFromGid(params.variantGid);
-  const path = params.builderType === "gang_sheet" ? "/editor/studio" : "/editor/upload-by-size";
-  return joinAppHref(path, params.appUrl, {
-    shop: params.shop,
-    product: productId,
-    productGid: params.productGid,
-    variant: variantId,
-    variantId,
-    quantity: "1",
-    shop_mode: "merchant",
   });
 }
 

@@ -168,7 +168,7 @@ export default function ShopBuilderPage() {
                           rel="noreferrer"
                           className="bags-admin-btn ghost"
                         >
-                          Open Builder
+                          Edit
                         </a>
                         {sheet.downloadPath ? (
                           <a href={sheet.downloadPath} className="bags-admin-btn primary">
