@@ -59,11 +59,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const form = await request.formData();
   if (String(form.get("intent") || "") === "process_jobs") {
-    const recovered = await recoverStuckJobs();
-    const result = await processNextRenderJob();
+    const recovered = await recoverStuckJobs(new Date(), session.shop);
+    const result = await processNextRenderJob(session.shop);
     return { recovered, result };
   }
   return null;

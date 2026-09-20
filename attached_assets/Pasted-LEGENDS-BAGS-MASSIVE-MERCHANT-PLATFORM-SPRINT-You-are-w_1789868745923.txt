@@ -1,0 +1,1128 @@
+LEGENDS-BAGS — MASSIVE MERCHANT PLATFORM SPRINT
+
+You are working in:
+
+Repository:
+Legendsdtf1228/Legends-BAGS
+
+IMPORTANT REPOSITORY BOUNDARY
+
+This repository is Legends-BAGS.
+
+Legends-BAGS is the MERCHANT / BUSINESS / COMMERCE system.
+
+Gang Sheet Studio is a SEPARATE repository and is the authoritative CUSTOMER-FACING gang-sheet builder.
+
+DO NOT rebuild Gang Sheet Studio here.
+DO NOT create another canvas/editor.
+DO NOT recreate Auto Build, Auto Fill, artwork editing, nesting, production rendering, etc. inside this merchant sprint.
+
+The long-term architecture is:
+
+SHOPIFY
+   ↓
+LEGENDS-BAGS
+   - merchant/admin app
+   - products
+   - product configuration
+   - designs/projects
+   - orders
+   - production workflow
+   - branding
+   - settings
+   - Shopify integration
+   - launches customer builder
+   ↓
+GANG SHEET STUDIO
+   - customer-facing builder
+   - canvas
+   - uploads
+   - sizing
+   - quantities
+   - Auto Build
+   - Auto Fill
+   - artwork tools
+   - production design
+   ↓
+LEGENDS-BAGS
+   - saved design/project identity
+   - cart
+   - Shopify order
+   - production
+   - fulfillment
+
+
+==================================================
+0. REPOSITORY SAFETY — DO THIS FIRST
+==================================================
+
+Before modifying anything:
+
+1. Confirm this is:
+   Legendsdtf1228/Legends-BAGS
+
+2. Fetch remote branches.
+
+3. Inspect:
+   integration/dev-studio-builder
+
+4. Inspect previous merchant UI work:
+   branch: ui/shop-dashboard-nav
+   commit:
+   c371c0ff17f04614ebe512b2e63c4f51656e3607
+
+5. Inspect existing merchant Orders work and existing commerce functionality.
+
+6. Identify current Shopify authentication/app-shell architecture.
+
+7. Identify existing database models including:
+   Shop
+   ShopConfig
+   ProductBinding
+   Design
+   DesignVersion
+   OrderLink
+   RenderJob
+   or equivalents.
+
+8. Create a NEW dedicated branch from the correct current integration base.
+
+Suggested branch:
+   feature/merchant-platform-v1
+
+DO NOT:
+- modify main
+- deploy
+- modify production Shopify
+- merge into integration/dev-studio-builder
+- overwrite working Studio bridge functionality
+- overwrite existing commerce/order functionality
+- copy Gang Sheet Studio source into BAGS
+
+Preserve existing working functionality.
+
+Document the base SHA and branch created.
+
+
+==================================================
+1. PRIMARY SPRINT OBJECTIVE
+==================================================
+
+Build a polished, usable V1 merchant platform for Legends-BAGS.
+
+I want to be able to open the app as a print-shop owner and immediately understand:
+
+- what is happening in my business
+- which builder products I sell
+- what customer designs exist
+- what orders need production
+- what files are ready
+- what needs attention
+- how my builder behaves
+- how my customer-facing experience is branded
+- how my shop is configured
+
+This should feel like a REAL commercial Shopify app.
+
+Not:
+- a developer dashboard
+- an internal debug console
+- a generic admin template
+- a customer storefront
+- a clone of Gang Sheet Studio
+
+Prioritize merchant usability.
+
+
+==================================================
+2. LEGENDS DEFAULT BRAND SYSTEM
+==================================================
+
+NON-NEGOTIABLE BRAND REQUIREMENT:
+
+The default Legends-BAGS merchant UI must use the Legends DTF visual identity:
+
+VEGAS GOLD
+BLACK
+WHITE
+
+Create reusable design tokens / CSS variables.
+
+Do NOT scatter hard-coded colors throughout components.
+
+Establish tokens similar to:
+
+--brand-primary
+--brand-accent
+--brand-black
+--brand-white
+--surface
+--surface-muted
+--border
+--text-primary
+--text-secondary
+--success
+--warning
+--danger
+
+Use a tasteful Vegas Gold appropriate for a premium commercial application.
+
+VISUAL DIRECTION:
+
+Black:
+- navigation
+- major structure
+- strong headers where appropriate
+
+Vegas Gold:
+- active navigation
+- important accents
+- selected states
+- restrained CTA emphasis
+- key metrics/highlights
+
+White / light neutral:
+- primary content areas
+- forms
+- tables
+- cards
+- information-heavy screens
+
+The interface should be:
+
+clean
+premium
+modern
+professional
+fast
+easy to scan
+
+Do NOT make it look like:
+- a black/yellow sports website
+- a casino
+- generic purple SaaS
+- generic blue Bootstrap
+- a luxury fashion site
+
+No crowns.
+No unnecessary gradients.
+No excessive glow.
+No decorative clutter.
+
+Maintain accessible contrast.
+
+
+==================================================
+3. APPLICATION SHELL
+==================================================
+
+Create/refine the merchant application shell.
+
+Primary navigation:
+
+Dashboard
+Products
+Designs
+Orders
+Settings
+
+If useful, Settings may contain subnavigation for:
+
+General
+Branding
+Builder
+Production
+Integrations
+
+Navigation needs:
+
+- clear active state
+- Legends-BAGS identity
+- merchant/store identity
+- responsive behavior
+- consistent icons if an icon system already exists
+- no random icon libraries if one is already established
+
+Preserve Shopify embedded-app compatibility where applicable.
+
+The application should work well at normal desktop merchant-admin widths.
+
+Tablet should remain usable.
+
+Do not prioritize mobile over desktop for merchant production workflows, but do not allow the layout to completely break.
+
+
+==================================================
+4. DASHBOARD
+==================================================
+
+Build a useful merchant dashboard.
+
+This is NOT just decorative charts.
+
+The dashboard should answer:
+
+"What needs my attention today?"
+
+Include useful merchant information where supported by real application data.
+
+Potential sections:
+
+TODAY / OVERVIEW
+
+- orders requiring action
+- orders awaiting production
+- designs/projects awaiting action
+- render/output status
+- recent orders
+- recent designs
+- configured builder products
+- fulfillment status
+
+QUICK ACTIONS
+
+Examples:
+- Configure product
+- View orders
+- View designs
+- Open settings
+- Branding
+- Production settings
+
+RECENT ACTIVITY
+
+Use existing data where available.
+
+Do NOT fabricate business metrics.
+
+If backend data is not available yet:
+- create honest empty states
+- create typed adapters/interfaces
+- clearly distinguish unavailable data
+- do not hard-code fake production numbers into the actual application
+
+Use skeleton/loading states where appropriate.
+
+Create strong empty states for new merchants.
+
+
+==================================================
+5. PRODUCTS — CORE MERCHANT WORKFLOW
+==================================================
+
+Products is extremely important.
+
+This is where merchants manage which Shopify products use Legends-BAGS / Gang Sheet Studio.
+
+Build a clear Products screen.
+
+Show relevant Shopify/product binding information when available:
+
+- product image
+- product title
+- Shopify status
+- builder status
+- product type/mode
+- configured/not configured
+- last updated
+- actions
+
+Merchant should be able to quickly understand:
+
+"This product launches Gang Sheet Studio."
+
+versus:
+
+"This is a normal Shopify product."
+
+Support existing ProductBinding / configuration architecture instead of inventing a competing system.
+
+PRODUCT CONFIGURATION
+
+Create/refine a product configuration workflow.
+
+Potential configuration:
+
+Builder enabled
+Builder mode/type
+Default sheet width
+Allowed sheet sizes
+Custom-length availability
+Maximum length
+Pricing/config references
+Product/variant binding
+Customer builder behavior
+Relevant production profile
+Relevant printer/media profile if architecture supports it
+
+DO NOT put the actual customer canvas here.
+
+The merchant is CONFIGURING the customer builder.
+
+The customer later uses Gang Sheet Studio.
+
+Make this distinction obvious in the UI.
+
+
+==================================================
+6. BUILDER PRODUCT LAUNCH CONFIGURATION
+==================================================
+
+Expose the merchant-side configuration necessary for:
+
+Shopify product
+→ Legends-BAGS
+→ Gang Sheet Studio
+
+Use the existing Studio bridge architecture.
+
+Current DEV bridge uses:
+USE_STUDIO_BUILDER=1
+
+Do not replace working launch behavior.
+
+Where useful, merchant UI should communicate:
+
+Builder enabled
+Product connected
+Configuration status
+Launch readiness
+
+If existing architecture allows safe preview/testing, provide a merchant-friendly preview/test action.
+
+Do not create a second builder implementation.
+
+
+==================================================
+7. DESIGNS / CUSTOMER PROJECTS
+==================================================
+
+Build a real merchant Designs screen around existing Design / DesignVersion / project concepts.
+
+Merchant needs to locate customer projects quickly.
+
+Useful information may include:
+
+- preview thumbnail
+- design/project ID
+- customer/order association when available
+- product
+- sheet size
+- created date
+- updated date
+- version
+- output/render state
+- order link
+- status
+
+Add useful merchant search/filter/sort capabilities where architecture supports them.
+
+Potential filters:
+
+All
+Recent
+Ordered
+Not ordered
+Ready
+Needs attention
+Render pending
+Render failed
+
+Do not invent statuses unsupported by the data model without documenting and implementing them properly.
+
+DESIGN DETAIL
+
+Provide a useful design detail view.
+
+Show:
+
+- preview
+- identifiers
+- dimensions
+- version
+- customer/order association
+- output/render status
+- timestamps
+- production file availability
+
+Where signed file-download functionality already exists, reuse it.
+
+Do not expose unsafe raw storage paths.
+
+
+==================================================
+8. ORDERS — PRODUCTION COMMAND CENTER
+==================================================
+
+Orders should be one of the strongest screens in the app.
+
+Reuse existing Merchant Orders work rather than rebuilding it blindly.
+
+Merchant should quickly see:
+
+- Shopify order
+- order number
+- customer
+- date
+- builder/design association
+- fulfillment state
+- production state where available
+- render/output availability
+- downloadable production file
+- actions
+
+Create filters appropriate to actual supported states.
+
+Potential workflow:
+
+New
+Needs Production
+Ready
+Fulfilled
+Problem / Needs Attention
+
+Only implement states that can be mapped correctly to existing data.
+
+ORDER DETAIL
+
+Provide a merchant-friendly order detail screen.
+
+Show:
+
+Customer/order information
+Line items
+Associated builder design
+Design preview
+Sheet dimensions
+Design/version identity
+Render status
+Production output
+Download action
+Fulfillment information
+
+If output isn't ready, explain why.
+
+If rendering failed, surface the failure clearly.
+
+Avoid making the merchant inspect logs to understand ordinary production problems.
+
+
+==================================================
+9. PRODUCTION UX
+==================================================
+
+The merchant side should support a print-shop production workflow.
+
+Where the backend already supports it, expose:
+
+- production-ready output
+- output dimensions
+- render status
+- download
+- fulfillment status
+- associated order
+- associated design
+- timestamps
+
+Use the existing signed download/security model.
+
+DO NOT bypass security to make the UI easier.
+
+DO NOT expose private files publicly.
+
+Create useful error and retry affordances only where backend behavior supports them.
+
+
+==================================================
+10. SETTINGS ARCHITECTURE
+==================================================
+
+Build a clean Settings area.
+
+Suggested sections:
+
+GENERAL
+BRANDING
+BUILDER
+PRODUCTION
+INTEGRATIONS
+
+Do not dump every configuration option onto one giant page.
+
+
+==================================================
+11. GENERAL SETTINGS
+==================================================
+
+General settings may include, where supported:
+
+Store/business display name
+Support/contact information
+Default merchant preferences
+
+Use existing Shop / ShopConfig architecture.
+
+Do not duplicate configuration in an unrelated new table unless necessary.
+
+
+==================================================
+12. WHITE-LABEL BRAND CUSTOMIZATION
+==================================================
+
+THIS IS A MAJOR PRODUCT REQUIREMENT.
+
+Legends-BAGS must support multiple print shops.
+
+Legends DTF should default to:
+
+Vegas Gold
+Black
+White
+
+But another merchant must be able to make the CUSTOMER-FACING experience look like THEIR company.
+
+Build a Branding / Appearance settings screen.
+
+Merchant should be able to configure:
+
+- Business/store display name
+- Upload logo
+- Light logo if needed
+- Dark logo if needed
+- Primary brand color
+- Secondary/accent color
+- Background color
+- Button color
+- Text color
+- Optional icon/favicon where architecture reasonably supports it
+- Customer-facing header branding
+
+Provide a LIVE PREVIEW.
+
+The preview should demonstrate approximately how the customer-facing builder branding will look.
+
+IMPORTANT:
+
+Do not modify Gang Sheet Studio during this sprint.
+
+Instead:
+
+1. Persist branding as shop-level configuration.
+2. Define a typed branding contract that Gang Sheet Studio can consume later through the existing BAGS → Studio bootstrap/integration layer.
+3. Document that contract.
+4. Do not break existing Studio bootstrap behavior.
+
+Example conceptual structure:
+
+branding: {
+  storeName,
+  logoUrl,
+  logoLightUrl,
+  logoDarkUrl,
+  primaryColor,
+  accentColor,
+  backgroundColor,
+  buttonColor,
+  textColor
+}
+
+Use the repository's established naming/types where appropriate rather than blindly copying this exact example.
+
+Validate colors.
+
+Maintain accessible contrast.
+
+Provide safe defaults.
+
+A merchant should be able to reset branding to defaults.
+
+
+==================================================
+13. POWERED-BY / PLATFORM BRANDING
+==================================================
+
+Architect support for a platform-controlled:
+
+"Powered by Legends-BAGS"
+
+customer-facing attribution.
+
+Do not hard-code a merchant-controlled bypass if future plans may make removal a paid/platform feature.
+
+Create configuration architecture that allows the PLATFORM to determine whether attribution is displayed.
+
+Do not build billing for this sprint unless billing already exists.
+
+
+==================================================
+14. BUILDER SETTINGS
+==================================================
+
+Create merchant-facing Builder settings using existing configuration architecture.
+
+Potential settings where supported:
+
+- default sheet width
+- allowed widths
+- default length
+- maximum length
+- available presets
+- DPI expectations
+- resolution warning threshold
+- margin
+- spacing
+- snapping defaults
+- rotation permission
+- Auto Build availability
+- Auto Fill availability
+
+IMPORTANT:
+
+These are merchant configuration settings.
+
+Do NOT implement the corresponding customer algorithms in BAGS.
+
+Gang Sheet Studio owns the actual customer behavior.
+
+If a setting is not currently supported by Studio integration, represent it honestly and document the required future contract rather than pretending it works.
+
+
+==================================================
+15. PRODUCTION SETTINGS
+==================================================
+
+Expose existing production configuration cleanly.
+
+Where supported:
+
+- printer/media profile
+- usable width
+- output DPI
+- margins
+- production limits
+- output settings
+- render behavior
+
+Do not hard-code Legends' physical printer configuration as universal platform behavior.
+
+The system should remain printer-agnostic where architecture already intends that.
+
+
+==================================================
+16. INTEGRATIONS
+==================================================
+
+Create an Integrations/settings status area where useful.
+
+At minimum communicate relevant state for:
+
+Shopify
+Gang Sheet Studio / Builder
+
+Do NOT expose secrets.
+
+Never render:
+
+SHOPIFY_API_SECRET
+FILE_SIGNING_SECRET
+database credentials
+tokens
+
+Merchant-facing status should be understandable:
+
+Connected
+Configured
+Needs setup
+Unavailable
+
+Do not expose developer environment-variable details to ordinary merchants.
+
+
+==================================================
+17. SHOPIFY EXPERIENCE
+==================================================
+
+This is intended to function as a professional Shopify merchant application.
+
+Preserve:
+
+- Shopify auth
+- embedded app behavior
+- shop/session handling
+- existing scopes
+- existing webhook behavior
+- existing commerce logic
+
+Do not casually increase Shopify scopes.
+
+If additional scopes appear necessary, document why before changing them.
+
+Do not modify live Shopify theme/store during this sprint.
+
+
+==================================================
+18. UX QUALITY
+==================================================
+
+Every primary screen should include appropriate:
+
+Loading state
+Empty state
+Error state
+Success feedback
+
+Forms should have:
+
+Clear labels
+Validation
+Save state
+Dirty-state awareness where appropriate
+Success/error feedback
+
+Dangerous/destructive actions should require confirmation.
+
+Do not use browser alert() for polished production workflows if an existing modal/toast system exists.
+
+Use consistent:
+
+spacing
+typography
+buttons
+cards
+tables
+badges
+forms
+modals
+drawers
+navigation
+status indicators
+
+
+==================================================
+19. ACCESSIBILITY
+==================================================
+
+Maintain:
+
+keyboard navigation
+visible focus states
+semantic labels
+reasonable ARIA usage
+accessible contrast
+usable form labels
+non-color-only status communication
+
+Vegas Gold must not become low-contrast text on white.
+
+
+==================================================
+20. RESPONSIVENESS
+==================================================
+
+Primary target:
+desktop Shopify merchant experience.
+
+Also support reasonable tablet behavior.
+
+At narrow widths:
+
+- navigation remains usable
+- tables should adapt intelligently
+- actions remain reachable
+- content should not overlap
+- settings forms remain usable
+
+Do not destroy information density just to make everything look like a mobile card feed.
+
+
+==================================================
+21. DATA / BACKEND RULES
+==================================================
+
+Prefer existing data models and APIs.
+
+Do not create duplicate sources of truth.
+
+Before adding a new model, determine whether the data belongs in:
+
+Shop
+ShopConfig
+ProductBinding
+Design
+DesignVersion
+OrderLink
+RenderJob
+or another existing entity.
+
+Preserve immutable design-version behavior if currently implemented.
+
+Preserve signed output/file access.
+
+Preserve existing Shopify order linking.
+
+Preserve current Studio bridge.
+
+
+==================================================
+22. NO FAKE FUNCTIONALITY
+==================================================
+
+Do not make buttons that look functional but do nothing.
+
+Do not fabricate:
+
+orders
+revenue
+customers
+render statuses
+product bindings
+designs
+production statistics
+
+Development/demo presentation may use clearly labeled fixtures in tests/story/demo contexts, but the actual merchant application must represent real application state honestly.
+
+If a feature needs backend work:
+- implement it correctly if within scope, OR
+- show an honest unavailable/coming integration state,
+- document the missing contract.
+
+Do not fake completion.
+
+
+==================================================
+23. EXISTING WORK MUST BE REUSED
+==================================================
+
+Specifically inspect and reuse appropriate work from:
+
+ui/shop-dashboard-nav
+commit:
+c371c0ff17f04614ebe512b2e63c4f51656e3607
+
+Also inspect current Orders implementation and integration branch.
+
+Do not blindly cherry-pick if it conflicts.
+
+Port/reuse components intentionally.
+
+Current integration functionality is more important than preserving an old UI implementation exactly.
+
+If old UI conflicts with newer architecture, preserve newer architecture and adapt the UI.
+
+
+==================================================
+24. DO NOT TOUCH GANG SHEET STUDIO
+==================================================
+
+Repeat this boundary throughout implementation:
+
+DO NOT modify Gang-Sheet-Studio.
+
+DO NOT copy Studio into this repository.
+
+DO NOT build:
+- canvas
+- nesting
+- Auto Build engine
+- Auto Fill engine
+- artwork editor
+- Names & Numbers
+- image processing
+- production renderer
+
+Those belong to Gang Sheet Studio.
+
+BAGS may configure, launch, receive and display results from Studio.
+
+
+==================================================
+25. TESTING
+==================================================
+
+Maintain all existing tests.
+
+Add tests for new merchant functionality where appropriate.
+
+At minimum validate:
+
+- merchant routes render
+- navigation works
+- shop configuration loads
+- branding settings validation
+- branding persistence
+- branding defaults
+- product binding views
+- order/design views
+- permissions/auth boundaries
+- signed download behavior remains intact
+- existing Studio builder launch tests still pass
+- existing commerce tests still pass
+
+Run:
+
+typecheck
+unit tests
+relevant integration tests
+production build
+
+Do not call the sprint complete if the production build fails.
+
+
+==================================================
+26. VISUAL QA
+==================================================
+
+Perform a visual QA pass at approximately:
+
+1440px desktop
+1024px/tablet
+768px narrow tablet
+
+Check:
+
+Dashboard
+Products
+Product detail/config
+Designs
+Design detail
+Orders
+Order detail
+Settings
+Branding
+Builder settings
+Production settings
+
+Look specifically for:
+
+overflow
+misaligned cards
+broken tables
+bad typography
+poor contrast
+gold overuse
+duplicate navigation
+unreachable actions
+inconsistent spacing
+generic placeholder UI
+
+
+==================================================
+27. DOCUMENTATION
+==================================================
+
+Create/update concise documentation covering:
+
+Merchant UI architecture
+Brand design tokens
+White-label branding model
+BAGS → Studio branding contract
+Product binding/configuration
+Production workflow
+Major merchant routes
+
+Document what is:
+
+IMPLEMENTED
+WIRED TO REAL DATA
+UI-ONLY / CONTRACT-READY
+FUTURE STUDIO INTEGRATION
+
+Do not label something complete if the downstream Studio integration has not been implemented.
+
+
+==================================================
+28. FINAL ACCEPTANCE CRITERIA
+==================================================
+
+I should be able to visually inspect a merchant application that feels like a real commercial product.
+
+The merchant experience should provide:
+
+✓ Branded Legends-BAGS shell
+✓ Vegas Gold / Black / White default theme
+✓ Dashboard
+✓ Products
+✓ Product configuration
+✓ Designs
+✓ Design details
+✓ Orders
+✓ Order details
+✓ Production file/status UX
+✓ Settings
+✓ Branding settings
+✓ Merchant logo upload/configuration
+✓ Merchant color customization
+✓ Live branding preview
+✓ Builder configuration
+✓ Production configuration
+✓ Shopify integration status
+✓ Gang Sheet Studio integration status
+✓ Loading/empty/error states
+✓ Responsive merchant layout
+
+And critically:
+
+✓ Legends-BAGS remains the merchant/business system
+✓ Gang Sheet Studio remains the customer builder
+✓ Existing commerce is preserved
+✓ Existing Studio bridge is preserved
+✓ No duplicate customer builder is created
+✓ No live deployment is performed
+✓ main is untouched
+
+
+==================================================
+29. EXECUTION STYLE
+==================================================
+
+This is a MASSIVE IMPLEMENTATION SPRINT.
+
+Do not stop after producing another audit document.
+
+Audit first because you must understand the repository, then IMPLEMENT.
+
+Work systematically.
+
+Make logical commits/checkpoints.
+
+Do not make giant unrelated destructive changes.
+
+If you discover an architectural conflict:
+- preserve working production/integration behavior
+- document the conflict
+- implement the safest compatible solution
+
+Do not wait for me to approve every small UI decision.
+
+Use good product judgment within these requirements.
+
+Do NOT deploy anything.
+
+
+==================================================
+30. FINAL REPORT
+==================================================
+
+When finished, return:
+
+1. Branch name
+2. Base SHA
+3. Final SHA
+4. Commits created
+5. Screens completed
+6. Existing components/functionality reused
+7. Database/schema changes, if any
+8. APIs/routes added or changed
+9. Branding architecture implemented
+10. BAGS → Studio contract additions
+11. Tests run and exact results
+12. Typecheck result
+13. Production build result
+14. Known limitations
+15. Anything requiring future Gang Sheet Studio work
+16. Anything requiring Shopify configuration
+17. Exact route/command I can use to visually review the merchant UI
+
+Do NOT merge.
+Do NOT deploy.
+STOP after the final report.

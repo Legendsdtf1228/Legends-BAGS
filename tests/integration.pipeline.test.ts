@@ -97,7 +97,7 @@ describe("vertical slice pipeline", () => {
     });
     expect(link2.duplicate).toBe(true);
 
-    const result = await processNextRenderJob();
+    const result = await processNextRenderJob(shop);
     expect(result.ok).toBe(true);
     if (!result.ok || "failed" in result && result.failed) {
       throw new Error("render failed");

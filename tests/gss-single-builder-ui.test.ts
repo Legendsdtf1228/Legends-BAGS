@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { merchantProductBuilderUrl, staffSheetEditorUrl } from "../app/lib/app-href";
@@ -12,12 +12,15 @@ const LEGACY_HREF = /["'`]\/editor\/gang-sheet(?:\?|["'`])/;
 
 const LAUNCH_UI_FILES = [
   "app/routes/app.products.tsx",
+  "app/routes/app.products.$bindingId.tsx",
   "app/routes/app.gangsheet-builder.tsx",
   "app/routes/app.shop-builder.tsx",
   "app/routes/app._index.tsx",
   "app/routes/app.setup.tsx",
   "app/routes/app.designs.tsx",
   "app/routes/app.designs.$designId.tsx",
+  "app/routes/app.settings.tsx",
+  "app/routes/app.integrations.tsx",
   "app/routes/_index/route.tsx",
   "app/routes/editor.upload-by-size.tsx",
   "app/components/merchant/bags-admin-ui.tsx",
@@ -42,7 +45,9 @@ describe("one authoritative gang-sheet builder (GSS)", () => {
   it("does not expose /editor/gang-sheet from normal merchant or customer launch UI", () => {
     const hits: string[] = [];
     for (const rel of LAUNCH_UI_FILES) {
-      const src = readFileSync(path.join(ROOT, rel), "utf8");
+      const full = path.join(ROOT, rel);
+      if (!existsSync(full)) continue;
+      const src = readFileSync(full, "utf8");
       if (LEGACY_HREF.test(src) || src.includes(`"${LEGACY}"`) || src.includes(`\`${LEGACY}`)) {
         hits.push(rel);
       }

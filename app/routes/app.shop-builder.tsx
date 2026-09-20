@@ -63,7 +63,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (intent === "generate") {
       const designId = String(form.get("designId"));
       await enqueueRenderJob({ shop, designId });
-      await processNextRenderJob();
+      await processNextRenderJob(shop);
       return { ok: true, message: "Render job queued and processed." };
     }
   } catch (err) {

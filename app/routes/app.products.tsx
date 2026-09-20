@@ -17,6 +17,7 @@ import { adminProductUrl, storefrontProductUrl } from "../lib/shopify-admin-link
 import { BagsPageHeader, BagsCard, BagsStatusBadge, BagsPageBody } from "../components/merchant/bags-admin-ui";
 import { merchantProductBuilderUrl } from "../lib/app-href";
 import { resolveAppUrl } from "../lib/app-url.server";
+import { studioBridgePresent } from "../lib/studio-builder.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
@@ -26,7 +27,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const page = Math.max(1, Number(url.searchParams.get("page") || "1") || 1);
   const pageSize = 25;
 
-  const shopConfig = await prisma.shopConfig.findUnique({ where: { shop: session.shop } });
+  const [shopConfig, allBoundProducts] = await Promise.all([
+    prisma.shopConfig.findUnique({ where: { shop: session.shop } }),
+    prisma.productBinding.findMany({
+      where: { shop: session.shop },
+      select: { productGid: true, variantGid: true },
+    }),
+  ]);
 
   const bindings = await prisma.productBinding.findMany({
     where: {
@@ -50,14 +57,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
     catalogPreview = await fetchShopifyCatalog(admin, {
       query: q ? `title:*${q}*` : undefined,
-      maxPages: 1,
+      maxPages: q ? 4 : 1,
     });
   } catch {
     catalogPreview = [];
   }
 
-  const boundProductGids = new Set(bindings.map((b) => b.productGid));
-  const importCandidates = catalogPreview.filter((p) => !boundProductGids.has(p.id)).slice(0, 12);
+  const productWideBindings = new Set(
+    allBoundProducts
+      .filter((binding) => !binding.variantGid)
+      .map((binding) => binding.productGid),
+  );
+  const boundVariantGids = new Set(
+    allBoundProducts.flatMap((binding) =>
+      binding.variantGid ? [binding.variantGid] : [],
+    ),
+  );
+  const importCandidates = catalogPreview
+    .filter((product) => !productWideBindings.has(product.id))
+    .map((product) => ({
+      ...product,
+      variants: product.variants.filter(
+        (variant) => !boundVariantGids.has(variant.id),
+      ),
+    }))
+    .filter((product) => product.variants.length > 0);
 
   const paged = bindings.slice((page - 1) * pageSize, page * pageSize);
   const appUrl = resolveAppUrl();
@@ -72,6 +96,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       productGid: b.productGid,
       variantGid: b.variantGid,
       builderType: b.builderType,
+      enabled: b.enabled,
       openBuilderUrl: merchantProductBuilderUrl({
         appUrl,
         shop: session.shop,
@@ -104,6 +129,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     lastProductSyncError: shopConfig?.lastProductSyncError ?? null,
     shop: session.shop,
     totalBindings: bindings.length,
+    studioEnabled: studioBridgePresent(),
   };
 };
 
@@ -157,6 +183,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       variantGidRaw: variantGidRaw || undefined,
     });
     const variantGid = resolved.variantGid;
+    const productStatus = resolved.productStatus ?? null;
     const gangHeight =
       builderType === "gang_sheet" && Number.isFinite(sheetHeightIn!) ? sheetHeightIn : null;
     const rollMax =
@@ -173,7 +200,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: {
           productGid,
           builderType,
+          enabled:
+            productStatus === "ACTIVE" &&
+            (builderType !== "gang_sheet" ||
+              gangHeight !== null ||
+              existing.sheetHeightIn !== null),
           productTitle,
+          productStatus,
           variantTitle: resolved.variantTitle ?? existing.variantTitle,
           pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : existing.pricePerSqIn,
           sheetHeightIn: gangHeight ?? existing.sheetHeightIn,
@@ -192,7 +225,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           productGid,
           variantGid,
           builderType,
+          enabled:
+            productStatus === "ACTIVE" &&
+            (builderType !== "gang_sheet" || gangHeight !== null),
           productTitle,
+          productStatus,
           variantTitle: resolved.variantTitle,
           pricePerSqIn: Number.isFinite(pricePerSqIn!) ? pricePerSqIn : null,
           sheetHeightIn: gangHeight,
@@ -222,6 +259,7 @@ export default function ProductsPage() {
     lastProductSyncError,
     shop,
     totalBindings,
+    studioEnabled,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
@@ -279,7 +317,7 @@ export default function ProductsPage() {
         {actionData && "saved" in actionData && actionData.saved ? (
           <BagsCard style={{ marginBottom: 16 }}>
             <p className="bags-admin-muted" style={{ margin: 0 }}>
-              Product binding saved.
+              Product binding saved. Gang Sheet Studio bindings remain disabled until a fixed sheet length is configured.
             </p>
           </BagsCard>
         ) : null}
@@ -381,10 +419,10 @@ export default function ProductsPage() {
                   <tr>
                     <th>Product</th>
                     <th>Builder</th>
+                    <th>Readiness</th>
                     <th>Variant</th>
                     <th>Sheet / price</th>
                     <th>Sync</th>
-                    <th>Preview</th>
                     <th>Links</th>
                   </tr>
                 </thead>
@@ -408,13 +446,26 @@ export default function ProductsPage() {
                               />
                             ) : null}
                             <div>
-                              <strong>{b.productTitle || b.productGid}</strong>
+                              <strong><Link to={`/app/products/${b.id}`}>{b.productTitle || b.productGid}</Link></strong>
                               <div style={{ fontSize: 11, wordBreak: "break-all" }}>{b.productGid}</div>
                             </div>
                           </div>
                         </td>
                         <td>
                           <BagsStatusBadge status={b.builderType} />
+                        </td>
+                        <td>
+                          <BagsStatusBadge
+                            status={
+                              !b.enabled
+                                ? "disabled"
+                                : b.productStatus && b.productStatus !== "ACTIVE"
+                                  ? "needs_attention"
+                                  : b.builderType === "gang_sheet" && (!studioEnabled || !b.sheetHeightIn)
+                                    ? "needs_attention"
+                                    : "ready"
+                            }
+                          />
                         </td>
                         <td style={{ fontSize: 12 }}>
                           {b.variantTitle || b.variantGid || "All variants"}
@@ -430,7 +481,7 @@ export default function ProductsPage() {
                         <td>
                           <BagsStatusBadge status={b.syncStatus} />
                         </td>
-                        <td>
+                        <td style={{ fontSize: 12 }}>
                           <a
                             href={b.openBuilderUrl}
                             target="_blank"
@@ -439,8 +490,9 @@ export default function ProductsPage() {
                           >
                             {b.builderType === "gang_sheet" ? "Open Builder" : "Preview Builder"}
                           </a>
-                        </td>
-                        <td style={{ fontSize: 12 }}>
+                          {" · "}
+                          <Link to={`/app/products/${b.id}`}>Configure</Link>
+                          {" · "}
                           <a href={adminProductUrl(shop, b.productGid)} target="_blank" rel="noreferrer">
                             Admin
                           </a>

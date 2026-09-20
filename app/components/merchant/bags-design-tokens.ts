@@ -1,33 +1,33 @@
-/** Legends BAGS design tokens — aligned to Build a Gang Sheet layout density. */
+/** Legends BAGS merchant design tokens — precise, high-contrast, Vegas Gold identity. */
 
 export const BAGS_TOKENS = {
   color: {
-    shellBg: "#f4f6f9",
-    sidebarBg: "#111827",
-    sidebarBgEnd: "#1a2332",
-    sidebarBorder: "#243044",
-    sidebarText: "#e5e7eb",
-    sidebarMuted: "#9ca3af",
-    sidebarActive: "#f97316",
-    surface: "#ffffff",
-    surfaceMuted: "#f9fafb",
-    border: "#e5e7eb",
-    borderStrong: "#d0d5dd",
-    text: "#111827",
-    textSecondary: "#475467",
-    textMuted: "#667085",
-    accent: "#f97316",
-    accentDark: "#ea580c",
-    accentSoft: "#fff7ed",
-    success: "#027a48",
-    successSoft: "#ecfdf3",
-    danger: "#b42318",
-    dangerSoft: "#fef3f2",
-    info: "#1d4ed8",
-    infoSoft: "#eff6ff",
+    shellBg: "#f3f1ed",
+    sidebarBg: "#171716",
+    sidebarBgEnd: "#171716",
+    sidebarBorder: "#37342e",
+    sidebarText: "#f4f1e9",
+    sidebarMuted: "#ada79b",
+    sidebarActive: "#c99a3e",
+    surface: "#fffdfa",
+    surfaceMuted: "#f7f4ee",
+    border: "#e2ddd2",
+    borderStrong: "#c9c0b1",
+    text: "#1d1c1a",
+    textSecondary: "#514e47",
+    textMuted: "#756f64",
+    accent: "#b78020",
+    accentDark: "#8b5f12",
+    accentSoft: "#f8efd9",
+    success: "#176b4a",
+    successSoft: "#e8f3ed",
+    danger: "#a4372a",
+    dangerSoft: "#f9eae7",
+    info: "#315d73",
+    infoSoft: "#e8f0f3",
   },
   typography: {
-    fontFamily: 'Inter, "Segoe UI", system-ui, sans-serif',
+    fontFamily: '"DM Sans", "Segoe UI", system-ui, sans-serif',
     pageTitle: "20px",
     sectionTitle: "15px",
     body: "13px",
@@ -54,7 +54,7 @@ export const BAGS_TOKENS = {
     sidebar: "2px 0 12px rgba(13,17,23,.08)",
   },
   layout: {
-    sidebarWidth: "240px",
+    sidebarWidth: "248px",
     sidebarCollapsedWidth: "64px",
     headerHeight: "56px",
     contentMaxWidth: "1280px",
@@ -100,6 +100,8 @@ export const bagsTokenCss = `
   --bags-info:${BAGS_TOKENS.color.info};
   --bags-info-soft:${BAGS_TOKENS.color.infoSoft};
   --bags-font:${BAGS_TOKENS.typography.fontFamily};
+  --bags-gold:${BAGS_TOKENS.color.accent};
+  --bags-focus:rgba(183,128,32,.42);
   --bags-sidebar-width:${BAGS_TOKENS.layout.sidebarWidth};
   --bags-header-height:${BAGS_TOKENS.layout.headerHeight};
   --bags-content-max:${BAGS_TOKENS.layout.contentMaxWidth};
@@ -109,5 +111,7 @@ export const bagsTokenCss = `
   --bags-radius-lg:${BAGS_TOKENS.radius.lg};
   --bags-shadow-card:${BAGS_TOKENS.shadow.card};
   --bags-shadow-panel:${BAGS_TOKENS.shadow.panel};
+  --bags-z-sidebar:${BAGS_TOKENS.zIndex.sidebar};
+  --bags-z-header:${BAGS_TOKENS.zIndex.header};
 }
 `;

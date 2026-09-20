@@ -17,7 +17,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   });
 
   if (process.env.RENDER_INLINE_ON_WEBHOOK === "1") {
-    await processNextRenderJob();
+    await processNextRenderJob(shop);
   }
 
   return new Response();

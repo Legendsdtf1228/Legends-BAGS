@@ -87,7 +87,8 @@
     "@shopify/plugin-cloudflare"
   ],
   "overrides": {
-    "p-map": "^4.0.0"
+    "p-map": "^4.0.0",
+    "shell-quote": "^1.10.0"
   },
   "author": "Mark",
   "description": "Legends DTF gang sheet builder (BAGS replacement)"

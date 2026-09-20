@@ -33,13 +33,21 @@ model Session {
 model ShopConfig {
   id              String   @id @default(cuid())
   shop            String   @unique
+  businessName       String   @default("Legends DTF Prints")
+  logoUrl            String?
+  logoLightUrl       String?
+  logoDarkUrl        String?
+  faviconUrl         String?
   pricePerSqIn    Float    @default(0.049)
   sheetWidthIn    Float    @default(22.5)
   maxHeightIn     Float    @default(360)
   imageMarginIn   Float    @default(0.15)
   artboardMarginIn Float   @default(0.1)
-  accentColor        String   @default("#f97316")
-  accentColorDark    String   @default("#ea580c")
+  accentColor        String   @default("#C9A227")
+  accentColorDark    String   @default("#8A6D12")
+  backgroundColor    String   @default("#FFFFFF")
+  buttonColor        String   @default("#171717")
+  textColor          String   @default("#171717")
   launcherOpenLabel  String   @default("Build your gang sheet")
   launcherEditLabel  String   @default("Edit design")
   welcomeTitle       String   @default("Welcome to Legends BAGS")
@@ -60,6 +68,7 @@ model ProductBinding {
   productGid       String
   variantGid       String?
   builderType      String   @default("upload_by_size")
+  enabled          Boolean  @default(true)
   pricePerSqIn     Float?
   sheetWidthIn     Float?
   maxHeightIn      Float?

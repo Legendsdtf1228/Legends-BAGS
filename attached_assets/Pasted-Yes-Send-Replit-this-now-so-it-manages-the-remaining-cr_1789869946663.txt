@@ -1,0 +1,68 @@
+Yes. Send Replit this now so it manages the remaining credits intentionally instead of polishing low-priority stuff:
+CREDIT / COMPUTE BUDGET DIRECTIVE — IMPORTANT
+We have a limited Replit credit budget. Do not attempt to finish every possible feature, polish item, refactor, or follow-up inside Replit.
+Use Replit/Power only where it provides the most value. Cursor will continue the repository after your checkpoint.
+Spend remaining effort ONLY on high-value P0 work
+Prioritize:
+- Core merchant app shell/navigation
+- Dashboard
+- Products
+- Shopify product/binding management
+- Gang Sheet Studio product configuration
+- Designs/projects
+- Orders
+- Order/design relationship
+- Production status/output/download workflow
+- Essential operational Settings
+- Correct underlying architecture/data contracts
+- Anything architectural that would be difficult for another agent to infer later
+DO NOT burn credits on:
+- Pixel-perfect polish
+- Minor responsive tweaks
+- Advanced animations
+- Cosmetic refactoring
+- Extensive documentation
+- Advanced white-label polish
+- Applying merchant branding inside Gang Sheet Studio
+- Nonessential logo-upload infrastructure
+- Optional features
+- P2/P3 improvements
+- Large speculative refactors
+- Repeated visual-polish passes
+- Work that Cursor can easily complete afterward
+Preserve the Vegas Gold / Black / White design system and the merchant-branding architecture already established, but do not spend significant remaining compute polishing it.
+Do not modify Gang Sheet Studio.
+Work in checkpoints
+Make small logical commits and push them regularly. Do not leave a huge amount of completed work uncommitted.
+Before beginning any substantial new task, ask internally:
+“Is this essential architecture/core functionality, or can Cursor finish it later?”
+If Cursor can reasonably finish it later, defer it.
+Mandatory handoff before stopping
+Before the available budget becomes a problem, STOP implementation and create a clean continuation checkpoint.
+Commit and push all completed work.
+Ensure git status is clean.
+Do NOT merge.
+Do NOT deploy.
+Produce:
+1. Branch name
+2. Base SHA
+3. Latest pushed SHA
+4. Commits created
+5. P0 features completed
+6. Partially completed features
+7. Remaining P0 work
+8. Remaining P1/P2/P3 work
+9. Files/components involved in unfinished work
+10. Database/schema/migration changes
+11. APIs/routes added or changed
+12. Tests run + exact results
+13. Typecheck result
+14. Production build result
+15. Known bugs
+16. Shopify DEV work still required
+17. Gang Sheet Studio integration work still required
+18. Exact commands needed to resume development
+19. A CURSOR CONTINUATION PROMPT that another coding agent can paste in and continue from the exact checkpoint without repeating completed work
+Do not use remaining credits trying to reach perfection.
+The objective is to use Replit for the highest-value architecture and implementation, leave the repository in a clean, tested state, and hand the remaining implementation/polish to Cursor.
+Continue the current merchant sprint under this budget directive.

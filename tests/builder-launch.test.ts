@@ -185,6 +185,7 @@ describe("resolveBuilderLaunch", () => {
           productGid: gangProductGid,
           variantGid: gangVariantGid,
           builderType: "gang_sheet",
+          productStatus: "ACTIVE",
           sheetHeightIn: 24,
           variantPriceCents: 1700,
         },
@@ -193,6 +194,7 @@ describe("resolveBuilderLaunch", () => {
           productGid: ubsProductGid,
           variantGid: "gid://shopify/ProductVariant/ubs-var-1",
           builderType: "upload_by_size",
+          productStatus: "ACTIVE",
           pricePerSqIn: 0.049,
         },
       ],
@@ -241,6 +243,47 @@ describe("resolveBuilderLaunch", () => {
     if (result.ok) return;
     expect(result.code).toBe("binding_not_found");
     expect(result.message).toContain("not been connected");
+  });
+
+  it("does not launch a disabled product binding", async () => {
+    await prisma.productBinding.updateMany({
+      where: { shop, productGid: gangProductGid },
+      data: { enabled: false },
+    });
+    const result = await resolveBuilderLaunch({
+      shop,
+      product: numericIdFromGid(gangProductGid)!,
+      variant: numericIdFromGid(gangVariantGid)!,
+      quantity: "1",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("binding_not_found");
+  });
+
+  it("does not fall through from a disabled requested variant to another enabled variant", async () => {
+    await prisma.productBinding.updateMany({
+      where: { shop, productGid: gangProductGid, variantGid: gangVariantGid },
+      data: { enabled: false },
+    });
+    await prisma.productBinding.create({
+      data: {
+        shop,
+        productGid: gangProductGid,
+        variantGid: "gid://shopify/ProductVariant/other-enabled",
+        builderType: "gang_sheet",
+        productStatus: "ACTIVE",
+        sheetHeightIn: 24,
+        enabled: true,
+      },
+    });
+    const result = await resolveBuilderLaunch({
+      shop,
+      product: numericIdFromGid(gangProductGid)!,
+      variant: numericIdFromGid(gangVariantGid)!,
+      quantity: "1",
+    });
+    expect(result.ok).toBe(false);
   });
 });
 
@@ -293,6 +336,8 @@ describe("builder route loader", () => {
         productGid: gangProductGid,
         variantGid: gangVariantGid,
         builderType: "gang_sheet",
+        productStatus: "ACTIVE",
+        sheetHeightIn: 24,
       },
     });
 
@@ -414,6 +459,7 @@ describe("builder route loader", () => {
         productGid: gangProductGid,
         variantGid: "gid://shopify/ProductVariant/900021",
         builderType: "gang_sheet",
+        productStatus: "ACTIVE",
         sheetWidthIn: 22.5,
         sheetHeightIn: 24,
       },
