@@ -93,15 +93,31 @@
     var warn = root.querySelector("[data-lgs-design-warn]");
     var attached = root.querySelector("[data-lgs-design-attached]");
     var loading = root.querySelector("[data-lgs-loading]");
+    function shopDomainFrom(rootEl) {
+      var fromData = (rootEl && rootEl.getAttribute("data-shop")) || "";
+      var fromShopify = (window.Shopify && window.Shopify.shop) || "";
+      return String(fromData || fromShopify)
+        .replace(/^https?:\/\//, "")
+        .replace(/\/$/, "");
+    }
+
+    function isShopifyStorefront(rootEl) {
+      if (window.Shopify && window.Shopify.shop) return true;
+      var host = window.location.hostname;
+      if (host.endsWith(".myshopify.com")) return true;
+      var domain = shopDomainFrom(rootEl);
+      return Boolean(domain && host === domain);
+    }
+
     function resolveEditorBase(rootEl) {
-      var shopDomain = rootEl.getAttribute("data-shop") || "";
-      if (shopDomain) {
-        var host = window.location.hostname;
-        if (host === shopDomain || host.endsWith(".myshopify.com")) {
-          return window.location.origin.replace(/\/$/, "") + "/apps/legends-bags";
-        }
+      if (isShopifyStorefront(rootEl)) {
+        return window.location.origin.replace(/\/$/, "") + "/apps/legends-bags";
       }
-      return (rootEl.getAttribute("data-editor-base") || "").replace(/\/$/, "");
+      var override = (rootEl.getAttribute("data-editor-base") || "").replace(/\/$/, "");
+      if (override) return override;
+      var domain = shopDomainFrom(rootEl);
+      if (domain) return "https://" + domain + "/apps/legends-bags";
+      return "";
     }
     var base = resolveEditorBase(root);
     var productGid = root.getAttribute("data-product-gid") || "";
@@ -219,9 +235,7 @@
     }
 
     function usesAppProxy() {
-      if (!shop) return false;
-      var host = window.location.hostname;
-      return host === shop || host.endsWith(".myshopify.com");
+      return isShopifyStorefront(root) || Boolean(shopDomainFrom(root));
     }
 
     function editorOrigin() {
@@ -234,15 +248,15 @@
     }
 
     function storefrontApiUrl(path) {
-      var onStorefront =
-        shop &&
-        (window.location.hostname === shop ||
-          window.location.hostname.endsWith(".myshopify.com"));
-      if (onStorefront) {
+      if (isShopifyStorefront(root)) {
         return new URL("/apps/legends-bags/" + path.replace(/^\//, ""), window.location.origin);
       }
       if (base) {
         return new URL(path, base);
+      }
+      var domain = shopDomainFrom(root);
+      if (domain) {
+        return new URL("/apps/legends-bags/" + path.replace(/^\//, ""), "https://" + domain);
       }
       return null;
     }
@@ -313,7 +327,10 @@
       }
       if (editBtn) editBtn.hidden = !ready;
       if (resetBtn) resetBtn.hidden = !ready;
-      if (warn) warn.hidden = ready;
+      if (warn) {
+        warn.hidden = true;
+        if (ready) root.classList.remove("lgs--show-design-warn");
+      }
       if (attached) {
         attached.hidden = !ready;
         if (ready) {
@@ -402,7 +419,7 @@
     function applyAppearanceLabels(appearance) {
       if (!appearance) return;
       if (openBtn) {
-        openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build your gang sheet");
+        openBtn.setAttribute("data-label-open", appearance.launcherOpenLabel || "Build Your Gang Sheet");
         openBtn.setAttribute("data-label-edit", appearance.launcherEditLabel || "Edit design");
       }
       syncUi();
@@ -718,6 +735,7 @@
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       setStatus("Create and save a design before adding this product to cart.", "warn");
+      root.classList.add("lgs--show-design-warn");
       if (warn) {
         warn.hidden = false;
         warn.focus && warn.focus();

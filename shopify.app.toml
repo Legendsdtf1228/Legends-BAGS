@@ -2,7 +2,7 @@
 
 client_id = "09fe27e7030a957490451dbf826afc47"
 name = "Legends BAGS Dev"
-application_url = "https://upload-by-size-production.up.railway.app"
+application_url = "https://legends-bags-production.up.railway.app"
 embedded = true
 
 [build]
@@ -45,11 +45,11 @@ scopes = "read_products,write_products,read_orders,read_themes,write_publication
 
 [auth]
 redirect_urls = [
-  "https://upload-by-size-production.up.railway.app/auth/callback",
-  "https://upload-by-size-production.up.railway.app/auth",
+  "https://legends-bags-production.up.railway.app/auth/callback",
+  "https://legends-bags-production.up.railway.app/auth",
 ]
 
 [app_proxy]
-url = "/apps/legends-bags"
+url = "https://legends-bags-production.up.railway.app/apps/legends-bags"
 subpath = "legends-bags"
 prefix = "apps"

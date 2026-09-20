@@ -29,6 +29,7 @@ EXPOSE 3000
 COPY package.json package-lock.json* ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
+COPY --from=build /app/public ./public
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/scripts ./scripts
 

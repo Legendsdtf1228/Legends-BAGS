@@ -42,6 +42,7 @@ export type BuilderLaunchParseResult =
   | BuilderLaunchParseError;
 
 const MYShopifySuffix = ".myshopify.com";
+const DEFAULT_DEV_SHOP = "legends-bags-in2lwdll.myshopify.com";
 
 export function isMyshopifyDomain(shop: string): boolean {
   const normalized = shop.trim().toLowerCase();
@@ -53,15 +54,8 @@ export function normalizeShopDomain(shop: string): string {
 }
 
 export function assertDevShopAllowed(shop: string): BuilderLaunchParseError | null {
-  const allowed = process.env.DEV_SHOP?.trim().toLowerCase();
-  if (!allowed) {
-    return {
-      ok: false,
-      code: "shop_not_allowed",
-      message: "This environment is not configured for storefront builder access yet.",
-    };
-  }
-  if (normalizeShopDomain(shop) !== allowed.toLowerCase()) {
+  const allowed = (process.env.DEV_SHOP?.trim() || DEFAULT_DEV_SHOP).toLowerCase();
+  if (normalizeShopDomain(shop) !== allowed) {
     return {
       ok: false,
       code: "shop_not_allowed",

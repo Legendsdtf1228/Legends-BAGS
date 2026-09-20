@@ -27,9 +27,11 @@
   </div>
   <button type="button" class="lgs-gs__edit" data-lgs-edit hidden>Edit design</button>
   <button type="button" class="lgs-gs__reset" data-lgs-reset hidden>Start over</button>
+  {% if block.settings.hint_text != blank %}
   <p class="lgs-gs__hint">{{ block.settings.hint_text }}</p>
-  <p class="lgs-gs__warn" data-lgs-design-warn role="status" tabindex="-1">
-    Design required — open the builder and save before adding this product to cart.
+  {% endif %}
+  <p class="lgs-gs__warn" data-lgs-design-warn role="status" tabindex="-1" hidden>
+    Design required — save a design before adding this product to cart.
   </p>
   <p class="lgs-gs__attached" data-lgs-design-attached hidden role="status"></p>
   <p class="lgs-gs__status" data-lgs-status hidden aria-live="polite"></p>
@@ -59,13 +61,13 @@
       "type": "text",
       "id": "button_label",
       "label": "Button label",
-      "default": "Build your gang sheet"
+      "default": "Build Your Gang Sheet"
     },
     {
       "type": "text",
       "id": "hint_text",
       "label": "Hint",
-      "default": "Upload artwork, arrange on the sheet, then save to add to cart."
+      "default": ""
     },
     {
       "type": "text",

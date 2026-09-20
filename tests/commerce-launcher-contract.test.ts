@@ -104,8 +104,25 @@ describe("launcher cart/add attach", () => {
     const stub = read("extensions/upload-by-size/assets/lgs-launcher.js");
     const proxy = read("app/routes/apps.legends-bags.$.tsx");
     expect(stub).toContain("/lgs-launcher.full.js");
+    expect(stub).toContain("Shopify.shop");
+    expect(stub).toContain("/apps/legends-bags");
+    expect(stub).not.toContain("Editor base URL in the theme block settings");
     expect(proxy).toContain('kind === "launcher-script"');
     expect(proxy).toContain("createStorefrontSessionResponse");
     expect(proxy).toContain("verifyAppProxyShop");
+    expect(proxy).toContain('"build", "client", "lgs-launcher.full.js"');
+  });
+
+  it("gang sheet block defaults to a single CTA without instructional copy", () => {
+    const liquid = read("extensions/upload-by-size/blocks/gang-sheet.liquid");
+    const css = read("extensions/upload-by-size/assets/gang-sheet.css");
+    const launcher = read("extensions/upload-by-size/assets/lgs-launcher.full.js");
+    expect(liquid).toContain('"default": "Build Your Gang Sheet"');
+    expect(liquid).toContain('data-lgs-design-warn');
+    expect(liquid).toMatch(/data-lgs-design-warn[^>]*(hidden|hidden>)/);
+    expect(liquid).toContain("{% if block.settings.hint_text != blank %}");
+    expect(css).toContain(".lgs-gs.lgs--show-design-warn .lgs-gs__warn");
+    expect(launcher).toContain("lgs--show-design-warn");
+    expect(launcher).toContain("isShopifyStorefront");
   });
 });

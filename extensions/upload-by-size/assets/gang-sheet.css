@@ -4,21 +4,27 @@
   margin: 1rem 0;
 }
 
-.lgs-gs__launch,
-.lgs-gs__close {
+.lgs-gs__launch {
   font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
   cursor: pointer;
-  padding: 0.75rem 1rem;
-  border: 1px solid #2463eb;
-  background: #2463eb;
+  width: 100%;
+  padding: 0.95rem 1.15rem;
+  border: 1px solid #111827;
+  border-radius: 6px;
+  background: #111827;
   color: #fff;
 }
 
 .lgs-gs__close {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  margin-top: 0.5rem;
+  border: 1px solid #1a1a1a;
   background: transparent;
   color: #1a1a1a;
-  border-color: #1a1a1a;
-  margin-top: 0.5rem;
 }
 
 .lgs-gs__hint {
@@ -54,12 +60,17 @@
 }
 
 .lgs-gs__warn {
+  display: none;
   margin: 0;
   padding: 0.65rem 0.75rem;
   border: 1px solid #f0c36d;
   background: #fff8eb;
   color: #7a4e00;
   font-size: 0.9rem;
+}
+
+.lgs-gs.lgs--show-design-warn .lgs-gs__warn {
+  display: block;
 }
 
 .lgs-gs__attached,
@@ -85,7 +96,8 @@
   color: #7a4e00;
 }
 
-.lgs-gs.lgs--design-ready .lgs-gs__warn {
+.lgs-gs.lgs--design-ready .lgs-gs__warn,
+.lgs-gs.lgs--design-ready.lgs--show-design-warn .lgs-gs__warn {
   display: none;
 }
 
